@@ -1428,10 +1428,12 @@ function App() {
                     <div 
                       key={temp.id} 
                       className="template-grid-card"
-                      onClick={() => setSelectedTemplateId(temp.id)}
+                      onClick={() => {
+                        setSelectedTemplateId(temp.id);
+                        setDetailModalTab('steps');
+                      }}
                     >
-                      <div className="template-card-banner"></div>
-                      <div className="template-card-body">
+                      <div className="template-card-body" style={{ paddingTop: '2rem' }}>
                         <div className="template-card-meta">
                           <div className="template-card-meta-left">
                             <span>⏱️ {temp.durationDays} {temp.durationDays === 1 ? 'día' : 'días'}</span>
@@ -1459,22 +1461,63 @@ function App() {
                         
                         <hr className="template-card-divider" />
                         
-                        <div className="template-card-footer">
-                          <div className="avatar-group">
-                            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="user" />
-                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80" alt="user" />
-                            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="user" />
-                            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80" alt="user" />
+                        <div className="template-card-footer" style={{ marginTop: 'auto' }}>
+                          <div className="avatar-group" style={{ display: 'flex', gap: '4px' }}>
+                            {(() => {
+                              // Get unique members involved in this template
+                              const assignedIds = new Set((temp.steps || []).map(s => s.assignedTo).filter(Boolean));
+                              const uniqueMembers = teamMembers.filter(m => assignedIds.has(m.id));
+                              return uniqueMembers.slice(0, 4).map(member => (
+                                <div 
+                                  key={member.id} 
+                                  title={`${member.name} (${member.role})`}
+                                  style={{ 
+                                    width: '28px', 
+                                    height: '28px', 
+                                    borderRadius: '50%', 
+                                    backgroundColor: 'var(--color-primary)', 
+                                    color: 'white', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    fontWeight: 'bold', 
+                                    fontSize: '0.75rem',
+                                    border: '2px solid white'
+                                  }}
+                                >
+                                  {member.name ? member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
+                                </div>
+                              ));
+                            })()}
+                            {((temp.steps || []).map(s => s.assignedTo).filter(Boolean).length === 0) && (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin asignar</span>
+                            )}
                           </div>
-                          <div className="action-circles">
-                            <button className="circle-btn blue" title="Iniciar Ejecución" onClick={(e) => { e.stopPropagation(); setSelectedTemplateId(temp.id); setShowLaunchModal(true); }}>
-                              <Zap size={14} fill="currentColor" />
+                          <div className="action-circles" style={{ display: 'flex', gap: '8px' }}>
+                            <button 
+                              className="circle-btn blue" 
+                              title="Iniciar Ejecución" 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setSelectedTemplateId(temp.id); 
+                                setLaunchTemplateId(temp.id);
+                                setLaunchModalStep(1);
+                                setShowLaunchModal(true); 
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(39,190,167,0.1)', color: 'var(--color-primary)' }}
+                            >
+                              <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>+</span>
                             </button>
-                            <button className="circle-btn dark" title="Ver Detalles" onClick={(e) => { e.stopPropagation(); setSelectedTemplateId(temp.id); }}>
-                              <Code size={14} />
-                            </button>
-                            <button className="circle-btn red" title="Eliminar Plantilla" onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(temp.id); }}>
-                              <Share2 size={14} />
+                            <button 
+                              className="circle-btn red" 
+                              title="Eliminar Plantilla" 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                handleDeleteTemplate(temp.id); 
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(211,47,47,0.1)', color: '#d32f2f' }}
+                            >
+                              🗑️
                             </button>
                           </div>
                         </div>
