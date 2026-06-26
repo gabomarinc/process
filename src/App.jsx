@@ -195,7 +195,7 @@ function App() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserFormData, setNewUserFormData] = useState({ name: '', email: '', password: '', role: 'agent' });
   const [addUserError, setAddUserError] = useState('');
-  const [profileFormData, setProfileFormData] = useState({ name: '', email: '', password: '' });
+  const [profileFormData, setProfileFormData] = useState({ name: '', email: '', password: '', companionName: '', companionAvatar: '' });
   const [orgFormData, setOrgFormData] = useState({ name: '' });
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState('');
   const [settingsErrorMsg, setSettingsErrorMsg] = useState('');
@@ -230,7 +230,13 @@ function App() {
         const savedUser = localStorage.getItem('user');
         if (savedUser) {
           const parsed = JSON.parse(savedUser);
-          setProfileFormData({ name: parsed.name, email: parsed.email, password: '' });
+          setProfileFormData({ 
+            name: parsed.name, 
+            email: parsed.email, 
+            password: '', 
+            companionName: parsed.companionName || '', 
+            companionAvatar: parsed.companionAvatar || '' 
+          });
           if (parsed.role === 'admin') {
             const usersRes = await fetch('/api/users');
             if (usersRes.ok) {
@@ -421,6 +427,8 @@ function App() {
       setToken(data.token);
       setSettingsSuccessMsg('Perfil actualizado con éxito.');
       setProfileFormData(prev => ({ ...prev, password: '' }));
+      // Reload templates/instances page metadata if companion settings change
+      window.location.reload();
     } catch (err) {
       setSettingsErrorMsg(err.message);
     }
@@ -512,6 +520,22 @@ function App() {
         } else {
           setTeamMembers(prev => [...prev, newMember]);
         }
+        
+        // Sync the local templates state steps and database with the new memberId assignment
+        for (const temp of templates) {
+          let hasChanges = false;
+          const updatedSteps = temp.steps.map(step => {
+            if (step.assignedTo === 'temp_new_member') {
+              hasChanges = true;
+              return { ...step, assignedTo: memberId };
+            }
+            return step;
+          });
+          if (hasChanges) {
+            await saveTemplate({ ...temp, steps: updatedSteps });
+          }
+        }
+
         setShowMemberModal(false);
         setEditingMember(null);
         setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
@@ -1555,10 +1579,28 @@ function App() {
                       <p style={{ color: 'var(--text-muted)', fontSize: '1rem', marginTop: '0.5rem' }}>
                         {activeTemplate.description}
                       </p>
-                      <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                      <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', alignItems: 'center' }}>
                         <span className="badge primary">Guía: {activeTemplate.companionName}</span>
                         <span className="badge">Duración: {activeTemplate.durationDays} días</span>
-                        <span className="badge">Categoría: {activeTemplate.category || 'General'}</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Categoría:</span>
+                          <input 
+                            type="text" 
+                            value={activeTemplate.category || ''} 
+                            onChange={(e) => {
+                              saveTemplate({ ...activeTemplate, category: e.target.value });
+                            }} 
+                            style={{ 
+                              padding: '2px 8px', 
+                              fontSize: '0.8rem', 
+                              borderRadius: '4px', 
+                              border: '1px solid rgba(0,0,0,0.15)', 
+                              backgroundColor: 'white', 
+                              fontWeight: 600, 
+                              width: '120px' 
+                            }} 
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -2101,6 +2143,30 @@ function App() {
                         onChange={(e) => setProfileFormData({ ...profileFormData, password: e.target.value })} 
                       />
                     </div>
+                    {user?.role === 'admin' && (
+                      <>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre del Acompañante/Guía por Defecto</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Ej. Kônsul Bot" 
+                            value={profileFormData.companionName} 
+                            onChange={(e) => setProfileFormData({ ...profileFormData, companionName: e.target.value })} 
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Emoji del Acompañante/Guía (Avatar)</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Ej. 🤖" 
+                            value={profileFormData.companionAvatar} 
+                            onChange={(e) => setProfileFormData({ ...profileFormData, companionAvatar: e.target.value })} 
+                          />
+                        </div>
+                      </>
+                    )}
                     <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
                       Actualizar Perfil
                     </button>
@@ -2653,29 +2719,89 @@ function App() {
               {memberModalStep === 3 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div className="form-group">
-                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Flujos y Procesos Asignados</label>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                      Selecciona las plantillas en las que participa este colaborador para agilizar la asignación.
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Asignación de Pasos en Procesos</label>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                      Activa o desactiva los pasos específicos en los que participará este colaborador.
                     </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '10px', borderRadius: '8px' }}>
-                      {templates.map(temp => {
-                        const isChecked = memberFormData.assignedProcesses?.includes(temp.id);
-                        return (
-                          <label key={temp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', padding: '4px 0' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={isChecked} 
-                              onChange={(e) => {
-                                const newAssigned = e.target.checked 
-                                  ? [...(memberFormData.assignedProcesses || []), temp.id]
-                                  : (memberFormData.assignedProcesses || []).filter(id => id !== temp.id);
-                                setMemberFormData({ ...memberFormData, assignedProcesses: newAssigned });
-                              }}
-                            />
-                            {temp.title}
-                          </label>
-                        );
-                      })}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxHeight: '350px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '15px', borderRadius: '12px', backgroundColor: '#fdfbfa' }}>
+                      {templates.map(temp => (
+                        <div key={temp.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary-hover)', marginBottom: '0.5rem' }}>{temp.title}</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {temp.steps.map((step, sIdx) => {
+                              // We store step assignments locally during edit. For team member we can check:
+                              // If this step is assigned to current member or in editing process we are assigning it.
+                              // We can save/track this via dynamic changes to steps or an assignments object.
+                              // Let's use the template steps data. We update the templates structure on confirm!
+                              const isStepAssigned = step.assignedTo === (editingMember?.id || 'temp_new_member');
+                              
+                              return (
+                                <div key={sIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.04)' }}>
+                                  <span style={{ fontSize: '0.85rem' }}>
+                                    <strong style={{ color: 'var(--color-primary)', marginRight: '6px' }}>Paso {sIdx + 1}</strong>
+                                    {step.title}
+                                  </span>
+                                  <div style={{ display: 'inline-flex', borderRadius: '99px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.08)' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        // Mark as assigned: we update this step's assignedTo inside the template locally
+                                        setTemplates(prev => prev.map(t => {
+                                          if (t.id !== temp.id) return t;
+                                          const updatedSteps = [...t.steps];
+                                          updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: editingMember?.id || 'temp_new_member' };
+                                          return { ...t, steps: updatedSteps };
+                                        }));
+                                        // Auto-add template to assignedProcesses list if not present
+                                        if (!memberFormData.assignedProcesses.includes(temp.id)) {
+                                          setMemberFormData(prev => ({
+                                            ...prev,
+                                            assignedProcesses: [...prev.assignedProcesses, temp.id]
+                                          }));
+                                        }
+                                      }}
+                                      style={{
+                                        border: 'none',
+                                        padding: '4px 12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        backgroundColor: isStepAssigned ? 'var(--color-primary)' : '#f3f4f6',
+                                        color: isStepAssigned ? 'white' : '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                    >Sí</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        // Unassign step
+                                        setTemplates(prev => prev.map(t => {
+                                          if (t.id !== temp.id) return t;
+                                          const updatedSteps = [...t.steps];
+                                          if (updatedSteps[sIdx].assignedTo === (editingMember?.id || 'temp_new_member')) {
+                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: '' };
+                                          }
+                                          return { ...t, steps: updatedSteps };
+                                        }));
+                                      }}
+                                      style={{
+                                        border: 'none',
+                                        padding: '4px 12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        backgroundColor: !isStepAssigned ? '#ef4444' : '#f3f4f6',
+                                        color: !isStepAssigned ? 'white' : '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                    >No</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                       {templates.length === 0 && (
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                           No hay plantillas de procesos disponibles.

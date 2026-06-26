@@ -19,11 +19,13 @@ const pool = new Pool({
     : false
 });
 
-// Run auto-migration for user role column
+// Run auto-migration for user columns
 pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_name VARCHAR(100);
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_avatar VARCHAR(50);
 `).then(() => {
-  console.log('Migración de base de datos completada: columna "role" asegurada en la tabla "users".');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -696,7 +698,7 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
 
 // Update self profile
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, companionName, companionAvatar } = req.body;
   try {
     if (email) {
       const existing = await pool.query('SELECT * FROM users WHERE email = $1 AND id <> $2', [email, req.user.id]);
@@ -705,28 +707,46 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       }
     }
 
-    let query = 'UPDATE users SET name = $1, email = $2';
-    let params = [name, email, req.user.id];
+    let query = 'UPDATE users SET name = $1, email = $2, companion_name = $4, companion_avatar = $5';
+    let params = [name, email, req.user.id, companionName || null, companionAvatar || null];
 
     if (password && password.trim() !== '') {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
-      query += ', password_hash = $4 WHERE id = $3 RETURNING id, organization_id, name, email, role';
+      query += ', password_hash = $6 WHERE id = $3 RETURNING id, organization_id, name, email, role, companion_name, companion_avatar';
       params.push(passwordHash);
     } else {
-      query += ' WHERE id = $3 RETURNING id, organization_id, name, email, role';
+      query += ' WHERE id = $3 RETURNING id, organization_id, name, email, role, companion_name, companion_avatar';
     }
 
     const result = await pool.query(query, params);
     const user = result.rows[0];
 
     const token = jwt.sign(
-      { id: user.id, organizationId: user.organization_id, role: user.role, email: user.email },
+      { 
+        id: user.id, 
+        organizationId: user.organization_id, 
+        role: user.role, 
+        email: user.email,
+        companionName: user.companion_name,
+        companionAvatar: user.companion_avatar
+      },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.json({ token, user });
+    res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        organizationId: user.organization_id, 
+        name: user.name, 
+        email: user.email, 
+        role: user.role,
+        companionName: user.companion_name,
+        companionAvatar: user.companion_avatar
+      } 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar el perfil.' });
