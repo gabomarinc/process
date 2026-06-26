@@ -393,6 +393,10 @@ app.delete('/api/team/:id', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor de API corriendo en puerto ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Servidor de API corriendo en puerto ${PORT}`);
+  });
+}
+
+export default app;
