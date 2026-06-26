@@ -24,7 +24,11 @@ import {
   Zap,
   Code,
   Share2,
-  Users
+  Users,
+  ChevronDown,
+  LogOut,
+  Menu,
+  X
 } from 'lucide-react';
 
 function App() {
@@ -199,6 +203,11 @@ function App() {
   const [orgFormData, setOrgFormData] = useState({ name: '' });
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState('');
   const [settingsErrorMsg, setSettingsErrorMsg] = useState('');
+
+  // Unified Navbar States
+  const [openDropdown, setOpenDropdown] = useState(null); // null, 'procesos', 'cuenta'
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
 
   // Fetch initial data from database
   useEffect(() => {
@@ -1125,36 +1134,229 @@ function App() {
         />
       ))}
 
-      {/* Header */}
-      <header className="app-header">
-        <div className="logo-section" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '36px', objectFit: 'contain' }} />
-          <div className="logo-text" style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: '12px' }}>
-            <h1 style={{ fontSize: '1.2rem', margin: 0, fontWeight: 700 }}>Process</h1>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Emotional Design Flow</span>
+      {/* Unified Header Navigation */}
+      <header className="app-header-unified">
+        <div className="nav-container-unified">
+          {/* Logo Section */}
+          <div className="logo-section" onClick={() => { setActiveTab('instances'); setOpenDropdown(null); }} style={{ cursor: 'pointer' }}>
+            <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" className="logo-img" />
+            <div className="logo-text">
+              <h1>Process</h1>
+              <span>Emotional Design Flow</span>
+            </div>
+          </div>
+
+          {/* Desktop Navigation Menu */}
+          <nav className="desktop-nav">
+            <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
+              <button 
+                className={`nav-trigger-btn ${activeTab !== 'settings' ? 'active' : ''}`}
+                onClick={() => setOpenDropdown(openDropdown === 'procesos' ? null : 'procesos')}
+                onMouseEnter={() => setOpenDropdown('procesos')}
+              >
+                Procesos <ChevronDown size={14} className={`chevron-icon ${openDropdown === 'procesos' ? 'open' : ''}`} />
+              </button>
+              
+              {openDropdown === 'procesos' && (
+                <div className="nav-dropdown-content">
+                  <div className="dropdown-grid-cards">
+                    <div 
+                      className={`grid-card-nav ${activeTab === 'instances' ? 'selected' : ''}`}
+                      onClick={() => { setActiveTab('instances'); setOpenDropdown(null); }}
+                    >
+                      <div className="card-nav-header">
+                        <Play size={18} className="icon-blue" />
+                        <h4>Ejecuciones Activas</h4>
+                      </div>
+                      <p>Monitorea y completa tus pasos de trabajo activos ({instances.length})</p>
+                    </div>
+
+                    {user?.role !== 'guest' && (
+                      <>
+                        <div 
+                          className={`grid-card-nav ${activeTab === 'templates' ? 'selected' : ''}`}
+                          onClick={() => { setActiveTab('templates'); setOpenDropdown(null); }}
+                        >
+                          <div className="card-nav-header">
+                            <FileText size={18} className="icon-orange" />
+                            <h4>Plantillas de Procesos</h4>
+                          </div>
+                          <p>Diseña, edita y lanza nuevas plantillas de procesos ({templates.length})</p>
+                        </div>
+
+                        <div 
+                          className={`grid-card-nav ${activeTab === 'team' ? 'selected' : ''}`}
+                          onClick={() => { setActiveTab('team'); setOpenDropdown(null); }}
+                        >
+                          <div className="card-nav-header">
+                            <Users size={18} className="icon-green" />
+                            <h4>Equipo de Trabajo</h4>
+                          </div>
+                          <p>Gestiona el personal y asigna roles operativos ({teamMembers.length})</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
+              <button 
+                className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
+                onClick={() => setOpenDropdown(openDropdown === 'cuenta' ? null : 'cuenta')}
+                onMouseEnter={() => setOpenDropdown('cuenta')}
+              >
+                <div className="user-avatar-small">
+                  {user?.name ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
+                </div>
+                <span>Mi Cuenta</span>
+                <ChevronDown size={14} className={`chevron-icon ${openDropdown === 'cuenta' ? 'open' : ''}`} />
+              </button>
+
+              {openDropdown === 'cuenta' && (
+                <div className="nav-dropdown-content dropdown-right">
+                  <div className="dropdown-simple-list">
+                    <div 
+                      className="dropdown-list-item"
+                      onClick={() => { 
+                        setActiveTab('settings'); 
+                        setOpenDropdown(null);
+                        setTimeout(() => {
+                          const el = document.getElementById('profile-form-section');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }}
+                    >
+                      <Smile size={16} />
+                      <div>
+                        <h4>Editar Perfil</h4>
+                        <p>Cambia tus datos personales y del asistente virtual</p>
+                      </div>
+                    </div>
+
+                    <div 
+                      className={`dropdown-list-item ${apiKey ? 'configured' : ''}`}
+                      onClick={() => {
+                        setShowKeyInput(!showKeyInput);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      <Key size={16} />
+                      <div>
+                        <h4>Gemini API Key</h4>
+                        <p>{apiKey ? 'Clave de Inteligencia Guardada' : 'Configura tu clave para usar IA'}</p>
+                      </div>
+                    </div>
+
+                    {user?.role === 'admin' && (
+                      <div 
+                        className="dropdown-list-item"
+                        onClick={() => { 
+                          setActiveTab('settings'); 
+                          setOpenDropdown(null);
+                          setTimeout(() => {
+                            const el = document.getElementById('company-form-section');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                      >
+                        <Sparkles size={16} />
+                        <div>
+                          <h4>Detalles de Empresa</h4>
+                          <p>Gestiona el nombre de la organización y accesos</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="dropdown-divider" />
+
+                    <div className="dropdown-list-item logout-item" onClick={() => { handleLogout(); setOpenDropdown(null); }}>
+                      <LogOut size={16} />
+                      <div>
+                        <h4>Cerrar Sesión</h4>
+                        <p>Salir de forma segura de tu cuenta</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </nav>
+
+          {/* Right Header Status / Badges */}
+          <div className="header-badge-section">
+            <div className="badge primary empatico-badge">
+              <Sparkles size={13} style={{ marginRight: '4px' }} />
+              <span>Kônsul Flow</span>
+            </div>
+            <button className="mobile-toggle-btn" onClick={() => setShowMobileMenu(!showMobileMenu)}>
+              {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
+            </button>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Empresa: <strong>{orgFormData.name || user?.companyName || 'Cargando...'}</strong> | Rol: <span className={`badge ${user?.role === 'admin' ? 'primary' : 'success'}`} style={{ textTransform: 'capitalize' }}>{user?.role}</span>
-          </span>
-          <button className="btn btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={handleLogout}>
-            Cerrar Sesión
-          </button>
-          <button 
-            className={`api-key-badge ${apiKey ? 'configured' : ''}`}
-            onClick={() => setShowKeyInput(!showKeyInput)}
-          >
-            <Key size={14} />
-            <span>{apiKey ? 'API Key Guardada' : 'Configurar Gemini Key'}</span>
-          </button>
-          
-          <div className="badge primary">
-            <Sparkles size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-            Diseño Empático Activo
+
+        {/* Mobile Navigation Drawer / Menu */}
+        {showMobileMenu && (
+          <div className="mobile-nav-drawer">
+            <div className="mobile-drawer-content">
+              <div className="mobile-drawer-header">
+                <h3>Menú de Navegación</h3>
+                <button className="close-btn" onClick={() => setShowMobileMenu(false)}><X size={20} /></button>
+              </div>
+              <div className="mobile-drawer-body">
+                <div className="mobile-section-title">Procesos</div>
+                <div className="mobile-links-list">
+                  <div 
+                    className={`mobile-link-item ${activeTab === 'instances' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('instances'); setShowMobileMenu(false); }}
+                  >
+                    🔄 Ejecuciones Activas ({instances.length})
+                  </div>
+                  {user?.role !== 'guest' && (
+                    <>
+                      <div 
+                        className={`mobile-link-item ${activeTab === 'templates' ? 'active' : ''}`}
+                        onClick={() => { setActiveTab('templates'); setShowMobileMenu(false); }}
+                      >
+                        📂 Plantillas de Procesos ({templates.length})
+                      </div>
+                      <div 
+                        className={`mobile-link-item ${activeTab === 'team' ? 'active' : ''}`}
+                        onClick={() => { setActiveTab('team'); setShowMobileMenu(false); }}
+                      >
+                        👥 Equipo de Trabajo ({teamMembers.length})
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="mobile-section-title">Configuración de Cuenta</div>
+                <div className="mobile-links-list">
+                  <div 
+                    className={`mobile-link-item ${activeTab === 'settings' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('settings'); setShowMobileMenu(false); }}
+                  >
+                    ⚙️ Ajustes Generales
+                  </div>
+                  <div 
+                    className="mobile-link-item"
+                    onClick={() => { setShowKeyInput(!showKeyInput); setShowMobileMenu(false); }}
+                  >
+                    🔑 Gemini API Key ({apiKey ? 'Configurada' : 'Sin configurar'})
+                  </div>
+                  <div className="dropdown-divider" />
+                  <div 
+                    className="mobile-link-item logout"
+                    onClick={() => { handleLogout(); setShowMobileMenu(false); }}
+                  >
+                    🚪 Cerrar Sesión
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* API Configuration Drawer */}
@@ -1187,40 +1389,6 @@ function App() {
         </div>
       )}
 
-      <div className="tabs-container">
-        <button 
-          className={`tab-btn ${activeTab === 'instances' ? 'active' : ''}`}
-          onClick={() => setActiveTab('instances')}
-        >
-          🔄 Ejecuciones Activas ({instances.length})
-        </button>
-        
-        {user?.role !== 'guest' && (
-          <>
-            <button 
-              className={`tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
-              onClick={() => setActiveTab('templates')}
-            >
-              📂 Plantillas de Procesos ({templates.length})
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'team' ? 'active' : ''}`}
-              onClick={() => setActiveTab('team')}
-            >
-              👥 Equipo de Trabajo ({teamMembers.length})
-            </button>
-          </>
-        )}
-
-        {user?.role === 'admin' && (
-          <button 
-            className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            ⚙️ Configuración
-          </button>
-        )}
-      </div>
 
       {/* Main Companion Banner (Active Execution only) */}
       {activeTab === 'instances' && activeInstance && (
@@ -2110,7 +2278,7 @@ function App() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
                 
                 {/* Form 1: Profile Details */}
-                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                <div id="profile-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Mi Perfil</h3>
                   <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div className="form-group">
@@ -2174,7 +2342,7 @@ function App() {
                 </div>
 
                 {/* Form 2: Organization Name */}
-                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                <div id="company-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
                   <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div className="form-group">
