@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -28,6 +31,107 @@ pool.connect((err, client, release) => {
 });
 
 // --- API ROUTES ---
+
+// --- AUTH ROUTES ---
+const JWT_SECRET = process.env.JWT_SECRET || 'secret_konsul_token_2026';
+
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  try {
+    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) return res.status(400).json({ error: 'El usuario ya existe' });
+    
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+    
+    const newUser = await pool.query(
+      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
+      [name, email, passwordHash]
+    );
+    
+    const token = jwt.sign({ id: newUser.rows[0].id }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ token, user: newUser.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar usuario' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password, rememberMe } = req.body;
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Credenciales inválidas' });
+    
+    const user = result.rows[0];
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+    
+    const expiresIn = rememberMe ? '30d' : '1h';
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  try {
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      // Para evitar email enumeration attacks, siempre respondemos que si el mail existe, se envio el correo.
+      return res.json({ message: 'Si el correo existe en nuestro sistema, te hemos enviado un enlace para restablecer tu contraseña.' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
+
+    await pool.query(
+      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3',
+      [resetToken, resetTokenExpiry, email]
+    );
+
+    const resetLink = `http://localhost:5173/?resetToken=${resetToken}`;
+    
+    // MVP: Imprimir el link en consola. (Aqui iría la lógica de SendGrid/Resend)
+    console.log('\n======================================================');
+    console.log('🔗 ENLACE DE RECUPERACIÓN DE CONTRASEÑA SOLICITADO');
+    console.log(`   Para: ${email}`);
+    console.log(`   Enlace: ${resetLink}`);
+    console.log('======================================================\n');
+
+    res.json({ message: 'Si el correo existe en nuestro sistema, te hemos enviado un enlace para restablecer tu contraseña.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al solicitar restablecimiento de contraseña' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+  try {
+    const userResult = await pool.query('SELECT * FROM users WHERE reset_token = $1 AND reset_token_expiry > $2', [token, Date.now()]);
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: 'El enlace es inválido o ha expirado.' });
+    }
+
+    const user = userResult.rows[0];
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    await pool.query(
+      'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expiry = NULL WHERE id = $2',
+      [passwordHash, user.id]
+    );
+
+    res.json({ message: 'Tu contraseña ha sido restablecida exitosamente.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al restablecer la contraseña' });
+  }
+});
 
 // 1. Get all templates
 app.get('/api/templates', async (req, res) => {
@@ -213,7 +317,8 @@ app.get('/api/team', async (req, res) => {
       avatar: row.avatar,
       assignedProcesses: row.assigned_processes || [],
       department: row.department || '',
-      managerId: row.manager_id || ''
+      managerId: row.manager_id || '',
+      geminiApiKey: row.gemini_api_key || ''
     }));
     res.json(mapped);
   } catch (err) {
@@ -224,11 +329,11 @@ app.get('/api/team', async (req, res) => {
 
 // 10. Create a team member
 app.post('/api/team', async (req, res) => {
-  const { id, name, role, email, avatar, assignedProcesses, department, managerId } = req.body;
+  const { id, name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
   try {
     await pool.query(
-      `INSERT INTO team_members (id, name, role, email, avatar, assigned_processes, department, manager_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO team_members (id, name, role, email, avatar, assigned_processes, department, manager_id, gemini_api_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         id, 
         name, 
@@ -237,7 +342,8 @@ app.post('/api/team', async (req, res) => {
         avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80', 
         JSON.stringify(assignedProcesses || []),
         department || '',
-        managerId || null
+        managerId || null,
+        geminiApiKey || null
       ]
     );
     res.status(201).json({ message: 'Miembro del equipo creado con éxito' });
@@ -250,12 +356,12 @@ app.post('/api/team', async (req, res) => {
 // 11. Update a team member
 app.put('/api/team/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, role, email, avatar, assignedProcesses, department, managerId } = req.body;
+  const { name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
   try {
     await pool.query(
       `UPDATE team_members 
-       SET name = $1, role = $2, email = $3, avatar = $4, assigned_processes = $5, department = $6, manager_id = $7
-       WHERE id = $8`,
+       SET name = $1, role = $2, email = $3, avatar = $4, assigned_processes = $5, department = $6, manager_id = $7, gemini_api_key = $8
+       WHERE id = $9`,
       [
         name, 
         role, 
@@ -264,6 +370,7 @@ app.put('/api/team/:id', async (req, res) => {
         JSON.stringify(assignedProcesses || []), 
         department || '', 
         managerId || null, 
+        geminiApiKey || null,
         id
       ]
     );

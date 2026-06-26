@@ -28,6 +28,187 @@ import {
 } from 'lucide-react';
 
 function App() {
+
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [authView, setAuthView] = useState('login'); // 'login', 'register', 'forgot', 'reset'
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', rememberMe: false });
+  const [authError, setAuthError] = useState('');
+  const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+  const [resetToken, setResetToken] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('resetToken');
+    if (tokenParam) {
+      setResetToken(tokenParam);
+      setAuthView('reset');
+    }
+    
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) setUser(JSON.parse(savedUser));
+  }, []);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccessMsg('');
+    
+    let endpoint = '';
+    if (authView === 'login') endpoint = '/api/auth/login';
+    else if (authView === 'register') endpoint = '/api/auth/register';
+    else if (authView === 'forgot') endpoint = '/api/auth/forgot-password';
+    else if (authView === 'reset') endpoint = '/api/auth/reset-password';
+
+    try {
+      const payload = { ...authForm, token: resetToken, newPassword: authForm.password };
+      
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Operación fallida');
+      
+      if (authView === 'forgot') {
+        setAuthSuccessMsg(data.message);
+        setAuthForm({ ...authForm, email: '' });
+      } else if (authView === 'reset') {
+        setAuthSuccessMsg(data.message);
+        setTimeout(() => {
+          setAuthView('login');
+          window.history.replaceState({}, document.title, "/");
+        }, 3000);
+      } else {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setToken(data.token);
+        setUser(data.user);
+      }
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+  };
+
+  if (!token) {
+    let title = 'Kônsul';
+    let subtitle = 'Bienvenido de nuevo';
+    let btnText = 'Iniciar Sesión';
+    
+    if (authView === 'register') {
+      subtitle = 'Crea tu cuenta gratis';
+      btnText = 'Registrarse';
+    } else if (authView === 'forgot') {
+      subtitle = 'Recupera tu acceso';
+      btnText = 'Enviar enlace';
+    } else if (authView === 'reset') {
+      subtitle = 'Elige una nueva contraseña';
+      btnText = 'Guardar contraseña';
+    }
+
+    return (
+      <div className="auth-container">
+        <div className="auth-card">
+          <div className="auth-logo">K</div>
+          <h2 className="auth-title">{title}</h2>
+          <p className="auth-subtitle">{subtitle}</p>
+          
+          {authError && (
+            <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem' }}>
+              {authError}
+            </div>
+          )}
+
+          {authSuccessMsg && (
+            <div className="auth-success-msg">
+              {authSuccessMsg}
+            </div>
+          )}
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            {authView === 'register' && (
+              <input 
+                type="text" 
+                placeholder="Nombre completo" 
+                value={authForm.name}
+                onChange={e => setAuthForm({...authForm, name: e.target.value})}
+                required
+              />
+            )}
+            
+            {(authView === 'login' || authView === 'register' || authView === 'forgot') && (
+              <input 
+                type="email" 
+                placeholder="Correo electrónico" 
+                value={authForm.email}
+                autoComplete="username"
+                onChange={e => setAuthForm({...authForm, email: e.target.value})}
+                required
+              />
+            )}
+            
+            {(authView === 'login' || authView === 'register' || authView === 'reset') && (
+              <input 
+                type="password" 
+                placeholder={authView === 'reset' ? "Nueva contraseña" : "Contraseña"} 
+                value={authForm.password}
+                autoComplete={authView === 'login' ? "current-password" : "new-password"}
+                onChange={e => setAuthForm({...authForm, password: e.target.value})}
+                required
+              />
+            )}
+
+            {authView === 'login' && (
+              <div className="auth-options">
+                <label className="auth-checkbox-label">
+                  <input 
+                    type="checkbox" 
+                    checked={authForm.rememberMe}
+                    onChange={e => setAuthForm({...authForm, rememberMe: e.target.checked})}
+                  />
+                  Recordarme
+                </label>
+                <span className="auth-forgot-link" onClick={() => { setAuthView('forgot'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                  ¿Olvidaste tu contraseña?
+                </span>
+              </div>
+            )}
+
+            <button type="submit" className="auth-btn">
+              {btnText}
+            </button>
+          </form>
+
+          {authView !== 'login' && authView !== 'reset' && (
+            <div className="auth-switch" style={{marginTop: '1.5rem'}}>
+              <span onClick={() => { setAuthView('login'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                ← Volver a Iniciar Sesión
+              </span>
+            </div>
+          )}
+          
+          {authView === 'login' && (
+            <div className="auth-switch">
+              ¿No tienes cuenta?{' '}
+              <span onClick={() => { setAuthView('register'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                Regístrate aquí
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Templates (Process blueprints)
   const [templates, setTemplates] = useState([]);
 
@@ -42,7 +223,7 @@ function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '' });
+  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -288,7 +469,7 @@ function App() {
         }
         setShowMemberModal(false);
         setEditingMember(null);
-        setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '' });
+        setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
       } else {
         console.error("Error al guardar miembro del equipo");
       }
@@ -1533,7 +1714,7 @@ function App() {
                 </h2>
                 <button className="btn btn-primary" onClick={() => {
                   setEditingMember(null);
-                  setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '' });
+                  setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
                   setShowMemberModal(true);
                 }}>
                   ➕ Agregar Personal
@@ -1602,7 +1783,7 @@ function App() {
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
                         <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
                           setEditingMember(member);
-                          setMemberFormData({ name: member.name, role: member.role, email: member.email, avatar: member.avatar, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
+                          setMemberFormData({ name: member.name, role: member.role, email: member.email, avatar: member.avatar, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '', geminiApiKey: member.geminiApiKey || '' });
                           setShowMemberModal(true);
                         }}>
                           Editar
@@ -1963,6 +2144,17 @@ function App() {
                     ))
                   }
                 </select>
+              </div>
+              <div className="form-group">
+                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Clave API de Gemini (Opcional)</label>
+                <input 
+                  type="password" 
+                  className="form-input" 
+                  placeholder="AIzaSy..." 
+                  value={memberFormData.geminiApiKey || ''} 
+                  onChange={(e) => setMemberFormData({ ...memberFormData, geminiApiKey: e.target.value })} 
+                />
+                <small style={{ color: 'var(--text-muted)' }}>Esta clave es personal y se usará para las funciones de IA de este usuario.</small>
               </div>
               <div className="form-group">
                 <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>URL del Avatar (Opcional)</label>

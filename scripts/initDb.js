@@ -20,6 +20,20 @@ const createTables = async () => {
     // Drop tables if they exist (clean setup)
     console.log("Creando tablas si no existen...");
     
+    // Create users table for auth
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        reset_token VARCHAR(255),
+        reset_token_expiry BIGINT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log("Tabla 'users' verificada.");
+
     // Create templates table
     await client.query(`
       CREATE TABLE IF NOT EXISTS templates (
@@ -77,7 +91,8 @@ const createTables = async () => {
         avatar VARCHAR(255),
         assigned_processes JSONB NOT NULL DEFAULT '[]'::jsonb,
         department VARCHAR(255),
-        manager_id VARCHAR(255) REFERENCES team_members(id) ON DELETE SET NULL
+        manager_id VARCHAR(255) REFERENCES team_members(id) ON DELETE SET NULL,
+        gemini_api_key VARCHAR(255)
       );
     `);
     console.log("Tabla 'team_members' verificada.");
