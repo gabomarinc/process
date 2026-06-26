@@ -33,12 +33,33 @@ function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login'); // 'login', 'register', 'forgot', 'reset'
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', rememberMe: false });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', companyName: '', rememberMe: false });
   const [authError, setAuthError] = useState('');
   const [authSuccessMsg, setAuthSuccessMsg] = useState('');
   const [resetToken, setResetToken] = useState('');
 
   useEffect(() => {
+    // Intercept fetch to inject Auth headers for all API calls
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      let [resource, config] = args;
+      if (typeof resource === 'string' && resource.startsWith('/api/') && !resource.startsWith('/api/auth/')) {
+        config = config || {};
+        config.headers = config.headers || {};
+        const currentToken = localStorage.getItem('token');
+        if (currentToken) {
+          config.headers['Authorization'] = `Bearer ${currentToken}`;
+        }
+      }
+      const response = await originalFetch(resource, config);
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.reload();
+      }
+      return response;
+    };
+
     const params = new URLSearchParams(window.location.search);
     const tokenParam = params.get('resetToken');
     if (tokenParam) {
@@ -48,6 +69,8 @@ function App() {
     
     const savedUser = localStorage.getItem('user');
     if (savedUser) setUser(JSON.parse(savedUser));
+
+    return () => { window.fetch = originalFetch; };
   }, []);
 
   const handleAuthSubmit = async (e) => {
@@ -847,13 +870,22 @@ function App() {
 
           <form className="auth-form" onSubmit={handleAuthSubmit}>
             {authView === 'register' && (
-              <input 
-                type="text" 
-                placeholder="Nombre completo" 
-                value={authForm.name}
-                onChange={e => setAuthForm({...authForm, name: e.target.value})}
-                required
-              />
+              <>
+                <input 
+                  type="text" 
+                  placeholder="Nombre completo" 
+                  value={authForm.name}
+                  onChange={e => setAuthForm({...authForm, name: e.target.value})}
+                  required
+                />
+                <input 
+                  type="text" 
+                  placeholder="Nombre de la empresa" 
+                  value={authForm.companyName}
+                  onChange={e => setAuthForm({...authForm, companyName: e.target.value})}
+                  required
+                />
+              </>
             )}
             
             {(authView === 'login' || authView === 'register' || authView === 'forgot') && (
