@@ -1503,6 +1503,32 @@ button, input, select {
   color: var(--color-primary-hover);
 }
 
+.nav-tab-btn {
+  background: transparent;
+  border: none;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--text-main);
+  padding: 0.65rem 1.15rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  transition: var(--transition-smooth);
+}
+
+.nav-tab-btn:hover {
+  background-color: rgba(39, 190, 167, 0.05);
+  color: var(--color-primary-hover);
+}
+
+.nav-tab-btn.active {
+  background-color: #E8F7F5;
+  color: var(--color-primary-hover);
+  box-shadow: 0 2px 8px rgba(39, 190, 167, 0.08);
+}
+
 .chevron-icon {
   transition: transform 0.3s ease;
   color: var(--text-muted);

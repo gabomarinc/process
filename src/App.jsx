@@ -1195,58 +1195,33 @@ function App() {
 
           {/* Desktop Navigation Menu (Middle) */}
           <nav className="desktop-nav">
-            <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
-              <button 
-                className={`nav-trigger-btn ${activeTab !== 'settings' ? 'active' : ''}`}
-                onClick={() => setOpenDropdown(openDropdown === 'procesos' ? null : 'procesos')}
-                onMouseEnter={() => setOpenDropdown('procesos')}
-              >
-                Procesos <ChevronDown size={14} className={`chevron-icon ${openDropdown === 'procesos' ? 'open' : ''}`} />
-              </button>
-              
-              {openDropdown === 'procesos' && (
-                <div className="nav-dropdown-content">
-                  <div className="dropdown-grid-cards">
-                    <div 
-                      className={`grid-card-nav ${activeTab === 'instances' ? 'selected' : ''}`}
-                      onClick={() => { setActiveTab('instances'); setOpenDropdown(null); }}
-                    >
-                      <div className="card-nav-header">
-                        <Play size={18} className="icon-blue" />
-                        <h4>Ejecuciones Activas</h4>
-                      </div>
-                      <p>Monitorea y completa tus pasos de trabajo activos ({instances.length})</p>
-                    </div>
+            <button 
+              className={`nav-tab-btn ${activeTab === 'instances' ? 'active' : ''}`}
+              onClick={() => setActiveTab('instances')}
+            >
+              <Play size={16} className="icon-blue" />
+              <span>Ejecuciones Activas ({instances.length})</span>
+            </button>
 
-                    {user?.role !== 'guest' && (
-                      <>
-                        <div 
-                          className={`grid-card-nav ${activeTab === 'templates' ? 'selected' : ''}`}
-                          onClick={() => { setActiveTab('templates'); setOpenDropdown(null); }}
-                        >
-                          <div className="card-nav-header">
-                            <FileText size={18} className="icon-orange" />
-                            <h4>Plantillas de Procesos</h4>
-                          </div>
-                          <p>Diseña, edita y lanza nuevas plantillas de procesos ({templates.length})</p>
-                        </div>
+            {user?.role !== 'guest' && (
+              <>
+                <button 
+                  className={`nav-tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('templates')}
+                >
+                  <FileText size={16} className="icon-orange" />
+                  <span>Plantillas de Procesos ({templates.length})</span>
+                </button>
 
-                        <div 
-                          className={`grid-card-nav ${activeTab === 'team' ? 'selected' : ''}`}
-                          onClick={() => { setActiveTab('team'); setOpenDropdown(null); }}
-                        >
-                          <div className="card-nav-header">
-                            <Users size={18} className="icon-green" />
-                            <h4>Equipo de Trabajo</h4>
-                          </div>
-                          <p>Gestiona el personal y asigna roles operativos ({teamMembers.length})</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+                <button 
+                  className={`nav-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('team')}
+                >
+                  <Users size={16} className="icon-green" />
+                  <span>Equipo de Trabajo ({teamMembers.length})</span>
+                </button>
+              </>
+            )}
           </nav>
 
           {/* Right Header Status / Account Dropdown */}
