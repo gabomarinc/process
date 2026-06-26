@@ -1914,7 +1914,8 @@ function App() {
                 </h2>
                 <button className="btn btn-primary" onClick={() => {
                   setEditingMember(null);
-                  setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
+                  setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+                  setMemberModalStep(1);
                   setShowMemberModal(true);
                 }}>
                   ➕ Agregar Personal
@@ -1936,11 +1937,9 @@ function App() {
                     <div key={member.id} className="team-card" style={{ background: 'white', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '220px' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-                          <img 
-                            src={member.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80'} 
-                            alt={member.name} 
-                            style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} 
-                          />
+                          <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.1rem', flexShrink: 0 }}>
+                            {member.name ? member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
+                          </div>
                           <div>
                             <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>{member.name}</h4>
                             <span className="badge" style={{ fontSize: '0.75rem', padding: '0.1rem 0.5rem', marginTop: '2px', display: 'inline-block' }}>
@@ -1958,7 +1957,9 @@ function App() {
                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                             👤 <strong>Jefe Directo:</strong> {(() => {
                               const mgr = teamMembers.find(m => m.id === member.managerId);
-                              return mgr ? mgr.name : 'N/A';
+                              if (mgr) return mgr.name;
+                              const orgAdmin = orgUsers.find(u => u.id === member.managerId || `admin_${u.id}` === member.managerId || `u_${u.id}` === member.managerId || String(u.id) === String(member.managerId));
+                              return orgAdmin ? `${orgAdmin.name} (Admin)` : 'N/A';
                             })()}
                           </div>
                         )}
@@ -1983,7 +1984,8 @@ function App() {
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
                         <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
                           setEditingMember(member);
-                          setMemberFormData({ name: member.name, role: member.role, email: member.email, avatar: member.avatar, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '', geminiApiKey: member.geminiApiKey || '' });
+                          setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
+                          setMemberModalStep(1);
                           setShowMemberModal(true);
                         }}>
                           Editar
@@ -2586,10 +2588,18 @@ function App() {
                       onChange={(e) => setMemberFormData({ ...memberFormData, managerId: e.target.value })}
                     >
                       <option value="">-- Sin jefe directo --</option>
+                      {/* Include other team members */}
                       {teamMembers
                         .filter(m => !editingMember || m.id !== editingMember.id)
                         .map(m => (
                           <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                        ))
+                      }
+                      {/* Include organization users (administrators, agents) */}
+                      {orgUsers
+                        .filter(u => !teamMembers.some(m => m.email === u.email))
+                        .map(u => (
+                          <option key={u.id} value={u.id}>{u.name} ({u.role === 'admin' ? 'Administrador' : 'Agente'})</option>
                         ))
                       }
                     </select>

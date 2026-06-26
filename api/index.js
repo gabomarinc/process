@@ -618,9 +618,13 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
+    // Generate token for password creation/activation
+    const activationToken = crypto.randomBytes(32).toString('hex');
+    const activationExpiry = Date.now() + (24 * 3600000); // 24 hours
+
     const newUser = await pool.query(
-      'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role',
-      [req.user.organizationId, name, email, passwordHash, role]
+      'INSERT INTO users (organization_id, name, email, password_hash, role, reset_token, reset_token_expiry) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, role',
+      [req.user.organizationId, name, email, passwordHash, role, activationToken, activationExpiry]
     );
 
     const user = newUser.rows[0];
@@ -629,6 +633,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     // Get organization name to include in welcome email
     const orgRes = await pool.query('SELECT name FROM organizations WHERE id = $1', [req.user.organizationId]);
     const orgName = orgRes.rows[0]?.name || 'Tu organización';
+
+    const finishAccountLink = `${origin}/?resetToken=${activationToken}`;
 
     const htmlContent = `
       <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
@@ -642,13 +648,11 @@ app.post('/api/users', authenticateToken, async (req, res) => {
         <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
           Has sido invitado por el administrador de <strong>${orgName}</strong> para formar parte del equipo con el rol de <strong>${role === 'agent' ? 'Agente' : 'Invitado'}</strong>.
         </p>
-        <div style="background-color: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #f3f4f6; margin-bottom: 2rem;">
-          <h4 style="margin: 0 0 1rem 0; color: #111827; font-size: 1.1rem;">Tus credenciales de acceso:</h4>
-          <p style="margin: 0.5rem 0; color: #4b5563;"><strong>Email:</strong> ${email}</p>
-          <p style="margin: 0.5rem 0; color: #4b5563;"><strong>Contraseña:</strong> ${password}</p>
-        </div>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+          Para activar tu cuenta y establecer tu contraseña segura, por favor presiona el botón de abajo:
+        </p>
         <div style="text-align: center; margin-bottom: 2rem;">
-          <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Iniciar Sesión</a>
+          <a href="${finishAccountLink}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Activar Cuenta y Elegir Contraseña</a>
         </div>
         <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
         <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
