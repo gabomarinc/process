@@ -1,6 +1,8 @@
-const { Client } = require('pg');
-require('dotenv').config();
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
 
+const { Client } = pg;
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
@@ -10,6 +12,7 @@ if (!databaseUrl) {
 
 const client = new Client({
   connectionString: databaseUrl,
+  ssl: databaseUrl.includes('neon.tech') ? { rejectUnauthorized: false } : false
 });
 
 const createTables = async () => {

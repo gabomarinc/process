@@ -56,7 +56,7 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(201).json({ token, user: newUser.rows[0] });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al registrar usuario' });
+    res.status(500).json({ error: 'Error al registrar usuario', details: err.message });
   }
 });
 
@@ -75,7 +75,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al iniciar sesión' });
+    res.status(500).json({ error: 'Error al iniciar sesión', details: err.message });
   }
 });
 
