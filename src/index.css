@@ -1469,7 +1469,7 @@ button, input, select {
 }
 
 @media (max-width: 900px) {
-  .desktop-nav {
+  .desktop-nav, .desktop-nav-right {
     display: none;
   }
 }
@@ -1517,7 +1517,7 @@ button, input, select {
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 0.75rem;
+  margin-top: 4px;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(25px);
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1527,6 +1527,16 @@ button, input, select {
   width: 480px;
   animation: dropdownFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 1000;
+}
+
+.nav-dropdown-content::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 0;
+  right: 0;
+  height: 12px;
+  background: transparent;
 }
 
 .nav-dropdown-content.dropdown-right {

@@ -1146,7 +1146,7 @@ function App() {
             </div>
           </div>
 
-          {/* Desktop Navigation Menu */}
+          {/* Desktop Navigation Menu (Middle) */}
           <nav className="desktop-nav">
             <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
               <button 
@@ -1200,96 +1200,94 @@ function App() {
                 </div>
               )}
             </div>
+          </nav>
 
-            <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
-              <button 
-                className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
-                onClick={() => setOpenDropdown(openDropdown === 'cuenta' ? null : 'cuenta')}
-                onMouseEnter={() => setOpenDropdown('cuenta')}
-              >
-                <div className="user-avatar-small">
-                  {user?.name ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
-                </div>
-                <span>Mi Cuenta</span>
-                <ChevronDown size={14} className={`chevron-icon ${openDropdown === 'cuenta' ? 'open' : ''}`} />
-              </button>
+          {/* Right Header Status / Account Dropdown */}
+          <div className="header-badge-section">
+            <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center' }}>
+              <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
+                <button 
+                  className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
+                  onClick={() => setOpenDropdown(openDropdown === 'cuenta' ? null : 'cuenta')}
+                  onMouseEnter={() => setOpenDropdown('cuenta')}
+                >
+                  <div className="user-avatar-small">
+                    {user?.name ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
+                  </div>
+                  <span>Mi Cuenta</span>
+                  <ChevronDown size={14} className={`chevron-icon ${openDropdown === 'cuenta' ? 'open' : ''}`} />
+                </button>
 
-              {openDropdown === 'cuenta' && (
-                <div className="nav-dropdown-content dropdown-right">
-                  <div className="dropdown-simple-list">
-                    <div 
-                      className="dropdown-list-item"
-                      onClick={() => { 
-                        setActiveTab('settings'); 
-                        setOpenDropdown(null);
-                        setTimeout(() => {
-                          const el = document.getElementById('profile-form-section');
-                          if (el) el.scrollIntoView({ behavior: 'smooth' });
-                        }, 100);
-                      }}
-                    >
-                      <Smile size={16} />
-                      <div>
-                        <h4>Editar Perfil</h4>
-                        <p>Cambia tus datos personales y del asistente virtual</p>
-                      </div>
-                    </div>
-
-                    <div 
-                      className={`dropdown-list-item ${apiKey ? 'configured' : ''}`}
-                      onClick={() => {
-                        setShowKeyInput(!showKeyInput);
-                        setOpenDropdown(null);
-                      }}
-                    >
-                      <Key size={16} />
-                      <div>
-                        <h4>Gemini API Key</h4>
-                        <p>{apiKey ? 'Clave de Inteligencia Guardada' : 'Configura tu clave para usar IA'}</p>
-                      </div>
-                    </div>
-
-                    {user?.role === 'admin' && (
+                {openDropdown === 'cuenta' && (
+                  <div className="nav-dropdown-content dropdown-right">
+                    <div className="dropdown-simple-list">
                       <div 
                         className="dropdown-list-item"
                         onClick={() => { 
                           setActiveTab('settings'); 
                           setOpenDropdown(null);
                           setTimeout(() => {
-                            const el = document.getElementById('company-form-section');
+                            const el = document.getElementById('profile-form-section');
                             if (el) el.scrollIntoView({ behavior: 'smooth' });
                           }, 100);
                         }}
                       >
-                        <Sparkles size={16} />
+                        <Smile size={16} />
                         <div>
-                          <h4>Detalles de Empresa</h4>
-                          <p>Gestiona el nombre de la organización y accesos</p>
+                          <h4>Editar Perfil</h4>
+                          <p>Cambia tus datos personales y del asistente virtual</p>
                         </div>
                       </div>
-                    )}
 
-                    <div className="dropdown-divider" />
+                      <div 
+                        className={`dropdown-list-item ${apiKey ? 'configured' : ''}`}
+                        onClick={() => {
+                          setShowKeyInput(!showKeyInput);
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        <Key size={16} />
+                        <div>
+                          <h4>Gemini API Key</h4>
+                          <p>{apiKey ? 'Clave de Inteligencia Guardada' : 'Configura tu clave para usar IA'}</p>
+                        </div>
+                      </div>
 
-                    <div className="dropdown-list-item logout-item" onClick={() => { handleLogout(); setOpenDropdown(null); }}>
-                      <LogOut size={16} />
-                      <div>
-                        <h4>Cerrar Sesión</h4>
-                        <p>Salir de forma segura de tu cuenta</p>
+                      {user?.role === 'admin' && (
+                        <div 
+                          className="dropdown-list-item"
+                          onClick={() => { 
+                            setActiveTab('settings'); 
+                            setOpenDropdown(null);
+                            setTimeout(() => {
+                              const el = document.getElementById('company-form-section');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }, 100);
+                          }}
+                        >
+                          <Sparkles size={16} />
+                          <div>
+                            <h4>Detalles de Empresa</h4>
+                            <p>Gestiona el nombre de la organización y accesos</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="dropdown-divider" />
+
+                      <div className="dropdown-list-item logout-item" onClick={() => { handleLogout(); setOpenDropdown(null); }}>
+                        <LogOut size={16} />
+                        <div>
+                          <h4>Cerrar Sesión</h4>
+                          <p>Salir de forma segura de tu cuenta</p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </nav>
-
-          {/* Right Header Status / Badges */}
-          <div className="header-badge-section">
-            <div className="badge primary empatico-badge">
-              <Sparkles size={13} style={{ marginRight: '4px' }} />
-              <span>Kônsul Flow</span>
-            </div>
+            
             <button className="mobile-toggle-btn" onClick={() => setShowMobileMenu(!showMobileMenu)}>
               {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
             </button>
