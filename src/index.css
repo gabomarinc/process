@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,400&display=swap');
 
 :root {
-  --font-sans: 'Outfit', sans-serif;
+  --font-sans: 'Satoshi', 'Outfit', sans-serif;
   --font-serif: 'Playfair Display', serif;
   
   /* Palette - Warm and Inspiring Emotional Design */

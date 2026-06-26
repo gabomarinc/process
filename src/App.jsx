@@ -43,19 +43,23 @@ function App() {
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
       let [resource, config] = args;
+      const currentToken = localStorage.getItem('token');
+      
       if (typeof resource === 'string' && resource.startsWith('/api/') && !resource.startsWith('/api/auth/')) {
         config = config || {};
         config.headers = config.headers || {};
-        const currentToken = localStorage.getItem('token');
         if (currentToken) {
           config.headers['Authorization'] = `Bearer ${currentToken}`;
         }
       }
+      
       const response = await originalFetch(resource, config);
       if (response.status === 401 || response.status === 403) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.reload();
+        if (currentToken) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.reload();
+        }
       }
       return response;
     };
@@ -68,7 +72,17 @@ function App() {
     }
     
     const savedUser = localStorage.getItem('user');
-    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedUser) {
+      const parsedUser = JSON.parse(savedUser);
+      // Force logout if old user object without organizationId
+      if (!parsedUser.organizationId) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.reload();
+        return;
+      }
+      setUser(parsedUser);
+    }
 
     return () => { window.fetch = originalFetch; };
   }, []);
@@ -175,6 +189,8 @@ function App() {
   // Fetch initial data from database
   useEffect(() => {
     const loadData = async () => {
+      if (!localStorage.getItem('token')) return;
+
       try {
         const templatesRes = await fetch('/api/templates');
         const templatesData = await templatesRes.json();
