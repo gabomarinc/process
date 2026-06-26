@@ -19,6 +19,15 @@ const pool = new Pool({
     : false
 });
 
+// Run auto-migration for user role column
+pool.query(`
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin';
+`).then(() => {
+  console.log('Migración de base de datos completada: columna "role" asegurada en la tabla "users".');
+}).catch(err => {
+  console.error('Error al migrar base de datos:', err);
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -34,8 +43,47 @@ if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
   });
 }
 
-// --- AUTH MIDDLEWARE ---
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_konsul_token_2026';
+
+// --- EMAIL SERVICES (RESEND API INTEGRATION) ---
+const sendEmail = async ({ to, subject, html }) => {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.log(`\n======================================================`);
+    console.log(`⚠️ SIMULACIÓN DE CORREO (RESEND_API_KEY no configurado)`);
+    console.log(`   Destinatario: ${to}`);
+    console.log(`   Asunto: ${subject}`);
+    console.log(`   Contenido HTML:`);
+    console.log(html);
+    console.log(`======================================================\n`);
+    return;
+  }
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Kônsul Process <onboarding@resend.dev>',
+        to,
+        subject,
+        html
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Error de Resend API al enviar email:', errText);
+    } else {
+      console.log(`Email enviado con éxito vía Resend a: ${to}`);
+    }
+  } catch (err) {
+    console.error('Error de red al conectar con Resend:', err);
+  }
+};
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -73,14 +121,14 @@ app.post('/api/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, salt);
     
     const newUser = await pool.query(
-      'INSERT INTO users (organization_id, name, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, organization_id, name, email',
-      [orgId, name, email, passwordHash]
+      'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, organization_id, name, email, role',
+      [orgId, name, email, passwordHash, 'admin']
     );
     
     const user = newUser.rows[0];
-    const token = jwt.sign({ id: user.id, organizationId: user.organization_id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     
-    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id } });
+    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: user.role } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al registrar usuario', details: err.message });
@@ -98,9 +146,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
     
     const expiresIn = rememberMe ? '30d' : '1h';
-    const token = jwt.sign({ id: user.id, organizationId: user.organization_id }, JWT_SECRET, { expiresIn });
+    // Fallback default role 'admin' if not defined
+    const userRole = user.role || 'admin';
+    const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: userRole, email: user.email }, JWT_SECRET, { expiresIn });
     
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id } });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: userRole } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al iniciar sesión', details: err.message });
@@ -123,12 +173,39 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       [resetToken, resetTokenExpiry, email]
     );
 
-    const resetLink = `http://localhost:5173/?resetToken=${resetToken}`;
-    console.log('\n======================================================');
-    console.log('🔗 ENLACE DE RECUPERACIÓN DE CONTRASEÑA SOLICITADO');
-    console.log(`   Para: ${email}`);
-    console.log(`   Enlace: ${resetLink}`);
-    console.log('======================================================\n');
+    const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+    const finalResetLink = `${origin}/?resetToken=${resetToken}`;
+
+    const htmlContent = `
+      <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+        </div>
+        <h2 style="color: #111827; margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700; text-align: center;">Recuperación de Contraseña</h2>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 1.5rem;">
+          Hemos recibido una solicitud para restablecer la contraseña de tu cuenta de Kônsul Process.
+        </p>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 2rem;">
+          Presiona el botón de abajo para elegir una nueva contraseña. Este enlace es válido por 1 hora.
+        </p>
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <a href="${finalResetLink}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Restablecer Contraseña</a>
+        </div>
+        <p style="color: #9ca3af; font-size: 0.85rem; line-height: 1.5; text-align: center; margin-top: 2rem;">
+          Si no realizaste esta solicitud, puedes ignorar este correo de forma segura. Tu contraseña permanecerá intacta.
+        </p>
+        <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+        <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+          Kônsul Process &copy; 2026. Todos los derechos reservados.
+        </p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: email,
+      subject: 'Recupera tu contraseña - Kônsul Process',
+      html: htmlContent
+    });
 
     res.json({ message: 'Si el correo existe en nuestro sistema, te hemos enviado un enlace para restablecer tu contraseña.' });
   } catch (err) {
@@ -235,7 +312,23 @@ app.delete('/api/templates/:id', authenticateToken, async (req, res) => {
 app.get('/api/instances', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM instances WHERE organization_id = $1 ORDER BY started_at DESC', [req.user.organizationId]);
-    const mapped = result.rows.map(row => ({
+    let rows = result.rows;
+
+    if (req.user.role === 'guest') {
+      const memberRes = await pool.query('SELECT id FROM team_members WHERE email = $1 AND organization_id = $2', [req.user.email, req.user.organizationId]);
+      const memberId = memberRes.rows[0]?.id;
+      
+      rows = rows.filter(row => {
+        try {
+          const steps = row.steps || [];
+          return steps.some(step => step.assignedTo === memberId || step.assignedTo === req.user.email);
+        } catch (e) {
+          return false;
+        }
+      });
+    }
+
+    const mapped = rows.map(row => ({
       id: row.id,
       templateId: row.template_id,
       title: row.title,
@@ -327,6 +420,67 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [id, req.user.organizationId, instanceId, stepId, instanceName, stepTitle, message]
     );
+
+    // Look up assignee details in the database to send alert email
+    const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1', [instanceId]);
+    if (instRes.rows.length > 0) {
+      const steps = instRes.rows[0].steps || [];
+      const step = steps.find(s => s.id === stepId || s.title === stepTitle);
+      
+      if (step && step.assignedTo) {
+        const memberRes = await pool.query(
+          'SELECT name, email FROM team_members WHERE id = $1 AND organization_id = $2',
+          [step.assignedTo, req.user.organizationId]
+        );
+        
+        if (memberRes.rows.length > 0) {
+          const { name: memberName, email: memberEmail } = memberRes.rows[0];
+          const isOverdue = !id.startsWith('active-');
+          const subject = isOverdue 
+            ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
+            : `📋 Nueva tarea asignada: "${stepTitle}" en "${instanceName}"`;
+
+          const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+
+          const htmlContent = `
+            <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+              <div style="text-align: center; margin-bottom: 2rem;">
+                <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+              </div>
+              <h2 style="color: ${isOverdue ? '#D32F2F' : '#111827'}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
+                ${isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '📋 Tarea Asignada y Activa'}
+              </h2>
+              <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+                Hola <strong>${memberName}</strong>,
+              </p>
+              <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+                ${message}
+              </p>
+              <div style="background-color: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #f3f4f6; margin-bottom: 2rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #111827; font-size: 1rem;">Detalles del Proceso:</h4>
+                <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Caso/Ejecución:</strong> ${instanceName}</p>
+                <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Paso:</strong> ${stepTitle}</p>
+                ${step.description ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
+              </div>
+              <div style="text-align: center; margin-bottom: 2rem;">
+                <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Acceder a la Plataforma</a>
+              </div>
+              <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+              <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+                Kônsul Process &copy; 2026. Todos los derechos reservados.
+              </p>
+            </div>
+          `;
+
+          await sendEmail({
+            to: memberEmail,
+            subject,
+            html: htmlContent
+          });
+        }
+      }
+    }
+
     res.status(201).json({ message: 'Log de notificación registrado' });
   } catch (err) {
     console.error(err);
@@ -412,15 +566,199 @@ app.put('/api/team/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// 12. Delete a team member
-app.delete('/api/team/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
+// --- USER MANAGEMENT & PROFILE ROUTES (RBAC & CONFIGURATION) ---
+
+// Get all users of the organization
+app.get('/api/users', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
   try {
-    await pool.query('DELETE FROM team_members WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
-    res.json({ message: 'Miembro del equipo eliminado con éxito' });
+    const result = await pool.query(
+      'SELECT id, name, email, role, created_at FROM users WHERE organization_id = $1 ORDER BY name ASC',
+      [req.user.organizationId]
+    );
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al eliminar miembro del equipo' });
+    res.status(500).json({ error: 'Error al recuperar usuarios.' });
+  }
+});
+
+// Create/Invite a new user inside the organization
+app.post('/api/users', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  
+  const { name, email, password, role } = req.body;
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ error: 'Todos los campos son obligatorios (nombre, email, contraseña, rol).' });
+  }
+
+  try {
+    // Check if user already exists
+    const existing = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Ya existe un usuario registrado con este correo electrónico.' });
+    }
+
+    // If role is guest, enforce limit of 10
+    if (role === 'guest') {
+      const countRes = await pool.query(
+        'SELECT COUNT(*) FROM users WHERE organization_id = $1 AND role = $2',
+        [req.user.organizationId, 'guest']
+      );
+      const count = parseInt(countRes.rows[0].count, 10);
+      if (count >= 10) {
+        return res.status(400).json({ error: 'Límite excedido: Cada empresa tiene la capacidad de invitar hasta 10 miembros con rol de invitado.' });
+      }
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const newUser = await pool.query(
+      'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role',
+      [req.user.organizationId, name, email, passwordHash, role]
+    );
+
+    const user = newUser.rows[0];
+    const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+    
+    // Get organization name to include in welcome email
+    const orgRes = await pool.query('SELECT name FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const orgName = orgRes.rows[0]?.name || 'Tu organización';
+
+    const htmlContent = `
+      <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+        </div>
+        <h2 style="color: #111827; margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700; text-align: center;">¡Te damos la bienvenida a Kônsul Process!</h2>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+          Hola <strong>${name}</strong>,
+        </p>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+          Has sido invitado por el administrador de <strong>${orgName}</strong> para formar parte del equipo con el rol de <strong>${role === 'agent' ? 'Agente' : 'Invitado'}</strong>.
+        </p>
+        <div style="background-color: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #f3f4f6; margin-bottom: 2rem;">
+          <h4 style="margin: 0 0 1rem 0; color: #111827; font-size: 1.1rem;">Tus credenciales de acceso:</h4>
+          <p style="margin: 0.5rem 0; color: #4b5563;"><strong>Email:</strong> ${email}</p>
+          <p style="margin: 0.5rem 0; color: #4b5563;"><strong>Contraseña:</strong> ${password}</p>
+        </div>
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Iniciar Sesión</a>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+        <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+          Kônsul Process &copy; 2026. Todos los derechos reservados.
+        </p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: email,
+      subject: `Invitación de acceso - Kônsul Process (${orgName})`,
+      html: htmlContent
+    });
+
+    res.status(201).json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear usuario.', details: err.message });
+  }
+});
+
+// Delete a user
+app.delete('/api/users/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { id } = req.params;
+  
+  if (parseInt(id, 10) === req.user.id) {
+    return res.status(400).json({ error: 'No puedes eliminar tu propio usuario de la cuenta.' });
+  }
+
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    res.json({ message: 'Usuario eliminado con éxito.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar usuario.' });
+  }
+});
+
+// Update self profile
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  const { name, email, password } = req.body;
+  try {
+    if (email) {
+      const existing = await pool.query('SELECT * FROM users WHERE email = $1 AND id <> $2', [email, req.user.id]);
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ error: 'Este correo electrónico ya está en uso por otro usuario.' });
+      }
+    }
+
+    let query = 'UPDATE users SET name = $1, email = $2';
+    let params = [name, email, req.user.id];
+
+    if (password && password.trim() !== '') {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(password, salt);
+      query += ', password_hash = $4 WHERE id = $3 RETURNING id, organization_id, name, email, role';
+      params.push(passwordHash);
+    } else {
+      query += ' WHERE id = $3 RETURNING id, organization_id, name, email, role';
+    }
+
+    const result = await pool.query(query, params);
+    const user = result.rows[0];
+
+    const token = jwt.sign(
+      { id: user.id, organizationId: user.organization_id, role: user.role, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ token, user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar el perfil.' });
+  }
+});
+
+// Get organization details
+app.get('/api/organization', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM organizations WHERE id = $1', [req.user.organizationId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Organización no encontrada.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al recuperar organización.' });
+  }
+});
+
+// Update organization name
+app.put('/api/organization', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
+  }
+  try {
+    await pool.query(
+      'UPDATE organizations SET name = $1 WHERE id = $2',
+      [name, req.user.organizationId]
+    );
+    res.json({ message: 'Nombre de la empresa actualizado con éxito.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar la empresa.' });
   }
 });
 

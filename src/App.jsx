@@ -185,6 +185,15 @@ function App() {
   const [detailModalTab, setDetailModalTab] = useState('steps'); // 'steps' or 'team'
   const [draftAssignment, setDraftAssignment] = useState({}); // key: member.id, value: array of stepIndices that are toggled on
 
+  // Configuration states
+  const [orgUsers, setOrgUsers] = useState([]);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserFormData, setNewUserFormData] = useState({ name: '', email: '', password: '', role: 'agent' });
+  const [addUserError, setAddUserError] = useState('');
+  const [profileFormData, setProfileFormData] = useState({ name: '', email: '', password: '' });
+  const [orgFormData, setOrgFormData] = useState({ name: '' });
+  const [settingsSuccessMsg, setSettingsSuccessMsg] = useState('');
+  const [settingsErrorMsg, setSettingsErrorMsg] = useState('');
 
   // Fetch initial data from database
   useEffect(() => {
@@ -211,12 +220,31 @@ function App() {
         const teamRes = await fetch('/api/team');
         const teamData = await teamRes.json();
         setTeamMembers(teamData);
+
+        // Fetch users and organization details
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser);
+          setProfileFormData({ name: parsed.name, email: parsed.email, password: '' });
+          if (parsed.role === 'admin') {
+            const usersRes = await fetch('/api/users');
+            if (usersRes.ok) {
+              const usersData = await usersRes.json();
+              setOrgUsers(usersData);
+            }
+            const orgRes = await fetch('/api/organization');
+            if (orgRes.ok) {
+              const orgData = await orgRes.json();
+              setOrgFormData({ name: orgData.name });
+            }
+          }
+        }
       } catch (err) {
         console.error("Error al cargar datos desde Neon:", err);
       }
     };
     loadData();
-  }, []);
+  }, [token]);
 
   const activeInstance = instances.find(inst => inst.id === selectedInstanceId);
   const activeTemplate = templates.find(t => t.id === selectedTemplateId);
@@ -367,6 +395,88 @@ function App() {
           console.error("Error al registrar notificacion de asignacion:", err);
         }
       }
+    }
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileFormData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo actualizar el perfil.');
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      setToken(data.token);
+      setSettingsSuccessMsg('Perfil actualizado con éxito.');
+      setProfileFormData(prev => ({ ...prev, password: '' }));
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
+  const handleUpdateOrg = async (e) => {
+    e.preventDefault();
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch('/api/organization', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orgFormData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo actualizar la empresa.');
+      setSettingsSuccessMsg('Empresa actualizada con éxito.');
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
+  const handleAddOrgUser = async (e) => {
+    e.preventDefault();
+    setAddUserError('');
+    
+    if (newUserFormData.role === 'guest') {
+      const currentGuestsCount = orgUsers.filter(u => u.role === 'guest').length;
+      if (currentGuestsCount >= 10) {
+        setAddUserError('Límite alcanzado: Cada empresa puede invitar hasta 10 miembros con rol de invitado.');
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUserFormData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al crear usuario.');
+      
+      setOrgUsers(prev => [...prev, data]);
+      setShowAddUserModal(false);
+      setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
+    } catch (err) {
+      setAddUserError(err.message);
+    }
+  };
+
+  const handleDeleteOrgUser = async (userId) => {
+    if (!window.confirm('¿Estás seguro de eliminar a este usuario? Ya no podrá acceder al sistema.')) return;
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al eliminar usuario.');
+      setOrgUsers(prev => prev.filter(u => u.id !== userId));
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -868,7 +978,9 @@ function App() {
     return (
       <div className="auth-container">
         <div className="auth-card">
-          <div className="auth-logo">K</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+            <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '48px', objectFit: 'contain' }} />
+          </div>
           <h2 className="auth-title">{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
           
@@ -986,15 +1098,21 @@ function App() {
 
       {/* Header */}
       <header className="app-header">
-        <div className="logo-section">
-          <div className="logo-icon">K</div>
-          <div className="logo-text">
-            <h1>Kônsul Process</h1>
-            <span>Emotional Design Flow</span>
+        <div className="logo-section" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '36px', objectFit: 'contain' }} />
+          <div className="logo-text" style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: '12px' }}>
+            <h1 style={{ fontSize: '1.2rem', margin: 0, fontWeight: 700 }}>Process</h1>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Emotional Design Flow</span>
           </div>
         </div>
         
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Empresa: <strong>{orgFormData.name || user?.companyName || 'Cargando...'}</strong> | Rol: <span className={`badge ${user?.role === 'admin' ? 'primary' : 'success'}`} style={{ textTransform: 'capitalize' }}>{user?.role}</span>
+          </span>
+          <button className="btn btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={handleLogout}>
+            Cerrar Sesión
+          </button>
           <button 
             className={`api-key-badge ${apiKey ? 'configured' : ''}`}
             onClick={() => setShowKeyInput(!showKeyInput)}
@@ -1047,18 +1165,32 @@ function App() {
         >
           🔄 Ejecuciones Activas ({instances.length})
         </button>
-        <button 
-          className={`tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
-          onClick={() => setActiveTab('templates')}
-        >
-          📂 Plantillas de Procesos ({templates.length})
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'team' ? 'active' : ''}`}
-          onClick={() => setActiveTab('team')}
-        >
-          👥 Equipo de Trabajo ({teamMembers.length})
-        </button>
+        
+        {user?.role !== 'guest' && (
+          <>
+            <button 
+              className={`tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
+              onClick={() => setActiveTab('templates')}
+            >
+              📂 Plantillas de Procesos ({templates.length})
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'team' ? 'active' : ''}`}
+              onClick={() => setActiveTab('team')}
+            >
+              👥 Equipo de Trabajo ({teamMembers.length})
+            </button>
+          </>
+        )}
+
+        {user?.role === 'admin' && (
+          <button 
+            className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => setActiveTab('settings')}
+          >
+            ⚙️ Configuración
+          </button>
+        )}
       </div>
 
       {/* Main Companion Banner (Active Execution only) */}
@@ -1080,10 +1212,10 @@ function App() {
       )}
 
       {/* Dashboard Grid */}
-      <div className="dashboard-grid">
+      <div className={activeTab === 'settings' ? '' : 'dashboard-grid'}>
         
         {/* Left Side: Display based on Active Tab */}
-        <div className="card-section">
+        <div className="card-section" style={activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : {}}>
           {activeTab === 'instances' ? (
             /* Active Execution checklist view */
             activeInstance ? (
@@ -1117,119 +1249,134 @@ function App() {
                 </div>
 
                 <div className="steps-container">
-                  {activeInstance.steps.map((step, idx) => {
-                    const isPrevCompleted = idx === 0 || activeInstance.steps[idx - 1].isCompleted;
-                    const isActive = !step.isCompleted && isPrevCompleted;
-                    const isLocked = !step.isCompleted && !isPrevCompleted;
-                    const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
-                    
-                    return (
-                      <div 
-                        key={step.id} 
-                        className={`step-row ${step.isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
-                        style={{ opacity: isLocked ? 0.6 : 1 }}
-                      >
-                        <div className="step-indicator">
-                          {step.isCompleted ? <Check size={22} /> : idx + 1}
-                        </div>
+                  {(() => {
+                    const stepsActive = [];
+                    activeInstance.steps.forEach((step, idx) => {
+                      if (idx === 0) {
+                        stepsActive.push(true);
+                      } else {
+                        const prevStep = activeInstance.steps[idx - 1];
+                        const isPrevCompleted = prevStep.isCompleted;
+                        const isSameDeadline = prevStep.relativeOffsetDays === step.relativeOffsetDays ||
+                          new Date(prevStep.dueDate).toDateString() === new Date(step.dueDate).toDateString();
+                        const active = isPrevCompleted || (stepsActive[idx - 1] && isSameDeadline);
+                        stepsActive.push(active);
+                      }
+                    });
 
-                        <div className="step-card">
-                          <div className="step-card-header">
-                            <div>
-                              <h4>{step.title}</h4>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
-                                {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
+                    return activeInstance.steps.map((step, idx) => {
+                      const isActive = !step.isCompleted && stepsActive[idx];
+                      const isLocked = !step.isCompleted && !stepsActive[idx];
+                      const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
+                      
+                      return (
+                        <div 
+                          key={step.id} 
+                          className={`step-row ${step.isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+                          style={{ opacity: isLocked ? 0.6 : 1 }}
+                        >
+                          <div className="step-indicator">
+                            {step.isCompleted ? <Check size={22} /> : idx + 1}
+                          </div>
+
+                          <div className="step-card">
+                            <div className="step-card-header">
+                              <div>
+                                <h4>{step.title}</h4>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                                  {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
+                                </span>
+                              </div>
+                              
+                              <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
+                                {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
                               </span>
                             </div>
                             
-                            <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
-                              {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                            </span>
-                          </div>
-                          
-                          <p>{step.description}</p>
+                            <p>{step.description}</p>
 
-                          {/* Overdue alert element */}
-                          {isOverdue && (
-                            <div className="overdue-banner">
-                              <AlertCircle size={16} />
-                              <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}. Interesados notificados.</span>
-                            </div>
-                          )}
+                            {/* Overdue alert element */}
+                            {isOverdue && (
+                              <div className="overdue-banner">
+                                <AlertCircle size={16} />
+                                <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}. Interesados notificados.</span>
+                              </div>
+                            )}
 
-                          {!isLocked && (
-                            <div className="step-action-area">
-                              {step.type === 'manual' ? (
-                                <label className="emotional-checkbox-label">
-                                  <input 
-                                    type="checkbox"
-                                    checked={step.isCompleted}
-                                    disabled={step.isCompleted}
-                                    onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
-                                  />
-                                  <div className="checkbox-visual">
-                                    {step.isCompleted && <Check size={16} />}
-                                  </div>
-                                  <span>
-                                    {step.isCompleted ? '¡Logrado con éxito!' : 'Marcar este paso como hecho'}
-                                  </span>
-                                </label>
-                              ) : (
-                                <div>
-                                  {step.isCompleted ? (
-                                    <div className="uploaded-badge">
-                                      <FileCheck size={16} />
-                                      <span>{step.uploadedFileName || 'Documento cargado'}</span>
+                            {!isLocked && (
+                              <div className="step-action-area">
+                                {step.type === 'manual' ? (
+                                  <label className="emotional-checkbox-label">
+                                    <input 
+                                      type="checkbox"
+                                      checked={step.isCompleted}
+                                      disabled={step.isCompleted}
+                                      onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
+                                    />
+                                    <div className="checkbox-visual">
+                                      {step.isCompleted && <Check size={16} />}
                                     </div>
-                                  ) : (
-                                    <label className="step-file-upload" style={{ display: 'block' }}>
-                                      <input 
-                                        type="file" 
-                                        style={{ display: 'none' }}
-                                        accept={step.acceptedFormats?.join(',')}
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                          }
-                                        }}
-                                      />
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                        <Upload size={16} className="text-primary" />
-                                        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
-                                          Subir archivo requerido ({step.acceptedFormats?.join(', ')})
-                                        </span>
+                                    <span>
+                                      {step.isCompleted ? '¡Logrado con éxito!' : 'Marcar este paso como hecho'}
+                                    </span>
+                                  </label>
+                                ) : (
+                                  <div>
+                                    {step.isCompleted ? (
+                                      <div className="uploaded-badge">
+                                        <FileCheck size={16} />
+                                        <span>{step.uploadedFileName || 'Documento cargado'}</span>
                                       </div>
-                                    </label>
-                                  )}
-                                </div>
-                              )}
+                                    ) : (
+                                      <label className="step-file-upload" style={{ display: 'block' }}>
+                                        <input 
+                                          type="file" 
+                                          style={{ display: 'none' }}
+                                          accept={step.acceptedFormats?.join(',')}
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                            }
+                                          }}
+                                        />
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                          <Upload size={16} className="text-primary" />
+                                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                                            Subir archivo requerido ({step.acceptedFormats?.join(', ')})
+                                          </span>
+                                        </div>
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
 
-                              {isActive && step.motivation && (
-                                <div className="step-motivation">
-                                  💡 {step.motivation}
-                                </div>
-                              )}
+                                {isActive && step.motivation && (
+                                  <div className="step-motivation">
+                                    💡 {step.motivation}
+                                  </div>
+                                )}
 
-                              {step.assignedTo && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', width: 'fit-content' }}>
-                                  {(() => {
-                                    const member = teamMembers.find(m => m.id === step.assignedTo);
-                                    return member ? (
-                                      <>
-                                        <img src={member.avatar} alt={member.name} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        <span>Responsable: <strong>{member.name}</strong> ({member.role})</span>
-                                      </>
-                                    ) : <span>Asignado</span>;
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                {step.assignedTo && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', width: 'fit-content' }}>
+                                    {(() => {
+                                      const member = teamMembers.find(m => m.id === step.assignedTo);
+                                      return member ? (
+                                        <>
+                                          <img src={member.avatar} alt={member.name} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} />
+                                          <span>Responsable: <strong>{member.name}</strong> ({member.role})</span>
+                                        </>
+                                      ) : <span>Asignado</span>;
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             ) : (
@@ -1753,7 +1900,7 @@ function App() {
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'team' ? (
             /* Team Tab View */
             <div>
               <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1845,189 +1992,357 @@ function App() {
                 </div>
               )}
             </div>
+          ) : (
+            /* Settings Tab View (activeTab === 'settings') */
+            <div>
+              <div className="section-title">
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                  ⚙️ Configuración del Sistema
+                </h2>
+              </div>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
+                Administra los detalles de tu cuenta personal, la información general de la empresa y la gestión de usuarios con sus respectivos roles de acceso.
+              </p>
+
+              {settingsSuccessMsg && (
+                <div style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
+                  {settingsSuccessMsg}
+                </div>
+              )}
+              {settingsErrorMsg && (
+                <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
+                  {settingsErrorMsg}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                
+                {/* Form 1: Profile Details */}
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Mi Perfil</h3>
+                  <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre Completo</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={profileFormData.name} 
+                        onChange={(e) => setProfileFormData({ ...profileFormData, name: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Correo Electrónico</label>
+                      <input 
+                        type="email" 
+                        className="form-input" 
+                        value={profileFormData.email} 
+                        onChange={(e) => setProfileFormData({ ...profileFormData, email: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nueva Contraseña (dejar vacío para mantener actual)</label>
+                      <input 
+                        type="password" 
+                        className="form-input" 
+                        placeholder="••••••••" 
+                        value={profileFormData.password} 
+                        onChange={(e) => setProfileFormData({ ...profileFormData, password: e.target.value })} 
+                      />
+                    </div>
+                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                      Actualizar Perfil
+                    </button>
+                  </form>
+                </div>
+
+                {/* Form 2: Organization Name */}
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
+                  <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre de la Organización</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={orgFormData.name} 
+                        onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} 
+                        required 
+                      />
+                    </div>
+                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                      Actualizar Empresa
+                    </button>
+                  </form>
+                  <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Resumen de Roles de la Cuenta:</h4>
+                    <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <li><strong>Admin:</strong> Control total, ve todos los procesos, plantillas y configuraciones.</li>
+                      <li><strong>Agente:</strong> Colabora en el equipo, ve procesos y plantillas, pero no modifica configuraciones.</li>
+                      <li><strong>Invitado:</strong> Clientes o proveedores. Límite de 10 por empresa. Solo ven ejecuciones en las que participan.</li>
+                    </ul>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* User management list */}
+              <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Gestión de Usuarios</h3>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Administradores, Agentes e Invitados registrados.
+                    </p>
+                  </div>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => {
+                      setAddUserError('');
+                      setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
+                      setShowAddUserModal(true);
+                    }}
+                  >
+                    ➕ Invitar / Registrar Usuario
+                  </button>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '0.75rem 1rem' }}>Nombre</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Email</th>
+                        <th style={{ padding: '0.75rem 1rem' }}>Rol</th>
+                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orgUsers.map(u => (
+                        <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                          <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
+                          <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
+                          <td style={{ padding: '1rem' }}>
+                            <span 
+                              className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'agent' ? 'info' : 'success'}`} 
+                              style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                            >
+                              {u.role === 'admin' ? 'Administrador' : u.role === 'agent' ? 'Agente' : 'Invitado'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem', textAlign: 'right' }}>
+                            {u.id === user?.id ? (
+                              <span style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-muted)' }}>Tú</span>
+                            ) : (
+                              <button 
+                                className="btn btn-danger" 
+                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', color: '#d32f2f' }}
+                                onClick={() => handleDeleteOrgUser(u.id)}
+                              >
+                                Eliminar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
+                  {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
+                    <span style={{ color: '#d32f2f', fontWeight: 600 }}>⚠️ Límite de invitados alcanzado</span>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
         {/* Right Side: Operations Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
-          
-          {/* Uploader / Template Creator */}
-          <div className="card-section">
-            <h3 className="section-title">Crear Plantilla con IA</h3>
+        {activeTab !== 'settings' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
             
-            {!apiKey && (
-              <div className="warning-alert" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={16} />
-                <span>Modo Simulación. Configura tu API Key de Gemini en la parte superior.</span>
-              </div>
-            )}
-
-            <div className="upload-zone" style={{ position: 'relative' }}>
-              <input 
-                type="file" 
-                id="main-uploader" 
-                style={{ display: 'none' }} 
-                onChange={handleFileUpload}
-                disabled={isUploading}
-                accept=".txt,.md,.json,.pdf,.docx"
-              />
-              <label htmlFor="main-uploader" style={{ cursor: 'pointer', display: 'block' }}>
-                <div className="upload-icon-container">
-                  <Upload size={28} />
-                </div>
-                <h3>Sube un archivo de proceso</h3>
-                <p>Formatos sugeridos: .pdf, .docx, .txt, .md</p>
-              </label>
-
-              {isUploading && (
-                <div className="parsing-overlay">
-                  <div className="spinner" />
-                  <p style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{uploadStatusMsg}</p>
-                  <div className="parsing-progress">
-                    <div className="parsing-bar" style={{ width: `${uploadProgress}%` }} />
-                  </div>
+            {/* Uploader / Template Creator */}
+            <div className="card-section">
+              <h3 className="section-title">Crear Plantilla con IA</h3>
+              
+              {!apiKey && (
+                <div className="warning-alert" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertTriangle size={16} />
+                  <span>Modo Simulación. Configura tu API Key de Gemini en la parte superior.</span>
                 </div>
               )}
+
+              <div className="upload-zone" style={{ position: 'relative' }}>
+                <input 
+                  type="file" 
+                  id="main-uploader" 
+                  style={{ display: 'none' }} 
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                  accept=".txt,.md,.json,.pdf,.docx"
+                />
+                <label htmlFor="main-uploader" style={{ cursor: 'pointer', display: 'block' }}>
+                  <div className="upload-icon-container">
+                    <Upload size={28} />
+                  </div>
+                  <h3>Sube un archivo de proceso</h3>
+                  <p>Formatos sugeridos: .pdf, .docx, .txt, .md</p>
+                </label>
+
+                {isUploading && (
+                  <div className="parsing-overlay">
+                    <div className="spinner" />
+                    <p style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{uploadStatusMsg}</p>
+                    <div className="parsing-progress">
+                      <div className="parsing-bar" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="divider">O pega las pautas directamente</div>
+
+              <form onSubmit={handleManualSubmit}>
+                <textarea 
+                  className="textarea-input"
+                  placeholder="Ejemplo: Proceso de Onboarding. Día 1: Kickoff inicial. Día 2: Subir identificación (digital). Día 3: Firma de contrato de confidencialidad."
+                  value={manualText}
+                  onChange={(e) => setManualText(e.target.value)}
+                  disabled={isUploading}
+                />
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  disabled={isUploading || !manualText.trim()}
+                >
+                  <Sparkles size={16} />
+                  {apiKey ? "Generar Plantilla con Gemini" : "Generar Plantilla Simulada"}
+                </button>
+              </form>
             </div>
 
-            <div className="divider">O pega las pautas directamente</div>
+            {/* List based on active tab */}
+            <div className="card-section">
+              {activeTab === 'instances' ? (
+                <div>
+                  <h3 className="section-title">Ejecuciones Activas</h3>
+                  <div className="process-list">
+                    {instances.map(inst => {
+                      const total = inst.steps.length;
+                      const completed = inst.steps.filter(s => s.isCompleted).length;
+                      const percentage = Math.round((completed / total) * 100) || 0;
+                      const isOverdue = checkOverdueSteps(inst);
 
-            <form onSubmit={handleManualSubmit}>
-              <textarea 
-                className="textarea-input"
-                placeholder="Ejemplo: Proceso de Onboarding. Día 1: Kickoff inicial. Día 2: Subir identificación (digital). Día 3: Firma de contrato de confidencialidad."
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                disabled={isUploading}
-              />
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
-                style={{ width: '100%', marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                disabled={isUploading || !manualText.trim()}
-              >
-                <Sparkles size={16} />
-                {apiKey ? "Generar Plantilla con Gemini" : "Generar Plantilla Simulada"}
-              </button>
-            </form>
-          </div>
-
-          {/* List based on active tab */}
-          <div className="card-section">
-            {activeTab === 'instances' ? (
-              <div>
-                <h3 className="section-title">Ejecuciones Activas</h3>
-                <div className="process-list">
-                  {instances.map(inst => {
-                    const total = inst.steps.length;
-                    const completed = inst.steps.filter(s => s.isCompleted).length;
-                    const percentage = Math.round((completed / total) * 100) || 0;
-                    const isOverdue = checkOverdueSteps(inst);
-
-                    return (
-                      <div 
-                        key={inst.id}
-                        className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
-                        onClick={() => setSelectedInstanceId(inst.id)}
-                        style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
-                      >
-                        <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <h4 style={{ fontSize: '1rem', fontWeight: 'bold' }}>{inst.instanceName}</h4>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
-                            <button 
-                              onClick={(e) => deleteInstance(inst.id, e)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                      return (
+                        <div 
+                          key={inst.id}
+                          className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
+                          onClick={() => setSelectedInstanceId(inst.id)}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                        >
+                          <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h4 style={{ fontSize: '1rem', fontWeight: 'bold' }}>{inst.instanceName}</h4>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
+                              <button 
+                                onClick={(e) => deleteInstance(inst.id, e)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        
-                        <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                            {inst.category}
-                          </span>
-                          {isOverdue && (
-                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
-                              ⚠️ Demorado
+                          
+                          <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                              {inst.category}
                             </span>
-                          )}
-                        </div>
-
-                        <div className="process-progress-container">
-                          <div className="progress-bar-bg">
-                            <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                            {isOverdue && (
+                              <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
+                                ⚠️ Demorado
+                              </span>
+                            )}
                           </div>
-                          <span className="progress-percent">{percentage}%</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : activeTab === 'templates' ? (
-              <div>
-                <h3 className="section-title">Plantillas Disponibles</h3>
-                <div className="process-list">
-                  {templates.map(temp => (
-                    <div 
-                      key={temp.id}
-                      className={`process-card ${temp.id === selectedTemplateId ? 'active' : ''}`}
-                      onClick={() => setSelectedTemplateId(temp.id)}
-                    >
-                      <div className="process-card-header">
-                        <h4>{temp.title}</h4>
-                        <span style={{ fontSize: '1.25rem' }}>{temp.companionAvatar}</span>
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                        {temp.description ? (temp.description.length > 70 ? temp.description.substring(0, 70) + '...' : temp.description) : ''}
-                      </p>
-                      <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                        {temp.category || 'General'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div>
-                <h3 className="section-title">Resumen de Tareas</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  Los miembros de tu equipo están asignados a tareas operativas específicas. Las notificaciones se enviarán automáticamente a sus correos cuando sus tareas se activen.
-                </p>
-              </div>
-            )}
-          </div>
 
-          {/* Real-time Overdue Notification Logs Drawer */}
-          <div className="notification-panel">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bell size={18} style={{ color: '#D32F2F' }} /> Registro de Notificaciones Enviadas
-            </h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Historial de alertas por atraso de plazos enviadas a los responsables.
-            </p>
-            <div className="notification-list">
-              {notificationLogs.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No hay notificaciones de retraso por el momento. ¡Todo va en tiempo! ☀️
+                          <div className="process-progress-container">
+                            <div className="progress-bar-bg">
+                              <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                            </div>
+                            <span className="progress-percent">{percentage}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : activeTab === 'templates' ? (
+                <div>
+                  <h3 className="section-title">Plantillas Disponibles</h3>
+                  <div className="process-list">
+                    {templates.map(temp => (
+                      <div 
+                        key={temp.id}
+                        className={`process-card ${temp.id === selectedTemplateId ? 'active' : ''}`}
+                        onClick={() => setSelectedTemplateId(temp.id)}
+                      >
+                        <div className="process-card-header">
+                          <h4>{temp.title}</h4>
+                          <span style={{ fontSize: '1.25rem' }}>{temp.companionAvatar}</span>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                          {temp.description ? (temp.description.length > 70 ? temp.description.substring(0, 70) + '...' : temp.description) : ''}
+                        </p>
+                        <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                          {temp.category || 'General'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                notificationLogs.map(log => (
-                  <div key={log.id} className="notification-item">
-                    <div>
-                      <strong>{log.instanceName}</strong>
-                      <div style={{ marginTop: '2px', color: 'var(--text-muted)' }}>{log.message}</div>
-                    </div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.time}</span>
-                  </div>
-                ))
+                <div>
+                  <h3 className="section-title">Resumen de Tareas</h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Los miembros de tu equipo están asignados a tareas operativas específicas. Las notificaciones se enviarán automáticamente a sus correos cuando sus tareas se activen.
+                  </p>
+                </div>
               )}
             </div>
-          </div>
 
-        </div>
+            {/* Real-time Overdue Notification Logs Drawer */}
+            <div className="notification-panel">
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bell size={18} style={{ color: '#D32F2F' }} /> Registro de Notificaciones Enviadas
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Historial de alertas por atraso de plazos enviadas a los responsables.
+              </p>
+              <div className="notification-list">
+                {notificationLogs.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No hay notificaciones de retraso por el momento. ¡Todo va en tiempo! ☀️
+                  </div>
+                ) : (
+                  notificationLogs.map(log => (
+                    <div key={log.id} className="notification-item">
+                      <div>
+                        <strong>{log.instanceName}</strong>
+                        <div style={{ marginTop: '2px', color: 'var(--text-muted)' }}>{log.message}</div>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.time}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
 
       </div>
 
@@ -2127,7 +2442,7 @@ function App() {
       {/* Team Member Add/Edit Modal */}
       {showMemberModal && (
         <div className="modal-overlay" style={{ zIndex: 1000 }}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--color-primary-hover)', marginBottom: '0.5rem' }}>
               {editingMember ? '📝 Editar Miembro de Equipo' : '👥 Agregar Personal al Equipo'}
             </h3>
@@ -2243,6 +2558,90 @@ function App() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={() => setShowAddUserModal(false)}>
+          <form className="modal-card" style={{ maxWidth: '450px', width: '95%' }} onSubmit={handleAddOrgUser} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--color-primary-hover)', marginBottom: '0.25rem' }}>
+              👤 Registrar Nuevo Usuario
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+              Crea un usuario para tu organización. Podrá iniciar sesión con su correo y contraseña.
+            </p>
+
+            {addUserError && (
+              <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                {addUserError}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Nombre Completo *</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                value={newUserFormData.name} 
+                onChange={(e) => setNewUserFormData({ ...newUserFormData, name: e.target.value })} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Correo Electrónico *</label>
+              <input 
+                type="email" 
+                className="form-input" 
+                value={newUserFormData.email} 
+                onChange={(e) => setNewUserFormData({ ...newUserFormData, email: e.target.value })} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Contraseña Temporal *</label>
+              <input 
+                type="password" 
+                className="form-input" 
+                value={newUserFormData.password} 
+                onChange={(e) => setNewUserFormData({ ...newUserFormData, password: e.target.value })} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Rol del Usuario *</label>
+              <select
+                className="form-input"
+                value={newUserFormData.role}
+                onChange={(e) => setNewUserFormData({ ...newUserFormData, role: e.target.value })}
+                required
+              >
+                <option value="agent">Agente (Miembro de equipo)</option>
+                <option value="guest">Invitado (Cliente o Proveedor)</option>
+              </select>
+              <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                Los invitados tienen un límite estricto de hasta 10 por empresa.
+              </small>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => setShowAddUserModal(false)}
+              >
+                Cancelar
+              </button>
+              <button 
+                type="submit" 
+                className="btn btn-primary"
+              >
+                Crear Usuario
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

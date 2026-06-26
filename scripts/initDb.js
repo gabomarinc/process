@@ -50,6 +50,7 @@ const createTables = async () => {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'admin',
         reset_token VARCHAR(255),
         reset_token_expiry BIGINT,
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
