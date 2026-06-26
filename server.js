@@ -23,15 +23,17 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
-// Log database connection check on start
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Error al conectar a la base de datos Neon en el servidor:', err.stack);
-  } else {
-    console.log('Servidor Express conectado a la base de datos Neon.');
-    release();
-  }
-});
+// Log database connection check on start (only locally)
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+  pool.connect((err, client, release) => {
+    if (err) {
+      console.error('Error al conectar a la base de datos Neon en el servidor:', err.stack);
+    } else {
+      console.log('Servidor Express conectado a la base de datos Neon.');
+      release();
+    }
+  });
+}
 
 // --- API ROUTES ---
 
