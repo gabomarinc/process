@@ -1117,6 +1117,53 @@ function App() {
       </div>
     );
   }
+  const floatingItems = [
+    {
+      id: 'instances',
+      label: 'Ejecuciones',
+      icon: <Play size={20} />,
+      type: 'tab',
+      onClick: () => setActiveTab('instances')
+    },
+    ...(user?.role !== 'guest' ? [
+      {
+        id: 'templates',
+        label: 'Plantillas',
+        icon: <FileText size={20} />,
+        type: 'tab',
+        onClick: () => setActiveTab('templates')
+      },
+      {
+        id: 'team',
+        label: 'Equipo',
+        icon: <Users size={20} />,
+        type: 'tab',
+        onClick: () => setActiveTab('team')
+      }
+    ] : []),
+    {
+      id: 'settings',
+      label: 'Ajustes',
+      icon: <Smile size={20} />,
+      type: 'tab',
+      onClick: () => setActiveTab('settings')
+    },
+    {
+      id: 'gemini',
+      label: 'Gemini Key',
+      icon: <Key size={20} className={apiKey ? 'text-primary' : ''} />,
+      type: 'action',
+      onClick: () => setShowKeyInput(!showKeyInput)
+    },
+    {
+      id: 'logout',
+      label: 'Salir',
+      icon: <LogOut size={20} />,
+      type: 'action',
+      onClick: handleLogout
+    }
+  ];
+
   return (
     <div className="app-container">
       {/* Background Confetti */}
@@ -1287,75 +1334,29 @@ function App() {
                 )}
               </div>
             </div>
-            
-            <button className="mobile-toggle-btn" onClick={() => setShowMobileMenu(!showMobileMenu)}>
-              {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
-            </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Drawer / Menu */}
-        {showMobileMenu && (
-          <div className="mobile-nav-drawer">
-            <div className="mobile-drawer-content">
-              <div className="mobile-drawer-header">
-                <h3>Menú de Navegación</h3>
-                <button className="close-btn" onClick={() => setShowMobileMenu(false)}><X size={20} /></button>
-              </div>
-              <div className="mobile-drawer-body">
-                <div className="mobile-section-title">Procesos</div>
-                <div className="mobile-links-list">
-                  <div 
-                    className={`mobile-link-item ${activeTab === 'instances' ? 'active' : ''}`}
-                    onClick={() => { setActiveTab('instances'); setShowMobileMenu(false); }}
-                  >
-                    🔄 Ejecuciones Activas ({instances.length})
-                  </div>
-                  {user?.role !== 'guest' && (
-                    <>
-                      <div 
-                        className={`mobile-link-item ${activeTab === 'templates' ? 'active' : ''}`}
-                        onClick={() => { setActiveTab('templates'); setShowMobileMenu(false); }}
-                      >
-                        📂 Plantillas de Procesos ({templates.length})
-                      </div>
-                      <div 
-                        className={`mobile-link-item ${activeTab === 'team' ? 'active' : ''}`}
-                        onClick={() => { setActiveTab('team'); setShowMobileMenu(false); }}
-                      >
-                        👥 Equipo de Trabajo ({teamMembers.length})
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="mobile-section-title">Configuración de Cuenta</div>
-                <div className="mobile-links-list">
-                  <div 
-                    className={`mobile-link-item ${activeTab === 'settings' ? 'active' : ''}`}
-                    onClick={() => { setActiveTab('settings'); setShowMobileMenu(false); }}
-                  >
-                    ⚙️ Ajustes Generales
-                  </div>
-                  <div 
-                    className="mobile-link-item"
-                    onClick={() => { setShowKeyInput(!showKeyInput); setShowMobileMenu(false); }}
-                  >
-                    🔑 Gemini API Key ({apiKey ? 'Configurada' : 'Sin configurar'})
-                  </div>
-                  <div className="dropdown-divider" />
-                  <div 
-                    className="mobile-link-item logout"
-                    onClick={() => { handleLogout(); setShowMobileMenu(false); }}
-                  >
-                    🚪 Cerrar Sesión
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </header>
+
+      {/* Mobile Floating Nav Bar */}
+      <div className="mobile-floating-nav">
+        <div className="floating-nav-container">
+          {floatingItems.map((item, index) => {
+            const isActive = item.type === 'tab' ? activeTab === item.id : false;
+            return (
+              <button
+                key={index}
+                onClick={item.onClick}
+                className={`floating-nav-btn ${isActive ? 'active' : ''}`}
+                title={item.label}
+              >
+                <div className="floating-nav-icon">{item.icon}</div>
+                <span className="floating-nav-label">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* API Configuration Drawer */}
       {showKeyInput && (
