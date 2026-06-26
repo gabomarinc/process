@@ -99,115 +99,6 @@ function App() {
     setUser(null);
   };
 
-  if (!token) {
-    let title = 'Kônsul';
-    let subtitle = 'Bienvenido de nuevo';
-    let btnText = 'Iniciar Sesión';
-    
-    if (authView === 'register') {
-      subtitle = 'Crea tu cuenta gratis';
-      btnText = 'Registrarse';
-    } else if (authView === 'forgot') {
-      subtitle = 'Recupera tu acceso';
-      btnText = 'Enviar enlace';
-    } else if (authView === 'reset') {
-      subtitle = 'Elige una nueva contraseña';
-      btnText = 'Guardar contraseña';
-    }
-
-    return (
-      <div className="auth-container">
-        <div className="auth-card">
-          <div className="auth-logo">K</div>
-          <h2 className="auth-title">{title}</h2>
-          <p className="auth-subtitle">{subtitle}</p>
-          
-          {authError && (
-            <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem' }}>
-              {authError}
-            </div>
-          )}
-
-          {authSuccessMsg && (
-            <div className="auth-success-msg">
-              {authSuccessMsg}
-            </div>
-          )}
-
-          <form className="auth-form" onSubmit={handleAuthSubmit}>
-            {authView === 'register' && (
-              <input 
-                type="text" 
-                placeholder="Nombre completo" 
-                value={authForm.name}
-                onChange={e => setAuthForm({...authForm, name: e.target.value})}
-                required
-              />
-            )}
-            
-            {(authView === 'login' || authView === 'register' || authView === 'forgot') && (
-              <input 
-                type="email" 
-                placeholder="Correo electrónico" 
-                value={authForm.email}
-                autoComplete="username"
-                onChange={e => setAuthForm({...authForm, email: e.target.value})}
-                required
-              />
-            )}
-            
-            {(authView === 'login' || authView === 'register' || authView === 'reset') && (
-              <input 
-                type="password" 
-                placeholder={authView === 'reset' ? "Nueva contraseña" : "Contraseña"} 
-                value={authForm.password}
-                autoComplete={authView === 'login' ? "current-password" : "new-password"}
-                onChange={e => setAuthForm({...authForm, password: e.target.value})}
-                required
-              />
-            )}
-
-            {authView === 'login' && (
-              <div className="auth-options">
-                <label className="auth-checkbox-label">
-                  <input 
-                    type="checkbox" 
-                    checked={authForm.rememberMe}
-                    onChange={e => setAuthForm({...authForm, rememberMe: e.target.checked})}
-                  />
-                  Recordarme
-                </label>
-                <span className="auth-forgot-link" onClick={() => { setAuthView('forgot'); setAuthError(''); setAuthSuccessMsg(''); }}>
-                  ¿Olvidaste tu contraseña?
-                </span>
-              </div>
-            )}
-
-            <button type="submit" className="auth-btn">
-              {btnText}
-            </button>
-          </form>
-
-          {authView !== 'login' && authView !== 'reset' && (
-            <div className="auth-switch" style={{marginTop: '1.5rem'}}>
-              <span onClick={() => { setAuthView('login'); setAuthError(''); setAuthSuccessMsg(''); }}>
-                ← Volver a Iniciar Sesión
-              </span>
-            </div>
-          )}
-          
-          {authView === 'login' && (
-            <div className="auth-switch">
-              ¿No tienes cuenta?{' '}
-              <span onClick={() => { setAuthView('register'); setAuthError(''); setAuthSuccessMsg(''); }}>
-                Regístrate aquí
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   // Templates (Process blueprints)
   const [templates, setTemplates] = useState([]);
@@ -919,6 +810,115 @@ function App() {
     return inst.steps.some(step => !step.isCompleted && now > new Date(step.dueDate));
   };
 
+  if (!token) {
+    let title = 'Kônsul';
+    let subtitle = 'Bienvenido de nuevo';
+    let btnText = 'Iniciar Sesión';
+    
+    if (authView === 'register') {
+      subtitle = 'Crea tu cuenta gratis';
+      btnText = 'Registrarse';
+    } else if (authView === 'forgot') {
+      subtitle = 'Recupera tu acceso';
+      btnText = 'Enviar enlace';
+    } else if (authView === 'reset') {
+      subtitle = 'Elige una nueva contraseña';
+      btnText = 'Guardar contraseña';
+    }
+
+    return (
+      <div className="auth-container">
+        <div className="auth-card">
+          <div className="auth-logo">K</div>
+          <h2 className="auth-title">{title}</h2>
+          <p className="auth-subtitle">{subtitle}</p>
+          
+          {authError && (
+            <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem' }}>
+              {authError}
+            </div>
+          )}
+
+          {authSuccessMsg && (
+            <div className="auth-success-msg">
+              {authSuccessMsg}
+            </div>
+          )}
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            {authView === 'register' && (
+              <input 
+                type="text" 
+                placeholder="Nombre completo" 
+                value={authForm.name}
+                onChange={e => setAuthForm({...authForm, name: e.target.value})}
+                required
+              />
+            )}
+            
+            {(authView === 'login' || authView === 'register' || authView === 'forgot') && (
+              <input 
+                type="email" 
+                placeholder="Correo electrónico" 
+                value={authForm.email}
+                autoComplete="username"
+                onChange={e => setAuthForm({...authForm, email: e.target.value})}
+                required
+              />
+            )}
+            
+            {(authView === 'login' || authView === 'register' || authView === 'reset') && (
+              <input 
+                type="password" 
+                placeholder={authView === 'reset' ? "Nueva contraseña" : "Contraseña"} 
+                value={authForm.password}
+                autoComplete={authView === 'login' ? "current-password" : "new-password"}
+                onChange={e => setAuthForm({...authForm, password: e.target.value})}
+                required
+              />
+            )}
+
+            {authView === 'login' && (
+              <div className="auth-options">
+                <label className="auth-checkbox-label">
+                  <input 
+                    type="checkbox" 
+                    checked={authForm.rememberMe}
+                    onChange={e => setAuthForm({...authForm, rememberMe: e.target.checked})}
+                  />
+                  Recordarme
+                </label>
+                <span className="auth-forgot-link" onClick={() => { setAuthView('forgot'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                  ¿Olvidaste tu contraseña?
+                </span>
+              </div>
+            )}
+
+            <button type="submit" className="auth-btn">
+              {btnText}
+            </button>
+          </form>
+
+          {authView !== 'login' && authView !== 'reset' && (
+            <div className="auth-switch" style={{marginTop: '1.5rem'}}>
+              <span onClick={() => { setAuthView('login'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                ← Volver a Iniciar Sesión
+              </span>
+            </div>
+          )}
+          
+          {authView === 'login' && (
+            <div className="auth-switch">
+              ¿No tienes cuenta?{' '}
+              <span onClick={() => { setAuthView('register'); setAuthError(''); setAuthSuccessMsg(''); }}>
+                Regístrate aquí
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="app-container">
       {/* Background Confetti */}
