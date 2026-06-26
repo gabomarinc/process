@@ -1195,32 +1195,212 @@ function App() {
 
           {/* Desktop Navigation Menu (Middle) */}
           <nav className="desktop-nav">
-            <button 
-              className={`nav-tab-btn ${activeTab === 'instances' ? 'active' : ''}`}
-              onClick={() => setActiveTab('instances')}
-            >
-              <Play size={16} className="icon-blue" />
-              <span>Ejecuciones Activas ({instances.length})</span>
-            </button>
+            {/* 1. Ejecuciones Dropdown */}
+            <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
+              <button 
+                className={`nav-trigger-btn ${activeTab === 'instances' ? 'active' : ''}`}
+                onClick={() => setOpenDropdown(openDropdown === 'procesos' ? null : 'procesos')}
+                onMouseEnter={() => setOpenDropdown('procesos')}
+              >
+                <Play size={15} className="icon-blue" />
+                <span>Ejecuciones</span>
+                <ChevronDown size={12} className={`chevron-icon ${openDropdown === 'procesos' ? 'open' : ''}`} />
+              </button>
 
+              {openDropdown === 'procesos' && (
+                <div className="nav-dropdown-content dropdown-large">
+                  <div className="dropdown-grid-split">
+                    <div className="grid-split-cards">
+                      <div 
+                        className="grid-card-nav"
+                        onClick={() => { setActiveTab('instances'); setOpenDropdown(null); }}
+                      >
+                        <div className="card-nav-header">
+                          <Play size={18} className="icon-blue" />
+                          <h4>Mi Checklist Activo</h4>
+                        </div>
+                        <p>Monitorea y completa las tareas asignadas en ejecuciones en curso ({instances.length})</p>
+                      </div>
+
+                      <div 
+                        className="grid-card-nav"
+                        onClick={() => {
+                          setLaunchInstanceName('');
+                          setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                          setLaunchTemplateId(templates[0]?.id || '');
+                          setLaunchModalStep(1);
+                          setShowLaunchModal(true);
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        <div className="card-nav-header">
+                          <Zap size={18} className="icon-orange" />
+                          <h4>Lanzar Nuevo Proceso</h4>
+                        </div>
+                        <p>Inicia de inmediato una ejecución en tiempo real de una plantilla operativa</p>
+                      </div>
+                    </div>
+
+                    <div className="grid-split-small">
+                      <div 
+                        className="nav-small-item-link"
+                        onClick={() => {
+                          setActiveTab('instances');
+                          setOpenDropdown(null);
+                          setTimeout(() => {
+                            const el = document.getElementById('instances-logs-section');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                      >
+                        <Bell size={16} />
+                        <span>Historial de Alertas</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Plantillas Dropdown */}
             {user?.role !== 'guest' && (
-              <>
+              <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
-                  className={`nav-tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('templates')}
+                  className={`nav-trigger-btn ${activeTab === 'templates' ? 'active' : ''}`}
+                  onClick={() => setOpenDropdown(openDropdown === 'plantillas' ? null : 'plantillas')}
+                  onMouseEnter={() => setOpenDropdown('plantillas')}
                 >
-                  <FileText size={16} className="icon-orange" />
-                  <span>Plantillas de Procesos ({templates.length})</span>
+                  <FileText size={15} className="icon-orange" />
+                  <span>Plantillas</span>
+                  <ChevronDown size={12} className={`chevron-icon ${openDropdown === 'plantillas' ? 'open' : ''}`} />
                 </button>
 
+                {openDropdown === 'plantillas' && (
+                  <div className="nav-dropdown-content dropdown-large">
+                    <div className="dropdown-grid-split">
+                      <div className="grid-split-cards">
+                        <div 
+                          className="grid-card-nav"
+                          onClick={() => { setActiveTab('templates'); setOpenDropdown(null); }}
+                        >
+                          <div className="card-nav-header">
+                            <FileText size={18} className="icon-orange" />
+                            <h4>Catálogo de Plantillas</h4>
+                          </div>
+                          <p>Administra, edita pasos o elimina plantillas de la organización ({templates.length})</p>
+                        </div>
+
+                        <div 
+                          className="grid-card-nav"
+                          onClick={() => {
+                            setActiveTab('templates');
+                            setOpenDropdown(null);
+                            setTimeout(() => {
+                              const el = document.getElementById('main-uploader');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }, 100);
+                          }}
+                        >
+                          <div className="card-nav-header">
+                            <Sparkles size={18} className="icon-blue" />
+                            <h4>Generar con Gemini IA</h4>
+                          </div>
+                          <p>Sube archivos (.pdf, .docx, .txt) y deja que Gemini estructure tu plantilla</p>
+                        </div>
+                      </div>
+
+                      <div className="grid-split-small">
+                        <div 
+                          className="nav-small-item-link"
+                          onClick={() => {
+                            setActiveTab('templates');
+                            setOpenDropdown(null);
+                            setTimeout(() => {
+                              const el = document.getElementsByTagName('textarea')[0];
+                              if (el) {
+                                el.scrollIntoView({ behavior: 'smooth' });
+                                el.focus();
+                              }
+                            }, 150);
+                          }}
+                        >
+                          <Code size={16} />
+                          <span>Generador Manual</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Equipo Dropdown */}
+            {user?.role !== 'guest' && (
+              <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
-                  className={`nav-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('team')}
+                  className={`nav-trigger-btn ${activeTab === 'team' ? 'active' : ''}`}
+                  onClick={() => setOpenDropdown(openDropdown === 'equipo' ? null : 'equipo')}
+                  onMouseEnter={() => setOpenDropdown('equipo')}
                 >
-                  <Users size={16} className="icon-green" />
-                  <span>Equipo de Trabajo ({teamMembers.length})</span>
+                  <Users size={15} className="icon-green" />
+                  <span>Equipo</span>
+                  <ChevronDown size={12} className={`chevron-icon ${openDropdown === 'equipo' ? 'open' : ''}`} />
                 </button>
-              </>
+
+                {openDropdown === 'equipo' && (
+                  <div className="nav-dropdown-content dropdown-large">
+                    <div className="dropdown-grid-split">
+                      <div className="grid-split-cards">
+                        <div 
+                          className="grid-card-nav"
+                          onClick={() => { setActiveTab('team'); setOpenDropdown(null); }}
+                        >
+                          <div className="card-nav-header">
+                            <Users size={18} className="icon-green" />
+                            <h4>Directorio de Personal</h4>
+                          </div>
+                          <p>Consulta datos de agentes, invitados y jefes directos ({teamMembers.length})</p>
+                        </div>
+
+                        <div 
+                          className="grid-card-nav"
+                          onClick={() => {
+                            setActiveTab('templates');
+                            setOpenDropdown(null);
+                            if (templates.length > 0) {
+                              setSelectedTemplateId(templates[0].id);
+                              setDetailModalTab('team');
+                            }
+                          }}
+                        >
+                          <div className="card-nav-header">
+                            <Share2 size={18} className="icon-blue" />
+                            <h4>Asignación Matricial</h4>
+                          </div>
+                          <p>Define con un panel Sí/No qué pasos de procesos opera cada miembro</p>
+                        </div>
+                      </div>
+
+                      <div className="grid-split-small">
+                        <div 
+                          className="nav-small-item-link"
+                          onClick={() => {
+                            setActiveTab('team');
+                            setOpenDropdown(null);
+                            setEditingMember(null);
+                            setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+                            setMemberModalStep(1);
+                            setShowMemberModal(true);
+                          }}
+                        >
+                          <Users size={16} />
+                          <span>Agregar Personal</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </nav>
 
@@ -1241,67 +1421,67 @@ function App() {
                 </button>
 
                 {openDropdown === 'cuenta' && (
-                  <div className="nav-dropdown-content dropdown-right">
-                    <div className="dropdown-simple-list">
-                      <div 
-                        className="dropdown-list-item"
-                        onClick={() => { 
-                          setActiveTab('settings'); 
-                          setOpenDropdown(null);
-                          setTimeout(() => {
-                            const el = document.getElementById('profile-form-section');
-                            if (el) el.scrollIntoView({ behavior: 'smooth' });
-                          }, 100);
-                        }}
-                      >
-                        <Smile size={16} />
-                        <div>
-                          <h4>Editar Perfil</h4>
-                          <p>Cambia tus datos personales y del asistente virtual</p>
-                        </div>
-                      </div>
-
-                      <div 
-                        className={`dropdown-list-item ${apiKey ? 'configured' : ''}`}
-                        onClick={() => {
-                          setShowKeyInput(!showKeyInput);
-                          setOpenDropdown(null);
-                        }}
-                      >
-                        <Key size={16} />
-                        <div>
-                          <h4>Gemini API Key</h4>
-                          <p>{apiKey ? 'Clave de Inteligencia Guardada' : 'Configura tu clave para usar IA'}</p>
-                        </div>
-                      </div>
-
-                      {user?.role === 'admin' && (
+                  <div className="nav-dropdown-content dropdown-large dropdown-right-align">
+                    <div className="dropdown-grid-split">
+                      <div className="grid-split-cards">
                         <div 
-                          className="dropdown-list-item"
+                          className="grid-card-nav"
                           onClick={() => { 
                             setActiveTab('settings'); 
                             setOpenDropdown(null);
                             setTimeout(() => {
-                              const el = document.getElementById('company-form-section');
+                              const el = document.getElementById('profile-form-section');
                               if (el) el.scrollIntoView({ behavior: 'smooth' });
                             }, 100);
                           }}
                         >
-                          <Sparkles size={16} />
-                          <div>
-                            <h4>Detalles de Empresa</h4>
-                            <p>Gestiona el nombre de la organización y accesos</p>
+                          <div className="card-nav-header">
+                            <Smile size={18} className="icon-green" />
+                            <h4>Editar Perfil</h4>
                           </div>
+                          <p>Modifica tu contraseña, emoji avatar y acompañante de inteligencia</p>
                         </div>
-                      )}
 
-                      <div className="dropdown-divider" />
+                        <div 
+                          className={`grid-card-nav ${apiKey ? 'configured' : ''}`}
+                          onClick={() => {
+                            setShowKeyInput(!showKeyInput);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          <div className="card-nav-header">
+                            <Key size={18} className="icon-orange" />
+                            <h4>Gemini API Key</h4>
+                          </div>
+                          <p>{apiKey ? 'Clave IA configurada localmente' : 'Carga tu clave para habilitar Gemini IA'}</p>
+                        </div>
+                      </div>
 
-                      <div className="dropdown-list-item logout-item" onClick={() => { handleLogout(); setOpenDropdown(null); }}>
-                        <LogOut size={16} />
-                        <div>
-                          <h4>Cerrar Sesión</h4>
-                          <p>Salir de forma segura de tu cuenta</p>
+                      <div className="grid-split-small">
+                        {user?.role === 'admin' && (
+                          <div 
+                            className="nav-small-item-link"
+                            onClick={() => { 
+                              setActiveTab('settings'); 
+                              setOpenDropdown(null);
+                              setTimeout(() => {
+                                const el = document.getElementById('company-form-section');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }, 100);
+                            }}
+                          >
+                            <Sparkles size={16} />
+                            <span>Empresa</span>
+                          </div>
+                        )}
+
+                        <div 
+                          className="nav-small-item-link logout" 
+                          onClick={() => { handleLogout(); setOpenDropdown(null); }}
+                          style={{ marginTop: '0.5rem', color: '#ef4444' }}
+                        >
+                          <LogOut size={16} />
+                          <span>Cerrar Sesión</span>
                         </div>
                       </div>
                     </div>
