@@ -151,13 +151,18 @@ function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
+  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [launchInstanceName, setLaunchInstanceName] = useState('');
   const [launchStartDate, setLaunchStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [launchTemplateId, setLaunchTemplateId] = useState(''); // template selected inside the launch modal
+
+  // Stepper steps tracking
+  const [memberModalStep, setMemberModalStep] = useState(1);
+  const [addUserModalStep, setAddUserModalStep] = useState(1);
+  const [launchModalStep, setLaunchModalStep] = useState(1);
 
   // AI & Upload states
   const [isUploading, setIsUploading] = useState(false);
@@ -509,7 +514,7 @@ function App() {
         }
         setShowMemberModal(false);
         setEditingMember(null);
-        setMemberFormData({ name: '', role: '', email: '', avatar: '', assignedProcesses: [], department: '', managerId: '', geminiApiKey: '' });
+        setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
       } else {
         console.error("Error al guardar miembro del equipo");
       }
@@ -2348,77 +2353,120 @@ function App() {
 
       {/* Start Execution Modal */}
       {showLaunchModal && (
-        <div className="modal-overlay" onClick={() => setShowLaunchModal(false)}>
-          <form className="modal-card" style={{ maxWidth: '480px', width: '95%' }} onSubmit={handleLaunchInstance} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--color-primary-hover)', marginBottom: '0.25rem' }}>
-              🚀 Iniciar Ejecución de Proceso
-            </h3>
-            {(activeTemplate || templates.find(t => t.id === launchTemplateId)) ? (
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                Crea una instancia viva a partir de la plantilla <b>{(activeTemplate || templates.find(t => t.id === launchTemplateId))?.title}</b>.
-              </p>
-            ) : (
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                Selecciona la plantilla que deseas ejecutar.
-              </p>
-            )}
+        <div className="modal-overlay" onClick={() => { setShowLaunchModal(false); setLaunchModalStep(1); }}>
+          <form className="modal-card" style={{ maxWidth: '480px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onSubmit={e => {
+            if (launchModalStep < 2) {
+              e.preventDefault();
+              if (!activeTemplate && !launchTemplateId) {
+                alert("Por favor selecciona una plantilla.");
+                return;
+              }
+              if (!launchInstanceName.trim()) {
+                alert("Por favor introduce el nombre de la ejecución.");
+                return;
+              }
+              setLaunchModalStep(2);
+            } else {
+              handleLaunchInstance(e);
+            }
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
+                🚀 Iniciar Proceso
+              </h3>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
+                Paso {launchModalStep} de 2
+              </span>
+            </div>
 
-            {/* Template picker — only shown when not launched from a template detail */}
-            {!activeTemplate && (
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Plantilla de Proceso *</label>
-                <select
-                  className="form-input"
-                  value={launchTemplateId}
-                  onChange={e => setLaunchTemplateId(e.target.value)}
-                  required
-                >
-                  <option value="">-- Selecciona una plantilla --</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.companionAvatar} {t.title}</option>
-                  ))}
-                </select>
+            {/* Stepper Progress Bar */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: 'var(--color-primary)' }} />
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: launchModalStep >= 2 ? 'var(--color-primary)' : 'rgba(0,0,0,0.06)' }} />
+            </div>
+
+            {launchModalStep === 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {(activeTemplate || templates.find(t => t.id === launchTemplateId)) ? (
+                  <div style={{ backgroundColor: 'var(--bg-light)', padding: '0.75rem 1rem', borderRadius: '8px', borderLeft: '3px solid var(--color-primary)', fontSize: '0.85rem' }}>
+                    Plantilla: <strong>{(activeTemplate || templates.find(t => t.id === launchTemplateId))?.title}</strong>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Selecciona y personaliza la plantilla que vas a ejecutar a continuación.
+                  </p>
+                )}
+
+                {/* Template picker — only shown when not launched from a template detail */}
+                {!activeTemplate && (
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Plantilla de Proceso *</label>
+                    <select
+                      className="form-input"
+                      value={launchTemplateId}
+                      onChange={e => setLaunchTemplateId(e.target.value)}
+                      required
+                    >
+                      <option value="">-- Selecciona una plantilla --</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.companionAvatar} {t.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Nombre de la ejecución (Caso / Cliente / Empleado) *</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="Ej. Onboarding - Juan Pérez"
+                    value={launchInstanceName}
+                    onChange={(e) => setLaunchInstanceName(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
               </div>
             )}
-            
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Nombre de la ejecución (Caso / Cliente / Empleado) *</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Ej. Onboarding - Juan Pérez o Proyecto Beta"
-                value={launchInstanceName}
-                onChange={(e) => setLaunchInstanceName(e.target.value)}
-                required
-                autoFocus
-              />
-            </div>
 
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Fecha de Inicio del Proceso *</label>
-              <input 
-                type="date" 
-                className="form-input" 
-                value={launchStartDate}
-                onChange={(e) => setLaunchStartDate(e.target.value)}
-                required
-              />
-            </div>
+            {launchModalStep === 2 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Define cuándo iniciará el proceso. Los plazos de cada paso se programarán automáticamente a partir de esta fecha.
+                </p>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Fecha de Inicio del Proceso *</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={launchStartDate}
+                    onChange={(e) => setLaunchStartDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1rem' }}>
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                onClick={() => setShowLaunchModal(false)}
+                onClick={() => {
+                  if (launchModalStep > 1) {
+                    setLaunchModalStep(1);
+                  } else {
+                    setShowLaunchModal(false);
+                  }
+                }}
               >
-                Cancelar
+                {launchModalStep > 1 ? 'Atrás' : 'Cancelar'}
               </button>
               <button 
                 type="submit" 
                 className="btn btn-primary"
-                disabled={!activeTemplate && !launchTemplateId}
               >
-                ✅ Crear Proceso Vivo
+                {launchModalStep === 2 ? '✅ Crear Proceso Vivo' : 'Siguiente'}
               </button>
             </div>
           </form>
@@ -2441,204 +2489,288 @@ function App() {
 
       {/* Team Member Add/Edit Modal */}
       {showMemberModal && (
-        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+        <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={() => { setShowMemberModal(false); setMemberModalStep(1); setEditingMember(null); }}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--color-primary-hover)', marginBottom: '0.5rem' }}>
-              {editingMember ? '📝 Editar Miembro de Equipo' : '👥 Agregar Personal al Equipo'}
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-              Registra los datos del personal y sus flujos asociados para asignarles responsabilidades de forma automática.
-            </p>
-            <form onSubmit={handleSaveMember} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Nombre Completo *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={memberFormData.name} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, name: e.target.value })} 
-                  required 
-                />
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Cargo / Rol *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="Ej. Diseñadora de UI, Director de Operaciones" 
-                  value={memberFormData.role} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, role: e.target.value })} 
-                  required 
-                />
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Correo Electrónico *</label>
-                <input 
-                  type="email" 
-                  className="form-input" 
-                  value={memberFormData.email} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, email: e.target.value })} 
-                  required 
-                />
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Departamento / Área *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="Ej. Operaciones, Tecnología, Finanzas"
-                  value={memberFormData.department || ''} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, department: e.target.value })} 
-                  required 
-                />
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Jefe Directo (Opcional)</label>
-                <select
-                  className="form-input"
-                  value={memberFormData.managerId || ''}
-                  onChange={(e) => setMemberFormData({ ...memberFormData, managerId: e.target.value })}
-                >
-                  <option value="">-- Sin jefe directo --</option>
-                  {teamMembers
-                    .filter(m => !editingMember || m.id !== editingMember.id)
-                    .map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
-                    ))
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
+                {editingMember ? '📝 Editar Colaborador' : '👥 Nuevo Colaborador'}
+              </h3>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
+                Paso {memberModalStep} de 3
+              </span>
+            </div>
+
+            {/* Stepper Progress Bar */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: 'var(--color-primary)' }} />
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: memberModalStep >= 2 ? 'var(--color-primary)' : 'rgba(0,0,0,0.06)' }} />
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: memberModalStep >= 3 ? 'var(--color-primary)' : 'rgba(0,0,0,0.06)' }} />
+            </div>
+
+            <form onSubmit={e => {
+              if (memberModalStep < 3) {
+                e.preventDefault();
+                if (memberModalStep === 1) {
+                  if (!memberFormData.name || !memberFormData.email) {
+                    alert("Por favor completa los campos obligatorios del Paso 1.");
+                    return;
                   }
-                </select>
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Clave API de Gemini (Opcional)</label>
-                <input 
-                  type="password" 
-                  className="form-input" 
-                  placeholder="AIzaSy..." 
-                  value={memberFormData.geminiApiKey || ''} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, geminiApiKey: e.target.value })} 
-                />
-                <small style={{ color: 'var(--text-muted)' }}>Esta clave es personal y se usará para las funciones de IA de este usuario.</small>
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>URL del Avatar (Opcional)</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="https://images.unsplash.com/photo-..."
-                  value={memberFormData.avatar} 
-                  onChange={(e) => setMemberFormData({ ...memberFormData, avatar: e.target.value })} 
-                />
-              </div>
-              <div className="form-group">
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Procesos Asignados</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '120px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '10px', borderRadius: '8px' }}>
-                  {templates.map(temp => {
-                    const isChecked = memberFormData.assignedProcesses.includes(temp.id);
-                    return (
-                      <label key={temp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={isChecked} 
-                          onChange={(e) => {
-                            const newAssigned = e.target.checked 
-                              ? [...memberFormData.assignedProcesses, temp.id]
-                              : memberFormData.assignedProcesses.filter(id => id !== temp.id);
-                            setMemberFormData({ ...memberFormData, assignedProcesses: newAssigned });
-                          }}
-                        />
-                        {temp.title}
-                      </label>
-                    );
-                  })}
+                } else if (memberModalStep === 2) {
+                  if (!memberFormData.role || !memberFormData.department) {
+                    alert("Por favor completa los campos obligatorios del Paso 2.");
+                    return;
+                  }
+                }
+                setMemberModalStep(prev => prev + 1);
+              } else {
+                handleSaveMember(e);
+              }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {memberModalStep === 1 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Nombre Completo *</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={memberFormData.name} 
+                      onChange={(e) => setMemberFormData({ ...memberFormData, name: e.target.value })} 
+                      required 
+                      autoFocus
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Correo Electrónico *</label>
+                    <input 
+                      type="email" 
+                      className="form-input" 
+                      value={memberFormData.email} 
+                      onChange={(e) => setMemberFormData({ ...memberFormData, email: e.target.value })} 
+                      required 
+                    />
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1rem', borderTop: '1px solid #f5f3f0', paddingTop: '1rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowMemberModal(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary">Guardar Miembro</button>
+              )}
+
+              {memberModalStep === 2 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Cargo / Rol *</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Ej. Diseñadora de UI, Director de Operaciones" 
+                      value={memberFormData.role} 
+                      onChange={(e) => setMemberFormData({ ...memberFormData, role: e.target.value })} 
+                      required 
+                      autoFocus
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Departamento / Área *</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Ej. Operaciones, Tecnología, Finanzas"
+                      value={memberFormData.department || ''} 
+                      onChange={(e) => setMemberFormData({ ...memberFormData, department: e.target.value })} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Jefe Directo (Opcional)</label>
+                    <select
+                      className="form-input"
+                      value={memberFormData.managerId || ''}
+                      onChange={(e) => setMemberFormData({ ...memberFormData, managerId: e.target.value })}
+                    >
+                      <option value="">-- Sin jefe directo --</option>
+                      {teamMembers
+                        .filter(m => !editingMember || m.id !== editingMember.id)
+                        .map(m => (
+                          <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                        ))
+                      }
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {memberModalStep === 3 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Flujos y Procesos Asignados</label>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                      Selecciona las plantillas en las que participa este colaborador para agilizar la asignación.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '10px', borderRadius: '8px' }}>
+                      {templates.map(temp => {
+                        const isChecked = memberFormData.assignedProcesses?.includes(temp.id);
+                        return (
+                          <label key={temp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', padding: '4px 0' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={isChecked} 
+                              onChange={(e) => {
+                                const newAssigned = e.target.checked 
+                                  ? [...(memberFormData.assignedProcesses || []), temp.id]
+                                  : (memberFormData.assignedProcesses || []).filter(id => id !== temp.id);
+                                setMemberFormData({ ...memberFormData, assignedProcesses: newAssigned });
+                              }}
+                            />
+                            {temp.title}
+                          </label>
+                        );
+                      })}
+                      {templates.length === 0 && (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          No hay plantillas de procesos disponibles.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => {
+                    if (memberModalStep > 1) {
+                      setMemberModalStep(prev => prev - 1);
+                    } else {
+                      setShowMemberModal(false);
+                      setEditingMember(null);
+                    }
+                  }}
+                >
+                  {memberModalStep > 1 ? 'Atrás' : 'Cancelar'}
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {memberModalStep === 3 ? 'Guardar Miembro' : 'Siguiente'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
       {/* Add User Modal */}
       {showAddUserModal && (
-        <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={() => setShowAddUserModal(false)}>
-          <form className="modal-card" style={{ maxWidth: '450px', width: '95%' }} onSubmit={handleAddOrgUser} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--color-primary-hover)', marginBottom: '0.25rem' }}>
-              👤 Registrar Nuevo Usuario
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Crea un usuario para tu organización. Podrá iniciar sesión con su correo y contraseña.
-            </p>
+        <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={() => { setShowAddUserModal(false); setAddUserModalStep(1); }}>
+          <form className="modal-card" style={{ maxWidth: '450px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onSubmit={e => {
+            if (addUserModalStep < 2) {
+              e.preventDefault();
+              if (!newUserFormData.name || !newUserFormData.email) {
+                alert("Por favor completa los campos obligatorios del Paso 1.");
+                return;
+              }
+              setAddUserModalStep(2);
+            } else {
+              handleAddOrgUser(e);
+            }
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
+                👤 Registrar Nuevo Usuario
+              </h3>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
+                Paso {addUserModalStep} de 2
+              </span>
+            </div>
+
+            {/* Stepper Progress Bar */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: 'var(--color-primary)' }} />
+              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: addUserModalStep >= 2 ? 'var(--color-primary)' : 'rgba(0,0,0,0.06)' }} />
+            </div>
 
             {addUserError && (
-              <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem' }}>
+              <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem' }}>
                 {addUserError}
               </div>
             )}
 
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Nombre Completo *</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                value={newUserFormData.name} 
-                onChange={(e) => setNewUserFormData({ ...newUserFormData, name: e.target.value })} 
-                required 
-              />
-            </div>
+            {addUserModalStep === 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Nombre Completo *</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={newUserFormData.name} 
+                    onChange={(e) => setNewUserFormData({ ...newUserFormData, name: e.target.value })} 
+                    required 
+                    autoFocus
+                  />
+                </div>
 
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Correo Electrónico *</label>
-              <input 
-                type="email" 
-                className="form-input" 
-                value={newUserFormData.email} 
-                onChange={(e) => setNewUserFormData({ ...newUserFormData, email: e.target.value })} 
-                required 
-              />
-            </div>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Correo Electrónico *</label>
+                  <input 
+                    type="email" 
+                    className="form-input" 
+                    value={newUserFormData.email} 
+                    onChange={(e) => setNewUserFormData({ ...newUserFormData, email: e.target.value })} 
+                    required 
+                  />
+                </div>
+              </div>
+            )}
 
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Contraseña Temporal *</label>
-              <input 
-                type="password" 
-                className="form-input" 
-                value={newUserFormData.password} 
-                onChange={(e) => setNewUserFormData({ ...newUserFormData, password: e.target.value })} 
-                required 
-              />
-            </div>
+            {addUserModalStep === 2 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Contraseña Temporal *</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    value={newUserFormData.password} 
+                    onChange={(e) => setNewUserFormData({ ...newUserFormData, password: e.target.value })} 
+                    required 
+                    autoFocus
+                  />
+                </div>
 
-            <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Rol del Usuario *</label>
-              <select
-                className="form-input"
-                value={newUserFormData.role}
-                onChange={(e) => setNewUserFormData({ ...newUserFormData, role: e.target.value })}
-                required
-              >
-                <option value="agent">Agente (Miembro de equipo)</option>
-                <option value="guest">Invitado (Cliente o Proveedor)</option>
-              </select>
-              <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                Los invitados tienen un límite estricto de hasta 10 por empresa.
-              </small>
-            </div>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Rol del Usuario *</label>
+                  <select
+                    className="form-input"
+                    value={newUserFormData.role}
+                    onChange={(e) => setNewUserFormData({ ...newUserFormData, role: e.target.value })}
+                    required
+                  >
+                    <option value="agent">Agente (Miembro de equipo)</option>
+                    <option value="guest">Invitado (Cliente o Proveedor)</option>
+                  </select>
+                  <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                    Los invitados tienen un límite estricto de hasta 10 por empresa.
+                  </small>
+                </div>
+              </div>
+            )}
 
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1rem' }}>
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                onClick={() => setShowAddUserModal(false)}
+                onClick={() => {
+                  if (addUserModalStep > 1) {
+                    setAddUserModalStep(1);
+                  } else {
+                    setShowAddUserModal(false);
+                  }
+                }}
               >
-                Cancelar
+                {addUserModalStep > 1 ? 'Atrás' : 'Cancelar'}
               </button>
               <button 
                 type="submit" 
                 className="btn btn-primary"
               >
-                Crear Usuario
+                {addUserModalStep === 2 ? 'Crear Usuario' : 'Siguiente'}
               </button>
             </div>
           </form>
