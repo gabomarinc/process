@@ -1934,7 +1934,7 @@ function App() {
                             teamMembers.forEach(m => {
                               initial[m.id] = activeTemplate.steps
                                 .map((s, i) => ({ s, i }))
-                                .filter(({ s }) => s.assignedTo === m.id)
+                                .filter(({ s }) => String(s.assignedTo) === String(m.id))
                                 .map(({ i }) => i);
                             });
                           }
@@ -2258,7 +2258,7 @@ function App() {
                                     onClick={async () => {
                                       // Build updated steps: clear this member from all steps, then re-assign draftSteps
                                       const newSteps = activeTemplate.steps.map((s, sIdx) => {
-                                        if (s.assignedTo === member.id) {
+                                        if (String(s.assignedTo) === String(member.id)) {
                                           // Remove existing assignment for this member
                                           return { ...s, assignedTo: draftSteps.includes(sIdx) ? member.id : '' };
                                         }
@@ -3331,7 +3331,7 @@ function App() {
                               // If this step is assigned to current member or in editing process we are assigning it.
                               // We can save/track this via dynamic changes to steps or an assignments object.
                               // Let's use the template steps data. We update the templates structure on confirm!
-                              const isStepAssigned = step.assignedTo === (editingMember?.id || 'temp_new_member');
+                              const isStepAssigned = String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
                               
                               return (
                                 <div key={sIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.04)' }}>
@@ -3378,7 +3378,7 @@ function App() {
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
                                           const updatedSteps = [...t.steps];
-                                          if (updatedSteps[sIdx].assignedTo === (editingMember?.id || 'temp_new_member')) {
+                                          if (String(updatedSteps[sIdx].assignedTo) === String(editingMember?.id || 'temp_new_member')) {
                                             updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: '' };
                                           }
                                           return { ...t, steps: updatedSteps };
