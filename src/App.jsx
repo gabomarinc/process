@@ -35,6 +35,8 @@ import {
   X
 } from 'lucide-react';
 
+let modifiedTemplateIds = new Set();
+
 function App() {
   const showAlert = useAlert();
 
@@ -2038,7 +2040,7 @@ function App() {
                                       >
                                         <option value="">-- Sin asignar (Nadie) --</option>
                                         {teamMembers.map(m => (
-                                          <option key={m.id} value={m.id}>
+                                          <option key={m.id} value={String(m.id)}>
                                             {m.name} ({m.role}) - {m.department || 'Sin Área'}
                                           </option>
                                         ))}
@@ -2308,6 +2310,7 @@ function App() {
                   Equipo de Trabajo
                 </h2>
                 <button className="btn btn-primary" onClick={() => {
+                  modifiedTemplateIds = new Set();
                   setEditingMember(null);
                   setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
                   setMemberModalStep(1);
@@ -2378,6 +2381,7 @@ function App() {
                       </div>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
                         <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
+                          modifiedTemplateIds = new Set();
                           setEditingMember(member);
                           setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
                           setMemberModalStep(1);
@@ -2918,13 +2922,13 @@ function App() {
 
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', background: '#f5f3f0', padding: '0.15rem 0.5rem', borderRadius: '20px', marginTop: '0.5rem', width: 'fit-content' }}>
                                     <select
-                                      value={step.assignedTo || ''}
+                                      value={step.assignedTo ? String(step.assignedTo) : ''}
                                       onChange={(e) => handleAssignStepMember(activeInstance.id, step.id, e.target.value)}
                                       style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 0' }}
                                     >
                                       <option value="">Sin Asignar</option>
                                       {teamMembers.map(m => (
-                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                        <option key={m.id} value={String(m.id)}>{m.name}</option>
                                       ))}
                                     </select>
                                     {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
@@ -3001,13 +3005,13 @@ function App() {
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', marginBottom: '0.75rem', width: 'fit-content' }}>
                                       <select
-                                        value={step.assignedTo || ''}
+                                        value={step.assignedTo ? String(step.assignedTo) : ''}
                                         onChange={(e) => handleAssignStepMember(activeInstance.id, step.id, e.target.value)}
                                         style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', cursor: 'pointer', padding: '2px 0' }}
                                       >
                                         <option value="">Sin Asignar</option>
                                         {teamMembers.map(m => (
-                                          <option key={m.id} value={m.id}>{m.name}</option>
+                                          <option key={m.id} value={String(m.id)}>{m.name}</option>
                                         ))}
                                       </select>
                                       {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
@@ -3179,7 +3183,7 @@ function App() {
                       {teamMembers
                         .filter(m => !editingMember || m.id !== editingMember.id)
                         .map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
+                          <option key={m.id} value={String(m.id)}>{m.name}</option>
                         ))
                       }
                       {orgUsers
@@ -3409,7 +3413,7 @@ function App() {
                       {teamMembers
                         .filter(m => !editingMember || m.id !== editingMember.id)
                         .map(m => (
-                          <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                          <option key={m.id} value={String(m.id)}>{m.name} ({m.role})</option>
                         ))
                       }
                       {/* Include organization users (administrators, agents) */}
