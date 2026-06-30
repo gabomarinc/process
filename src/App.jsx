@@ -553,20 +553,25 @@ function App() {
           setTeamMembers(prev => [...prev, newMember]);
         }
         
-        // Sync the local templates state steps and database with the new memberId assignment
+        // Sync modified templates and database with the new memberId assignment
         for (const temp of templates) {
-          let hasChanges = false;
-          const updatedSteps = temp.steps.map(step => {
+          let updatedSteps = temp.steps;
+          let needsSave = modifiedTemplateIds.has(temp.id);
+
+          // Always replace 'temp_new_member' with the actual memberId
+          const mappedSteps = updatedSteps.map(step => {
             if (step.assignedTo === 'temp_new_member') {
-              hasChanges = true;
+              needsSave = true;
               return { ...step, assignedTo: memberId };
             }
             return step;
           });
-          if (hasChanges) {
-            await saveTemplate({ ...temp, steps: updatedSteps });
+
+          if (needsSave) {
+            await saveTemplate({ ...temp, steps: mappedSteps });
           }
         }
+        modifiedTemplateIds = new Set();
 
         setShowMemberModal(false);
         setEditingMember(null);
@@ -3339,6 +3344,7 @@ function App() {
                                       type="button"
                                       onClick={() => {
                                         // Mark as assigned: we update this step's assignedTo inside the template locally
+                                        modifiedTemplateIds.add(temp.id);
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
                                           const updatedSteps = [...t.steps];
@@ -3368,6 +3374,7 @@ function App() {
                                       type="button"
                                       onClick={() => {
                                         // Unassign step
+                                        modifiedTemplateIds.add(temp.id);
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
                                           const updatedSteps = [...t.steps];
