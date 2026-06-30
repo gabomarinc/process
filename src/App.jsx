@@ -1,4 +1,5 @@
 import { LaunchExecutionModal } from "./components/ui/LaunchExecutionModal";
+import { SuccessTicketModal } from "./components/ui/SuccessTicketModal";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { useAlert } from './contexts/AlertContext';
 import Notifications from './components/ui/notifications';
@@ -162,6 +163,7 @@ function App() {
   // Team Management states
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
+  const [ticketModal, setTicketModal] = useState({ isOpen: false, title: "", message: "", ticketId: "", customFields: [] });
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
@@ -584,7 +586,16 @@ function App() {
         setShowEditProfileModal(false);
         setEditingMember(null);
         setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
-        showAlert("¡Perfil guardado con éxito!");
+        setTicketModal({
+          isOpen: true,
+          title: "¡Perfil Guardado!",
+          message: editingMember ? "Los cambios se guardaron correctamente." : "El nuevo colaborador fue añadido con éxito.",
+          ticketId: memberId,
+          customFields: [
+            { label: "Colaborador", value: newMember.name },
+            { label: "Rol", value: newMember.role }
+          ]
+        });
       } else {
         console.error("Error al guardar miembro del equipo");
       }
@@ -662,6 +673,16 @@ function App() {
     setSelectedTemplateId('');
     triggerConfetti();
 
+    setTicketModal({
+      isOpen: true,
+      title: "¡Ejecución Iniciada!",
+      message: "Se ha lanzado la ejecución con éxito.",
+      ticketId: newInstance.id,
+      customFields: [
+        { label: "Ejecución", value: newInstance.instanceName },
+        { label: "Plantilla Base", value: newInstance.title }
+      ]
+    });
     // Trigger active assignee notification for the first step
     await checkAndNotifyActiveAssignee(newInstance, newInstance.steps);
 
@@ -838,6 +859,15 @@ function App() {
         setTemplates(prev => [newTemp, ...prev]);
         setSelectedTemplateId(newTemp.id);
         setIsUploading(false);
+        setTicketModal({
+          isOpen: true,
+          title: "¡Plantilla Creada!",
+          message: "La plantilla se ha generado exitosamente.",
+          ticketId: newTemp.id,
+          customFields: [
+            { label: "Nombre", value: newTemp.title }
+          ]
+        });
         setManualText('');
         setActiveTab('templates');
 
@@ -942,6 +972,15 @@ function App() {
       setTemplates(prev => [finalTemplate, ...prev]);
       setSelectedTemplateId(tempId);
       setIsUploading(false);
+      setTicketModal({
+        isOpen: true,
+        title: "¡Plantilla Creada!",
+        message: "La plantilla se ha generado exitosamente.",
+        ticketId: finalTemplate.id,
+        customFields: [
+          { label: "Nombre", value: finalTemplate.title }
+        ]
+      });
       setManualText('');
       setActiveTab('templates');
 
@@ -3679,6 +3718,14 @@ function App() {
           </form>
         </div>
       )}
+      <SuccessTicketModal 
+        isOpen={ticketModal.isOpen} 
+        onClose={() => setTicketModal({ ...ticketModal, isOpen: false })} 
+        title={ticketModal.title} 
+        message={ticketModal.message} 
+        ticketId={ticketModal.ticketId} 
+        customFields={ticketModal.customFields} 
+      />
     </div>
   );
 }

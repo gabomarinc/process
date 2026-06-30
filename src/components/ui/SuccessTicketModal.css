@@ -1,0 +1,95 @@
+.success-ticket-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.3s ease-out;
+}
+
+.success-ticket-container {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  background-color: white;
+  color: var(--text-main);
+  border-radius: 1rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  font-family: var(--font-sans);
+  z-index: 10;
+  animation: zoomIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.ticket-cutout-left,
+.ticket-cutout-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background-color: rgba(0,0,0,0.4);
+}
+
+.ticket-cutout-left {
+  left: -1rem;
+}
+
+.ticket-cutout-right {
+  right: -1rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.ticket-icon-container {
+  padding: 0.75rem;
+  background-color: rgba(39, 190, 167, 0.1);
+  border-radius: 50%;
+  animation: scaleUp 0.5s 0.3s backwards;
+}
+
+.ticket-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--color-primary);
+  animation: popIn 0.5s 0.5s backwards;
+}
+
+.ticket-dashed-line {
+  width: 100%;
+  border-top: 2px dashed rgba(0,0,0,0.1);
+  margin: 1.5rem 0;
+}
+
+@keyframes fall {
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0;
+  }
+}
