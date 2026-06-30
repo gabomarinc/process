@@ -1670,7 +1670,7 @@ function App() {
                           {/* Involved team members initials */}
                           <div style={{ display: 'flex', marginLeft: 'auto' }}>
                             {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).slice(0, 3).map((assigneeId, i) => {
-                              const member = teamMembers.find(m => m.id === assigneeId);
+                              const member = teamMembers.find(m => String(m.id) === String(assigneeId));
                               if (!member) return null;
                               const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                               return (
@@ -2085,7 +2085,7 @@ function App() {
                                       {step.assignedTo && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
                                           {(() => {
-                                            const member = teamMembers.find(m => m.id === step.assignedTo);
+                                            const member = teamMembers.find(m => String(m.id) === String(step.assignedTo));
                                             return member ? (
                                               <>
                                                 <img src={member.avatar} alt={member.name} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} />
@@ -2704,7 +2704,7 @@ function App() {
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Involucrados:</span>
                       <div style={{ display: 'flex' }}>
                         {Array.from(new Set(activeInstance.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).map((assigneeId, i) => {
-                          const member = teamMembers.find(m => m.id === assigneeId);
+                          const member = teamMembers.find(m => String(m.id) === String(assigneeId));
                           if (!member) return null;
                           const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                           return (
@@ -2906,8 +2906,8 @@ function App() {
                                         <option key={m.id} value={m.id}>{m.name}</option>
                                       ))}
                                     </select>
-                                    {step.assignedTo && teamMembers.find(m => m.id === step.assignedTo)?.avatar && (
-                                      <img src={teamMembers.find(m => m.id === step.assignedTo).avatar} alt="avatar" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
+                                      <img src={teamMembers.find(m => String(m.id) === String(step.assignedTo)).avatar} alt="avatar" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
                                     )}
                                   </div>
                                 </>
@@ -2976,6 +2976,23 @@ function App() {
                                         <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
                                       </div>
                                     )}
+
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', marginBottom: '0.75rem', width: 'fit-content' }}>
+                                      <select
+                                        value={step.assignedTo || ''}
+                                        onChange={(e) => handleAssignStepMember(activeInstance.id, step.id, e.target.value)}
+                                        style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', cursor: 'pointer', padding: '2px 0' }}
+                                      >
+                                        <option value="">Sin Asignar</option>
+                                        {teamMembers.map(m => (
+                                          <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                      </select>
+                                      {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
+                                        <img src={teamMembers.find(m => String(m.id) === String(step.assignedTo)).avatar} alt="avatar" style={{ width: '16px', height: '16px', borderRadius: '50%', objectFit: 'cover' }} />
+                                      )}
+                                    </div>
 
                                     {!isLocked && (
                                       <div className="step-action-area">
