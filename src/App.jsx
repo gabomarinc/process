@@ -1619,6 +1619,7 @@ function App() {
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                               <h4 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>{inst.instanceName}</h4>
                               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{inst.category}</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Plantilla: {inst.title}</span>
                             </div>
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
@@ -1639,14 +1640,7 @@ function App() {
                         </div>
 
                         <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                            {inst.category}
-                          </span>
-                          {isOverdue && (
-                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
-                              ⚠️ Demorado
-                            </span>
-                          )}
+
                           
                           {/* Involved team members initials */}
                           <div style={{ display: 'flex', marginLeft: 'auto' }}>
