@@ -207,6 +207,7 @@ function App() {
   // Unified Navbar States
   const [openDropdown, setOpenDropdown] = useState(null); // null, 'procesos', 'cuenta'
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showAllSteps, setShowAllSteps] = useState(false);
 
 
   // Fetch initial data from database
@@ -1568,169 +1569,23 @@ function App() {
         {/* Left Side: Display based on Active Tab */}
         <div className="card-section" style={activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : {}}>
           {activeTab === 'instances' ? (
-            /* Active Execution checklist view */
-            activeInstance ? (
-              <div>
-                <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>
-                      {activeInstance.instanceName}
-                    </h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontWeight: 400, marginTop: '4px' }}>
-                      Plantilla base: {activeInstance.title} • Iniciado el {new Date(activeInstance.startedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {checkOverdueSteps(activeInstance) && (
-                      <span className="overdue-badge">⚠️ Con Atraso</span>
-                    )}
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-                      onClick={() => {
-                        setLaunchInstanceName('');
-                        setLaunchStartDate(new Date().toISOString().split('T')[0]);
-                        setLaunchTemplateId('');
-                        setShowLaunchModal(true);
-                      }}
-                    >
-                      🚀 Nueva Ejecución
-                    </button>
-                  </div>
-                </div>
-
-                <div className="steps-container">
-                  {(() => {
-                    const stepsActive = [];
-                    activeInstance.steps.forEach((step, idx) => {
-                      if (idx === 0) {
-                        stepsActive.push(true);
-                      } else {
-                        const prevStep = activeInstance.steps[idx - 1];
-                        const isPrevCompleted = prevStep.isCompleted;
-                        const isSameDeadline = prevStep.relativeOffsetDays === step.relativeOffsetDays ||
-                          new Date(prevStep.dueDate).toDateString() === new Date(step.dueDate).toDateString();
-                        const active = isPrevCompleted || (stepsActive[idx - 1] && isSameDeadline);
-                        stepsActive.push(active);
-                      }
-                    });
-
-                    return activeInstance.steps.map((step, idx) => {
-                      const isActive = !step.isCompleted && stepsActive[idx];
-                      const isLocked = !step.isCompleted && !stepsActive[idx];
-                      const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
-                      
-                      return (
-                        <div 
-                          key={step.id} 
-                          className={`step-row ${step.isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
-                          style={{ opacity: isLocked ? 0.6 : 1 }}
-                        >
-                          <div className="step-indicator">
-                            {step.isCompleted ? <Check size={22} /> : idx + 1}
-                          </div>
-
-                          <div className="step-card">
-                            <div className="step-card-header">
-                              <div>
-                                <h4>{step.title}</h4>
-                                <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
-                                  {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
-                                </span>
-                              </div>
-                              
-                              <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
-                                {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                              </span>
-                            </div>
-                            
-                            <p>{step.description}</p>
-
-                            {/* Overdue alert element */}
-                            {isOverdue && (
-                              <div className="overdue-banner">
-                                <AlertCircle size={16} />
-                                <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}. Interesados notificados.</span>
-                              </div>
-                            )}
-
-                            {!isLocked && (
-                              <div className="step-action-area">
-                                {step.type === 'manual' ? (
-                                  <label className="emotional-checkbox-label">
-                                    <input 
-                                      type="checkbox"
-                                      checked={step.isCompleted}
-                                      disabled={step.isCompleted}
-                                      onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
-                                    />
-                                    <div className="checkbox-visual">
-                                      {step.isCompleted && <Check size={16} />}
-                                    </div>
-                                    <span>
-                                      {step.isCompleted ? '¡Logrado con éxito!' : 'Marcar este paso como hecho'}
-                                    </span>
-                                  </label>
-                                ) : (
-                                  <div>
-                                    {step.isCompleted ? (
-                                      <div className="uploaded-badge">
-                                        <FileCheck size={16} />
-                                        <span>{step.uploadedFileName || 'Documento cargado'}</span>
-                                      </div>
-                                    ) : (
-                                      <label className="step-file-upload" style={{ display: 'block' }}>
-                                        <input 
-                                          type="file" 
-                                          style={{ display: 'none' }}
-                                          accept={step.acceptedFormats?.join(',')}
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                              handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                            }
-                                          }}
-                                        />
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                          <Upload size={16} className="text-primary" />
-                                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
-                                            Subir archivo requerido ({step.acceptedFormats?.join(', ')})
-                                          </span>
-                                        </div>
-                                      </label>
-                                    )}
-                                  </div>
-                                )}
-
-                                {isActive && step.motivation && (
-                                  <div className="step-motivation">
-                                    💡 {step.motivation}
-                                  </div>
-                                )}
-
-                                {step.assignedTo && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', width: 'fit-content' }}>
-                                    {(() => {
-                                      const member = teamMembers.find(m => m.id === step.assignedTo);
-                                      return member ? (
-                                        <>
-                                          <img src={member.avatar} alt={member.name} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} />
-                                          <span>Responsable: <strong>{member.name}</strong> ({member.role})</span>
-                                        </>
-                                      ) : <span>Asignado</span>;
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
+            <div style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>Ejecuciones Activas</h2>
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                  onClick={() => {
+                    setLaunchInstanceName('');
+                    setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                    setLaunchTemplateId('');
+                    setShowLaunchModal(true);
+                  }}
+                >
+                  🚀 Nueva Ejecución
+                </button>
               </div>
-            ) : (
+              {instances.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
@@ -1748,7 +1603,57 @@ function App() {
                   🚀 Iniciar Primera Ejecución
                 </button>
               </div>
-            )
+              ) : (
+                <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                  {instances.map(inst => {
+                    const total = inst.steps.length;
+                    const completed = inst.steps.filter(s => s.isCompleted).length;
+                    const percentage = Math.round((completed / total) * 100) || 0;
+                    const isOverdue = checkOverdueSteps(inst);
+
+                    return (
+                      <div 
+                        key={inst.id}
+                        className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
+                        onClick={() => setSelectedInstanceId(inst.id)}
+                        style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: 'pointer' }}
+                      >
+                        <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h4 style={{ fontSize: '1rem', fontWeight: 'bold' }}>{inst.instanceName}</h4>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
+                            <button 
+                              onClick={(e) => deleteInstance(inst.id, e)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                            {inst.category}
+                          </span>
+                          {isOverdue && (
+                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
+                              ⚠️ Demorado
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="process-progress-container">
+                          <div className="progress-bar-bg">
+                            <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                          </div>
+                          <span className="progress-percent">{percentage}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           ) : activeTab === 'templates' ? (
             /* Templates View Grid & Popup details Modal */
             <div>
@@ -2667,57 +2572,7 @@ function App() {
             {/* List based on active tab */}
             <div className="card-section">
               {activeTab === 'instances' ? (
-                <div>
-                  <h3 className="section-title">Ejecuciones Activas</h3>
-                  <div className="process-list">
-                    {instances.map(inst => {
-                      const total = inst.steps.length;
-                      const completed = inst.steps.filter(s => s.isCompleted).length;
-                      const percentage = Math.round((completed / total) * 100) || 0;
-                      const isOverdue = checkOverdueSteps(inst);
-
-                      return (
-                        <div 
-                          key={inst.id}
-                          className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
-                          onClick={() => setSelectedInstanceId(inst.id)}
-                          style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
-                        >
-                          <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h4 style={{ fontSize: '1rem', fontWeight: 'bold' }}>{inst.instanceName}</h4>
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
-                              <button 
-                                onClick={(e) => deleteInstance(inst.id, e)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                              {inst.category}
-                            </span>
-                            {isOverdue && (
-                              <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
-                                ⚠️ Demorado
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="process-progress-container">
-                            <div className="progress-bar-bg">
-                              <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
-                            </div>
-                            <span className="progress-percent">{percentage}%</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <div style={{ display: 'none' }}></div>
               ) : activeTab === 'templates' ? (
                 <div>
                   <h3 className="section-title">Plantillas Disponibles</h3>
@@ -2783,6 +2638,338 @@ function App() {
         )}
 
       </div>
+
+      {/* Active Execution Modal */}
+      {selectedInstanceId && activeInstance && (
+        <div className="modal-overlay" onClick={() => setSelectedInstanceId(null)}>
+          <div className="modal-card" style={{ maxWidth: '1000px', width: '95%', maxHeight: '90vh', overflowY: 'auto', padding: 0 }} onClick={e => e.stopPropagation()}>
+            <div style={{ position: 'sticky', top: 0, right: 0, display: 'flex', justifyContent: 'flex-end', padding: '1rem', background: 'var(--bg-main)', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+               <button onClick={() => setSelectedInstanceId(null)} className="btn btn-secondary" style={{ padding: '0.5rem' }}>Cerrar</button>
+            </div>
+            <div style={{ padding: '0 2rem 2rem 2rem' }}>
+<div className="achievement-card-unified">
+                {/* Header info */}
+                <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div>
+                    <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>
+                      {activeInstance.instanceName}
+                    </h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontWeight: 400, marginTop: '4px' }}>
+                      Plantilla base: {activeInstance.title} • Iniciado el {new Date(activeInstance.startedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {checkOverdueSteps(activeInstance) && (
+                      <span className="overdue-badge">⚠️ Con Atraso</span>
+                    )}
+                    <button
+                      className="btn btn-primary"
+                      style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                      onClick={() => {
+                        setLaunchInstanceName('');
+                        setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                        setLaunchTemplateId('');
+                        setShowLaunchModal(true);
+                      }}
+                    >
+                      🚀 Nueva Ejecución
+                    </button>
+                  </div>
+                </div>
+
+                {/* Achievement style - Big unlocked counter */}
+                {(() => {
+                  const totalSteps = activeInstance.steps.length;
+                  const completedSteps = activeInstance.steps.filter(s => s.isCompleted).length;
+                  
+                  // Calculate active index
+                  // Determine active state for all steps
+                  const stepsActive = [];
+                  activeInstance.steps.forEach((step, idx) => {
+                    if (idx === 0) {
+                      stepsActive.push(true);
+                    } else {
+                      const prevStep = activeInstance.steps[idx - 1];
+                      const isPrevCompleted = prevStep.isCompleted;
+                      const isSameDeadline = prevStep.relativeOffsetDays === step.relativeOffsetDays ||
+                        new Date(prevStep.dueDate).toDateString() === new Date(step.dueDate).toDateString();
+                      const active = isPrevCompleted || (stepsActive[idx - 1] && isSameDeadline);
+                      stepsActive.push(active);
+                    }
+                  });
+
+                  let activeIndex = activeInstance.steps.findIndex((s, idx) => !s.isCompleted && stepsActive[idx]);
+                  if (activeIndex === -1) {
+                    const allDone = activeInstance.steps.every(s => s.isCompleted);
+                    activeIndex = allDone ? totalSteps : 0;
+                  }
+
+                  // Pick 3 steps for highlighted display: previous (completed), current (active), next (upcoming/locked)
+                  const highlighted = [];
+                  
+                  // Previous completed step
+                  if (activeIndex > 0 && activeInstance.steps[activeIndex - 1]) {
+                    highlighted.push({
+                      step: activeInstance.steps[activeIndex - 1],
+                      index: activeIndex - 1,
+                      status: 'completed'
+                    });
+                  }
+                  
+                  // Current active step
+                  if (activeIndex < totalSteps && activeInstance.steps[activeIndex]) {
+                    highlighted.push({
+                      step: activeInstance.steps[activeIndex],
+                      index: activeIndex,
+                      status: 'active'
+                    });
+                  }
+                  
+                  // Next locked step
+                  if (activeIndex + 1 < totalSteps && activeInstance.steps[activeIndex + 1]) {
+                    highlighted.push({
+                      step: activeInstance.steps[activeIndex + 1],
+                      index: activeIndex + 1,
+                      status: 'upcoming'
+                    });
+                  }
+
+                  return (
+                    <>
+                      {/* Big Counter */}
+                      <div className="achievement-unlocked-section" style={{ textAlign: 'center', margin: '2rem 0' }}>
+                        <p className="achievement-unlocked-count" style={{ fontSize: '4.5rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, lineHeight: 1 }}>
+                          {completedSteps} <span className="fraction-total" style={{ fontSize: '2rem', color: 'var(--text-muted)', fontWeight: 500 }}>/ {totalSteps}</span>
+                        </p>
+                        <p className="achievement-unlocked-label" style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600, marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Pasos Completados en este Flujo
+                        </p>
+                      </div>
+
+                      {/* Highlighted Steps (Trio Display) */}
+                      <div className="achievement-trio-display">
+                        {highlighted.map((item, index) => {
+                          const step = item.step;
+                          const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
+                          const alignmentClass = highlighted.length === 3 
+                            ? (index === 1 ? "trio-active" : "trio-side") 
+                            : (item.status === 'active' ? "trio-active" : "trio-side");
+
+                          return (
+                            <div key={step.id} className={`trio-card ${alignmentClass} ${item.status}`}>
+                              <div className="trio-card-header">
+                                <span className="trio-badge-number">Paso {item.index + 1}</span>
+                                {item.status === 'completed' && <Check size={16} className="text-success-icon" />}
+                                {item.status === 'active' && <Clock size={16} className="text-active-icon animate-pulse" />}
+                                {item.status === 'upcoming' && <AlertCircle size={16} className="text-muted-icon" />}
+                              </div>
+
+                              <h4 className="trio-card-title">{step.title}</h4>
+                              
+                              {item.status === 'active' && (
+                                <>
+                                  <span className="trio-card-date">Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
+                                  <p className="trio-card-desc">{step.description}</p>
+                                  
+                                  {isOverdue && (
+                                    <div className="overdue-banner">
+                                      <AlertCircle size={14} />
+                                      <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="trio-card-action">
+                                    {step.type === 'manual' ? (
+                                      <label className="emotional-checkbox-label">
+                                        <input 
+                                          type="checkbox"
+                                          checked={step.isCompleted}
+                                          disabled={step.isCompleted}
+                                          onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
+                                        />
+                                        <div className="checkbox-visual">
+                                          {step.isCompleted && <Check size={16} />}
+                                        </div>
+                                        <span>Marcar como hecho</span>
+                                      </label>
+                                    ) : (
+                                      <div style={{ width: '100%' }}>
+                                        {step.isCompleted ? (
+                                          <div className="uploaded-badge">
+                                            <FileCheck size={14} />
+                                            <span>{step.uploadedFileName || 'Cargado'}</span>
+                                          </div>
+                                        ) : (
+                                          <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.4rem' }}>
+                                            <input 
+                                              type="file" 
+                                              style={{ display: 'none' }}
+                                              accept={step.acceptedFormats?.join(',')}
+                                              onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                  handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                                }
+                                              }}
+                                            />
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                              <Upload size={14} className="text-primary" />
+                                              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                                Subir archivo ({step.acceptedFormats?.join(', ')})
+                                              </span>
+                                            </div>
+                                          </label>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {step.motivation && (
+                                    <div className="step-motivation" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                                      💡 {step.motivation}
+                                    </div>
+                                  )}
+
+                                  {step.assignedTo && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', background: '#f5f3f0', padding: '0.15rem 0.5rem', borderRadius: '20px', marginTop: '0.5rem', width: 'fit-content' }}>
+                                      {(() => {
+                                        const member = teamMembers.find(m => m.id === step.assignedTo);
+                                        return member ? (
+                                          <>
+                                            <img src={member.avatar} alt={member.name} style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                            <span>Responsable: <strong>{member.name}</strong></span>
+                                          </>
+                                        ) : <span>Asignado</span>;
+                                      })()}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+
+                              {item.status !== 'active' && (
+                                <p className="trio-card-desc-compact">{step.description}</p>
+                              )}
+                              
+                              {item.status === 'upcoming' && (
+                                <span className="trio-card-date">Límite estimado: {new Date(step.dueDate).toLocaleDateString()}</span>
+                              )}
+                              {item.status === 'completed' && (
+                                <span className="badge success" style={{ fontSize: '0.7rem', display: 'inline-block', width: 'fit-content', marginTop: '0.5rem' }}>Completado</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* All Steps Collapsible Section */}
+                      <div className="achievement-steps-list-section">
+                        <div className="steps-list-header" onClick={() => setShowAllSteps(!showAllSteps)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1.25rem', marginTop: '1.5rem' }}>
+                          <h3 className="text-primary text-sm font-medium" style={{ margin: 0 }}>
+                            Todos los Pasos del Proceso ({totalSteps})
+                          </h3>
+                          <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>
+                            {showAllSteps ? 'Ocultar Detalles' : 'Ver Todos'}
+                          </button>
+                        </div>
+
+                        {showAllSteps && (
+                          <div className="steps-container" style={{ marginTop: '1.25rem' }}>
+                            {activeInstance.steps.map((step, idx) => {
+                              const isActive = !step.isCompleted && stepsActive[idx];
+                              const isLocked = !step.isCompleted && !stepsActive[idx];
+                              const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
+
+                              return (
+                                <div 
+                                  key={step.id} 
+                                  className={`step-row ${step.isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+                                  style={{ opacity: isLocked ? 0.65 : 1 }}
+                                >
+                                  <div className="step-indicator">
+                                    {step.isCompleted ? <Check size={20} /> : idx + 1}
+                                  </div>
+
+                                  <div className="step-card">
+                                    <div className="step-card-header">
+                                      <div>
+                                        <h4>{step.title}</h4>
+                                        <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                                          {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
+                                        </span>
+                                      </div>
+                                      <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
+                                        {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
+                                      </span>
+                                    </div>
+                                    <p>{step.description}</p>
+
+                                    {isOverdue && (
+                                      <div className="overdue-banner">
+                                        <AlertCircle size={16} />
+                                        <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
+                                      </div>
+                                    )}
+
+                                    {!isLocked && (
+                                      <div className="step-action-area">
+                                        {step.type === 'manual' ? (
+                                          <label className="emotional-checkbox-label">
+                                            <input 
+                                              type="checkbox"
+                                              checked={step.isCompleted}
+                                              disabled={step.isCompleted}
+                                              onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
+                                            />
+                                            <div className="checkbox-visual">
+                                              {step.isCompleted && <Check size={16} />}
+                                            </div>
+                                            <span>{step.isCompleted ? 'Logrado' : 'Marcar como hecho'}</span>
+                                          </label>
+                                        ) : (
+                                          <div>
+                                            {step.isCompleted ? (
+                                              <div className="uploaded-badge">
+                                                <FileCheck size={16} />
+                                                <span>{step.uploadedFileName || 'Archivo cargado'}</span>
+                                              </div>
+                                            ) : (
+                                              <label className="step-file-upload">
+                                                <input 
+                                                  type="file" 
+                                                  style={{ display: 'none' }}
+                                                  accept={step.acceptedFormats?.join(',')}
+                                                  onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                      handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                                    }
+                                                  }}
+                                                />
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                  <Upload size={16} className="text-primary" />
+                                                  <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
+                                                </div>
+                                              </label>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Start Execution Modal */}
       {showLaunchModal && (

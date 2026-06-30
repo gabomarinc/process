@@ -1939,3 +1939,179 @@ button, input, select {
   }
 }
 
+/* Achievement Card Style for Active Executions */
+.achievement-card-unified {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 1.5rem 0.5rem;
+  transition: var(--transition-smooth);
+}
+
+.achievement-unlocked-section {
+  text-align: center;
+  margin: 1.5rem 0;
+  animation: fadeIn 0.8s ease-out;
+}
+
+.achievement-unlocked-count {
+  font-size: 5rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1;
+  font-family: var(--font-sans);
+}
+
+.fraction-total {
+  font-size: 2.2rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.achievement-unlocked-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.achievement-trio-display {
+  display: flex;
+  gap: 1.25rem;
+  align-items: stretch;
+  justify-content: center;
+  margin: 3.5rem 0 2rem 0;
+}
+
+@media (max-width: 768px) {
+  .achievement-trio-display {
+    flex-direction: column;
+    gap: 1.5rem;
+    margin: 2rem 0;
+  }
+}
+
+.trio-card {
+  flex: 1;
+  background: white;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 180px;
+  transition: var(--transition-bounce);
+  position: relative;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Offset positioning matching React component */
+.trio-card.trio-active {
+  transform: translateY(-8px);
+  border-color: rgba(39, 190, 167, 0.35);
+  background-color: #FFFDFB;
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+
+@media (max-width: 768px) {
+  .trio-card.trio-active {
+    transform: none;
+  }
+}
+
+.trio-card.completed {
+  background: #FAF9F6;
+  border-color: rgba(0, 0, 0, 0.04);
+  opacity: 0.85;
+}
+
+.trio-card.upcoming {
+  background: #F5F4F0;
+  border-color: rgba(0, 0, 0, 0.03);
+  opacity: 0.7;
+  filter: grayscale(0.8);
+}
+
+.trio-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.trio-badge-number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.trio-card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 0.35rem;
+  line-height: 1.25;
+}
+
+.trio-card-date {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.trio-card-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.trio-card-desc-compact {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trio-card-action {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(0, 0, 0, 0.05);
+}
+
+.text-success-icon {
+  color: var(--color-success);
+}
+
+.text-active-icon {
+  color: var(--color-primary);
+}
+
+.text-muted-icon {
+  color: var(--text-muted);
+}
+
+.achievement-steps-list-section {
+  width: 100%;
+}
+
+.steps-list-header {
+  transition: var(--transition-smooth);
+}
+
+.steps-list-header:hover h3 {
+  color: var(--color-primary-hover) !important;
+}
+
