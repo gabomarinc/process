@@ -601,20 +601,32 @@ function App() {
   };
 
   // Launch a new instance from selected template
-  const handleLaunchInstance = async (e) => {
-    e.preventDefault();
-    // Resolve which template to use: prefer the currently open detail modal, else the modal picker
-    const templateToUse = activeTemplate || templates.find(t => t.id === launchTemplateId);
-    if (!templateToUse || !launchInstanceName.trim()) return;
+  const handleLaunchInstance = async (data) => {
+    let templateToUse;
+    let startDateTime;
+    let instanceName;
 
-    const startDateTime = new Date(launchStartDate).getTime();
+    // Support both old event-based call and new data object call
+    if (data && data.preventDefault) {
+      data.preventDefault();
+      templateToUse = activeTemplate || templates.find(t => t.id === launchTemplateId);
+      if (!templateToUse || !launchInstanceName.trim()) return;
+      startDateTime = new Date(launchStartDate).getTime();
+      instanceName = launchInstanceName;
+    } else {
+      templateToUse = templates.find(t => t.id === data.templateId);
+      if (!templateToUse || !data.instanceName.trim()) return;
+      startDateTime = data.startDate.getTime();
+      instanceName = data.instanceName;
+    }
+
     
     const newInstance = {
       id: "inst_" + Date.now(),
       templateId: templateToUse.id,
       title: templateToUse.title,
-      instanceName: launchInstanceName,
-      startedAt: new Date(launchStartDate).toISOString(),
+      instanceName: instanceName,
+      startedAt: new Date(startDateTime).toISOString(),
       companionName: templateToUse.companionName,
       companionAvatar: templateToUse.companionAvatar,
       companionGreeting: templateToUse.companionGreeting,
@@ -3063,126 +3075,19 @@ function App() {
         </div>
       )}
 
+
       {/* Start Execution Modal */}
       {showLaunchModal && (
-        <div className="modal-overlay" onClick={() => { setShowLaunchModal(false); setLaunchModalStep(1); }}>
-          <form className="modal-card" style={{ maxWidth: '480px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onSubmit={e => {
-            if (launchModalStep < 2) {
-              e.preventDefault();
-              if (!activeTemplate && !launchTemplateId) {
-                showAlert("Por favor selecciona una plantilla.");
-                return;
-              }
-              if (!launchInstanceName.trim()) {
-                showAlert("Por favor introduce el nombre de la ejecución.");
-                return;
-              }
-              setLaunchModalStep(2);
-            } else {
-              handleLaunchInstance(e);
-            }
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
-                🚀 Iniciar Proceso
-              </h3>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
-                Paso {launchModalStep} de 2
-              </span>
-            </div>
-
-            {/* Stepper Progress Bar */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: 'var(--color-primary)' }} />
-              <div style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: launchModalStep >= 2 ? 'var(--color-primary)' : 'rgba(0,0,0,0.06)' }} />
-            </div>
-
-            {launchModalStep === 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {(activeTemplate || templates.find(t => t.id === launchTemplateId)) ? (
-                  <div style={{ backgroundColor: 'var(--bg-light)', padding: '0.75rem 1rem', borderRadius: '8px', borderLeft: '3px solid var(--color-primary)', fontSize: '0.85rem' }}>
-                    Plantilla: <strong>{(activeTemplate || templates.find(t => t.id === launchTemplateId))?.title}</strong>
-                  </div>
-                ) : (
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Selecciona y personaliza la plantilla que vas a ejecutar a continuación.
-                  </p>
-                )}
-
-                {/* Template picker — only shown when not launched from a template detail */}
-                {!activeTemplate && (
-                  <div className="form-group">
-                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Plantilla de Proceso *</label>
-                    <select
-                      className="form-input"
-                      value={launchTemplateId}
-                      onChange={e => setLaunchTemplateId(e.target.value)}
-                      required
-                    >
-                      <option value="">-- Selecciona una plantilla --</option>
-                      {templates.map(t => (
-                        <option key={t.id} value={t.id}>{t.companionAvatar} {t.title}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                
-                <div className="form-group">
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Nombre de la ejecución (Caso / Cliente / Empleado) *</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="Ej. Onboarding - Juan Pérez"
-                    value={launchInstanceName}
-                    onChange={(e) => setLaunchInstanceName(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-              </div>
-            )}
-
-            {launchModalStep === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  Define cuándo iniciará el proceso. Los plazos de cada paso se programarán automáticamente a partir de esta fecha.
-                </p>
-                <div className="form-group">
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', display: 'block' }}>Fecha de Inicio del Proceso *</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={launchStartDate}
-                    onChange={(e) => setLaunchStartDate(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1rem' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => {
-                  if (launchModalStep > 1) {
-                    setLaunchModalStep(1);
-                  } else {
-                    setShowLaunchModal(false);
-                  }
-                }}
-              >
-                {launchModalStep > 1 ? 'Atrás' : 'Cancelar'}
-              </button>
-              <button 
-                type="submit" 
-                className="btn btn-primary"
-              >
-                {launchModalStep === 2 ? '✅ Crear Proceso Vivo' : 'Siguiente'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <LaunchExecutionModal
+          templates={templates}
+          teamMembers={teamMembers}
+          initialTemplateId={activeTemplate?.id || launchTemplateId}
+          onSchedule={(data) => {
+            handleLaunchInstance(data);
+            setShowLaunchModal(false);
+          }}
+          onCancel={() => { setShowLaunchModal(false); setLaunchModalStep(1); }}
+        />
       )}
 
       {/* Complete Celebration Modal */}
