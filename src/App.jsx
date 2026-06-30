@@ -1,3 +1,4 @@
+import { useAlert } from './contexts/AlertContext';
 import React, { useState, useEffect } from 'react';
 import { 
   mockProcesses as initialTemplates 
@@ -32,6 +33,8 @@ import {
 } from 'lucide-react';
 
 function App() {
+  const showAlert = useAlert();
+
 
   // Auth state
   const [user, setUser] = useState(null);
@@ -497,7 +500,7 @@ function App() {
       if (!res.ok) throw new Error(data.error || 'Error al eliminar usuario.');
       setOrgUsers(prev => prev.filter(u => u.id !== userId));
     } catch (err) {
-      alert(err.message);
+      showAlert(err.message);
     }
   };
 
@@ -505,7 +508,7 @@ function App() {
   const handleSaveMember = async (e) => {
     e.preventDefault();
     if (!memberFormData.name || !memberFormData.role || !memberFormData.email) {
-      alert("Por favor completa los campos obligatorios.");
+      showAlert("Por favor completa los campos obligatorios.");
       return;
     }
 
@@ -911,7 +914,7 @@ function App() {
       setUploadStatusMsg("Error al generar flujo con IA.");
       setTimeout(() => {
         setIsUploading(false);
-        alert(`Hubo un problema al consultar a Gemini: ${error.message || error}\n\nPor favor, verifica que tu API Key sea correcta.`);
+        showAlert(`Hubo un problema al consultar a Gemini: ${error.message || error}\n\nPor favor, verifica que tu API Key sea correcta.`);
       }, 1500);
     }
   };
@@ -938,7 +941,7 @@ function App() {
             generateTemplate(result.value, titleSuggestion);
           } catch (err) {
             console.error(err);
-            alert("No se pudo extraer texto del archivo Word.");
+            showAlert("No se pudo extraer texto del archivo Word.");
             setIsUploading(false);
           }
         };
@@ -963,7 +966,7 @@ function App() {
             generateTemplate(fullText, titleSuggestion);
           } catch (err) {
             console.error(err);
-            alert("No se pudo extraer texto del archivo PDF.");
+            showAlert("No se pudo extraer texto del archivo PDF.");
             setIsUploading(false);
           }
         };
@@ -978,7 +981,7 @@ function App() {
       }
     } catch (error) {
       console.error(error);
-      alert("Error al procesar el archivo.");
+      showAlert("Error al procesar el archivo.");
       setIsUploading(false);
     }
   };
@@ -3043,11 +3046,11 @@ function App() {
             if (launchModalStep < 2) {
               e.preventDefault();
               if (!activeTemplate && !launchTemplateId) {
-                alert("Por favor selecciona una plantilla.");
+                showAlert("Por favor selecciona una plantilla.");
                 return;
               }
               if (!launchInstanceName.trim()) {
-                alert("Por favor introduce el nombre de la ejecución.");
+                showAlert("Por favor introduce el nombre de la ejecución.");
                 return;
               }
               setLaunchModalStep(2);
@@ -3197,12 +3200,12 @@ function App() {
                 e.preventDefault();
                 if (memberModalStep === 1) {
                   if (!memberFormData.name || !memberFormData.email) {
-                    alert("Por favor completa los campos obligatorios del Paso 1.");
+                    showAlert("Por favor completa los campos obligatorios del Paso 1.");
                     return;
                   }
                 } else if (memberModalStep === 2) {
                   if (!memberFormData.role || !memberFormData.department) {
-                    alert("Por favor completa los campos obligatorios del Paso 2.");
+                    showAlert("Por favor completa los campos obligatorios del Paso 2.");
                     return;
                   }
                 }
@@ -3417,7 +3420,7 @@ function App() {
             if (addUserModalStep < 2) {
               e.preventDefault();
               if (!newUserFormData.name || !newUserFormData.email) {
-                alert("Por favor completa los campos obligatorios del Paso 1.");
+                showAlert("Por favor completa los campos obligatorios del Paso 1.");
                 return;
               }
               setAddUserModalStep(2);

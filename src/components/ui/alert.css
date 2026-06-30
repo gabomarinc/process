@@ -1,0 +1,124 @@
+.gradient-alert-container {
+  pointer-events: none;
+  position: fixed;
+  top: 1.5rem;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gradient-alert {
+  pointer-events: auto;
+  position: relative;
+  width: 90%;
+  max-width: 400px;
+  border-radius: 0.75rem;
+  border: 1px solid;
+  padding: 1rem;
+  padding-left: 3.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease-in-out;
+  overflow: hidden;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+/* Variants */
+.gradient-alert.information {
+  border-color: rgba(59, 130, 246, 0.3);
+  --gradient-from: rgba(59, 130, 246, 0.15);
+}
+.gradient-alert.success {
+  border-color: rgba(34, 197, 94, 0.3);
+  --gradient-from: rgba(34, 197, 94, 0.15);
+}
+.gradient-alert.warning {
+  border-color: rgba(234, 179, 8, 0.3);
+  --gradient-from: rgba(234, 179, 8, 0.15);
+}
+.gradient-alert.error {
+  border-color: rgba(239, 68, 68, 0.3);
+  --gradient-from: rgba(239, 68, 68, 0.15);
+}
+
+.gradient-alert-glow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 100%;
+  background: radial-gradient(circle at 40px 40px, var(--gradient-from) 0%, transparent 40%);
+  opacity: 1;
+  pointer-events: none;
+}
+
+.gradient-alert-icon-container {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 3rem; /* 48px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gradient-alert-icon-container.information {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: rgb(59, 130, 246);
+}
+.gradient-alert-icon-container.success {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: rgb(34, 197, 94);
+}
+.gradient-alert-icon-container.warning {
+  background-color: rgba(234, 179, 8, 0.1);
+  color: rgb(234, 179, 8);
+}
+.gradient-alert-icon-container.error {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: rgb(239, 68, 68);
+}
+
+.gradient-alert-content {
+  flex-grow: 1;
+}
+
+.gradient-alert-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #1a1a1a;
+  margin: 0 0 0.25rem 0;
+}
+
+.gradient-alert-desc {
+  font-size: 0.85rem;
+  color: #666666;
+  margin: 0;
+}
+
+.gradient-alert-close {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  color: #999999;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gradient-alert-close:hover {
+  color: #333333;
+  background-color: rgba(0, 0, 0, 0.05);
+}
