@@ -1,5 +1,6 @@
 import { LaunchExecutionModal } from "./components/ui/LaunchExecutionModal";
 import { SuccessTicketModal } from "./components/ui/SuccessTicketModal";
+import { DestinationCard } from "./components/ui/DestinationCard";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { useAlert } from './contexts/AlertContext';
 import Notifications from './components/ui/notifications';
@@ -37,6 +38,26 @@ import {
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
+
+
+const clientsList = [
+  { id: 'cli_acme', name: 'Acme Corp', flag: '🏢', themeColor: '210 70% 40%', imageUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=600' },
+  { id: 'cli_konsul', name: 'Kônsul Digital', flag: '🚀', themeColor: '170 70% 35%', imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=600' },
+  { id: 'cli_globex', name: 'Globex Inc', flag: '🌐', themeColor: '340 70% 40%', imageUrl: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=600' },
+  { id: 'cli_initech', name: 'Initech', flag: '💻', themeColor: '250 70% 35%', imageUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?q=80&w=600' }
+];
+
+const getClientForInstance = (instance) => {
+  const nameLower = instance.instanceName.toLowerCase();
+  if (nameLower.includes('acme')) return 'cli_acme';
+  if (nameLower.includes('kônsul') || nameLower.includes('konsul')) return 'cli_konsul';
+  if (nameLower.includes('globex')) return 'cli_globex';
+  if (nameLower.includes('initech')) return 'cli_initech';
+  
+  const sum = instance.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const index = sum % clientsList.length;
+  return clientsList[index].id;
+};
 
 function App() {
   const showAlert = useAlert();
@@ -1329,7 +1350,7 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="grid-split-small">
+                    <div className="grid-split-small" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <div 
                         className="nav-small-item-link"
                         onClick={() => {
@@ -1343,6 +1364,16 @@ function App() {
                       >
                         <Bell size={16} />
                         <span>Historial de Alertas</span>
+                      </div>
+                      <div 
+                        className="nav-small-item-link"
+                        onClick={() => {
+                          setActiveTab('clients');
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        <Users size={16} />
+                        <span>Clientes</span>
                       </div>
                     </div>
                   </div>
@@ -1673,7 +1704,22 @@ function App() {
                   🚀 Nueva Ejecución
                 </button>
               </div>
-              {instances.length === 0 ? (
+
+              {selectedClientFilter && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(var(--color-primary-rgb), 0.1)', padding: '0.5rem 1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--color-primary-hover)', fontWeight: 'bold' }}>
+                    Filtrando por cliente: {clientsList.find(c => c.id === selectedClientFilter)?.name}
+                  </span>
+                  <button 
+                    className="btn btn-secondary" 
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                    onClick={() => setSelectedClientFilter(null)}
+                  >
+                    Quitar filtro
+                  </button>
+                </div>
+              )}
+              {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst) === selectedClientFilter).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
@@ -1693,7 +1739,7 @@ function App() {
               </div>
               ) : (
                 <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-                  {instances.map(inst => {
+                  {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst) === selectedClientFilter).map(inst => {
                     const total = inst.steps.length;
                     const completed = inst.steps.filter(s => s.isCompleted).length;
                     const percentage = Math.round((completed / total) * 100) || 0;
@@ -2365,6 +2411,40 @@ function App() {
                 </div>
               )}
             </div>
+          
+          ) : activeTab === 'clients' ? (
+            <div>
+              <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                  Clientes
+                </h2>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem', marginTop: '1.5rem' }}>
+                {clientsList.map(client => {
+                  const clientInstances = instances.filter(inst => getClientForInstance(inst) === client.id);
+                  const active = clientInstances.filter(inst => !inst.steps.every(s => s.isCompleted)).length;
+                  const completed = clientInstances.filter(inst => inst.steps.every(s => s.isCompleted)).length;
+                  const statsText = `${active} Activas • ${completed} Completadas`;
+
+                  return (
+                    <div key={client.id} style={{ height: '360px' }}>
+                      <DestinationCard
+                        imageUrl={client.imageUrl}
+                        location={client.name}
+                        flag={client.flag}
+                        stats={statsText}
+                        themeColor={client.themeColor}
+                        onClick={() => {
+                          setSelectedClientFilter(client.id);
+                          setActiveTab('instances');
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
           ) : activeTab === 'team' ? (
             /* Team Tab View */
             <div>
@@ -2815,18 +2895,6 @@ function App() {
                     {checkOverdueSteps(activeInstance) && (
                       <span className="overdue-badge">⚠️ Con Atraso</span>
                     )}
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-                      onClick={() => {
-                        setLaunchInstanceName('');
-                        setLaunchStartDate(new Date().toISOString().split('T')[0]);
-                        setLaunchTemplateId('');
-                        setShowLaunchModal(true);
-                      }}
-                    >
-                      🚀 Nueva Ejecución
-                    </button>
                   </div>
                 </div>
 
