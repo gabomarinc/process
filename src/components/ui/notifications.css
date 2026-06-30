@@ -51,7 +51,7 @@
   border-bottom: 1px solid #f3f4f6;
 }
 
-.notification-item {
+.radix-notif-item {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
@@ -60,45 +60,68 @@
   transition: background-color 0.2s;
   outline: none;
 }
-.notification-item:hover,
-.notification-item:focus {
+.radix-notif-item:hover,
+.radix-notif-item:focus {
   background-color: #f9fafb;
 }
 
-.notification-item.read {
+.radix-notif-item.read {
   opacity: 0.7;
 }
 
-.notification-item.unread {
+.radix-notif-item.unread {
   font-weight: 500;
 }
 
-.notification-item-icon {
+.radix-notif-item-icon {
   flex-shrink: 0;
   margin-top: 0.125rem;
 }
 
-.notification-item-body {
+.radix-notif-item-body {
   display: flex;
   flex-direction: column;
 }
 
-.notification-item-message {
+.radix-notif-item-message {
   font-size: 0.875rem;
   color: #111827;
   line-height: 1.25rem;
 }
 
-.notification-item-time {
+.radix-notif-item-time {
   font-size: 0.75rem;
   color: #9ca3af;
   margin-top: 0.25rem;
 }
 
-.notification-item-empty {
+.radix-notif-item-empty {
   color: #9ca3af;
   cursor: default;
   padding: 1rem;
   text-align: center;
   font-size: 0.875rem;
+}
+
+.radix-notif-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+  align-items: center;
+}
+.radix-notif-action-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.radix-notif-action-btn:hover {
+  background: #ef4444;
+  color: white;
 }

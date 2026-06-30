@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { BellRing, MessageCircle, AlertTriangle, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { BellRing, MessageCircle, AlertTriangle, CheckCircle, Trash2, Check } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,15 +13,17 @@ import "./notifications.css";
 
 const defaultNotifications = [
   { id: 1, type: "message", message: "Nuevo mensaje de John", timestamp: "hace 2m" },
-  { id: 2, type: "success", message: "Reporte generado exitosamente", timestamp: "hace 10m" },
+  { id: 2, type: "success", message: "Reporte generado exitosamente", timestamp: "hace 10m", instanceId: 1 },
   { id: 3, type: "alert", message: "Mantenimiento del servidor programado", timestamp: "hace 1h", read: true },
 ];
 
 export default function Notifications({
-  notifications = defaultNotifications,
+  initialNotifications = defaultNotifications,
   icon,
+  onNavigate
 }) {
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const [notifs, setNotifs] = useState(initialNotifications);
+  const unreadCount = notifs.filter((n) => !n.read).length;
 
   const getIcon = (type) => {
     switch (type) {
@@ -33,6 +36,16 @@ export default function Notifications({
       default:
         return <BellRing size={20} color="#6b7280" />;
     }
+  };
+
+  const markAsRead = (e, id) => {
+    e.stopPropagation();
+    setNotifs(notifs.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const deleteNotif = (e, id) => {
+    e.stopPropagation();
+    setNotifs(notifs.filter(n => n.id !== id));
   };
 
   return (
@@ -48,26 +61,51 @@ export default function Notifications({
 
       <DropdownMenuContent
         side="bottom"
-        align="end" // Align to the end (right) since it's next to Mi Cuenta
+        align="end" 
         className="notifications-content"
       >
-        {notifications.length === 0 ? (
-          <DropdownMenuItem className="notification-item-empty">
+        {notifs.length === 0 ? (
+          <DropdownMenuItem className="radix-notif-item-empty">
             No tienes notificaciones
           </DropdownMenuItem>
         ) : (
-          notifications.map((n) => (
+          notifs.map((n) => (
             <DropdownMenuItem
               key={n.id}
-              className={`notification-item ${n.read ? "read" : "unread"}`}
+              className={`radix-notif-item ${n.read ? "read" : "unread"}`}
             >
-              <div className="notification-item-icon">{getIcon(n.type)}</div>
-              <div className="notification-item-body">
-                <span className="notification-item-message">{n.message}</span>
-                {n.timestamp && (
-                  <span className="notification-item-time">{n.timestamp}</span>
-                )}
+              <div 
+                style={{ display: 'flex', gap: '0.75rem', flexGrow: 1 }} 
+                onClick={() => onNavigate && onNavigate(n)}
+              >
+                <div className="radix-notif-item-icon">{getIcon(n.type)}</div>
+                <div className="radix-notif-item-body">
+                  <span className="radix-notif-item-message">{n.message}</span>
+                  {n.timestamp && (
+                    <span className="radix-notif-item-time">{n.timestamp}</span>
+                  )}
+                </div>
               </div>
+              
+              <div className="radix-notif-actions">
+                {!n.read && (
+                  <button 
+                    className="radix-notif-action-btn" 
+                    onClick={(e) => markAsRead(e, n.id)}
+                    title="Marcar como leída"
+                  >
+                    <Check size={14} />
+                  </button>
+                )}
+                <button 
+                  className="radix-notif-action-btn" 
+                  onClick={(e) => deleteNotif(e, n.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+
             </DropdownMenuItem>
           ))
         )}
