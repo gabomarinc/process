@@ -179,6 +179,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('instances'); // 'instances', 'templates', or 'team'
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
+  const [selectedClientFilter, setSelectedClientFilter] = useState(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   // Team Management states
