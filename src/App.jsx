@@ -160,6 +160,7 @@ function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
 
@@ -3291,11 +3292,21 @@ function App() {
                 <label style={{ fontWeight: 600, fontSize: '0.95rem', display: 'block', marginBottom: '0.5rem', color: 'var(--color-primary)' }}>Asignación de Pasos en Procesos</label>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Activa o desactiva los pasos específicos en los que participará este colaborador.</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '250px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '15px', borderRadius: '12px', backgroundColor: '#fdfbfa' }}>
-                  {templates.map(temp => (
+                  {templates.map(temp => {
+                    const isExpanded = expandedTemplates[temp.id];
+                    return (
                     <div key={temp.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', paddingBottom: '1rem', marginBottom: '1rem' }}>
-                      <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary-hover)', marginBottom: '0.5rem' }}>{temp.title}</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {temp.steps.map((step, sIdx) => {
+                      <div 
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.5rem 0' }}
+                        onClick={() => setExpandedTemplates(prev => ({ ...prev, [temp.id]: !prev[temp.id] }))}
+                      >
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary-hover)', margin: 0 }}>{temp.title}</h4>
+                        <ChevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                      </div>
+                      
+                      {isExpanded && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '0.5rem' }}>
+                          {temp.steps.map((step, sIdx) => {
                           const isStepAssigned = String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
                           
                           return (
@@ -3359,9 +3370,11 @@ function App() {
                             </div>
                           );
                         })}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             </form>
