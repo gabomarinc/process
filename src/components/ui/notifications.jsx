@@ -20,9 +20,29 @@ const defaultNotifications = [
 export default function Notifications({
   initialNotifications = defaultNotifications,
   icon,
-  onNavigate
+  onNavigate,
+  user,
+  apiUrl
 }) {
   const [notifs, setNotifs] = useState(initialNotifications);
+
+  useEffect(() => {
+    if (user && user.id && apiUrl) {
+      fetch(`${apiUrl}/notifications/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${user.token || localStorage.getItem('token')}`
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setNotifs(data);
+        }
+      })
+      .catch(err => console.error('Error fetching notifications:', err));
+    }
+  }, [user, apiUrl]);
+
   const unreadCount = notifs.filter((n) => !n.read).length;
 
   const getIcon = (type) => {
@@ -38,14 +58,40 @@ export default function Notifications({
     }
   };
 
-  const markAsRead = (e, id) => {
+  const markAsRead = async (e, id) => {
     e.stopPropagation();
+    // Optimistic update
     setNotifs(notifs.map(n => n.id === id ? { ...n, read: true } : n));
+    if (apiUrl) {
+      try {
+        await fetch(`${apiUrl}/notifications/${id}/read`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${user?.token || localStorage.getItem('token')}`
+          }
+        });
+      } catch (err) {
+        console.error('Error marking notification read:', err);
+      }
+    }
   };
 
-  const deleteNotif = (e, id) => {
+  const deleteNotif = async (e, id) => {
     e.stopPropagation();
+    // Optimistic update
     setNotifs(notifs.filter(n => n.id !== id));
+    if (apiUrl) {
+      try {
+        await fetch(`${apiUrl}/notifications/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${user?.token || localStorage.getItem('token')}`
+          }
+        });
+      } catch (err) {
+        console.error('Error deleting notification:', err);
+      }
+    }
   };
 
   return (
@@ -82,7 +128,7 @@ export default function Notifications({
                 <div className="radix-notif-item-body">
                   <span className="radix-notif-item-message">{n.message}</span>
                   {n.timestamp && (
-                    <span className="radix-notif-item-time">{n.timestamp}</span>
+                    <span className="radix-notif-item-time">{new Date(n.timestamp).toLocaleString()}</span>
                   )}
                 </div>
               </div>
@@ -90,7 +136,7 @@ export default function Notifications({
               <div className="radix-notif-actions">
                 {!n.read && (
                   <button 
-                    className="radix-notif-action-btn" 
+                    className="radix-notif-action-btn success" 
                     onClick={(e) => markAsRead(e, n.id)}
                     title="Marcar como leída"
                   >
@@ -113,3 +159,4 @@ export default function Notifications({
     </DropdownMenu>
   );
 }
+

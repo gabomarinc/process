@@ -1409,7 +1409,7 @@ function App() {
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
             <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Notifications onNavigate={(n) => { if (n.instanceId) setSelectedInstanceId(n.instanceId); }} />
+              <Notifications user={user} apiUrl="" onNavigate={(n) => { if (n.instanceId) setSelectedInstanceId(n.instanceId); }} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
                   className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
