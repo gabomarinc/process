@@ -175,6 +175,7 @@ function App() {
 
   // Stepper steps tracking
   const [memberModalStep, setMemberModalStep] = useState(1);
+  const [expandedTeamTemplates, setExpandedTeamTemplates] = useState({});
   const [addUserModalStep, setAddUserModalStep] = useState(1);
   const [launchModalStep, setLaunchModalStep] = useState(1);
 
@@ -580,8 +581,10 @@ function App() {
         modifiedTemplateIds = new Set();
 
         setShowMemberModal(false);
+        setShowEditProfileModal(false);
         setEditingMember(null);
         setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+        showAlert("¡Perfil guardado con éxito!");
       } else {
         console.error("Error al guardar miembro del equipo");
       }
@@ -2111,7 +2114,7 @@ function App() {
                                             const member = teamMembers.find(m => String(m.id) === String(step.assignedTo));
                                             return member ? (
                                               <>
-                                                <img src={member.avatar} alt={member.name} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold' }}>{member.name ? member.name.charAt(0).toUpperCase() : 'U'}</div>
                                                 <span>Asignado a: <strong>{member.name}</strong> ({member.role})</span>
                                               </>
                                             ) : <span>Asignado</span>;
@@ -2164,11 +2167,7 @@ function App() {
                                 >
                                   {/* Member Header */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-                                    <img
-                                      src={member.avatar}
-                                      alt={member.name}
-                                      style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(var(--color-primary-rgb),0.2)' }}
-                                    />
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 'bold', border: '2px solid rgba(var(--color-primary-rgb),0.2)' }}>{member.name ? member.name.charAt(0).toUpperCase() : 'U'}</div>
                                     <div style={{ flexGrow: 1 }}>
                                       <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>{member.name}</h4>
                                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -2931,8 +2930,8 @@ function App() {
                                         <option key={m.id} value={String(m.id)}>{m.name}</option>
                                       ))}
                                     </select>
-                                    {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
-                                      <img src={teamMembers.find(m => String(m.id) === String(step.assignedTo)).avatar} alt="avatar" style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo)) && (
+                                      <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 'bold' }}>{teamMembers.find(m => String(m.id) === String(step.assignedTo)).name.charAt(0).toUpperCase()}</div>
                                     )}
                                   </div>
                                 </>
@@ -3014,8 +3013,8 @@ function App() {
                                           <option key={m.id} value={String(m.id)}>{m.name}</option>
                                         ))}
                                       </select>
-                                      {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo))?.avatar && (
-                                        <img src={teamMembers.find(m => String(m.id) === String(step.assignedTo)).avatar} alt="avatar" style={{ width: '16px', height: '16px', borderRadius: '50%', objectFit: 'cover' }} />
+                                      {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo)) && (
+                                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold' }}>{teamMembers.find(m => String(m.id) === String(step.assignedTo)).name.charAt(0).toUpperCase()}</div>
                                       )}
                                     </div>
 
@@ -3302,7 +3301,6 @@ function App() {
               onClick={(e) => {
                 e.preventDefault();
                 handleSaveMember(e);
-                setShowEditProfileModal(false);
               }}
             >
               Guardar Cambios
@@ -3436,10 +3434,21 @@ function App() {
                       Activa o desactiva los pasos específicos en los que participará este colaborador.
                     </p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxHeight: '350px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.08)', padding: '15px', borderRadius: '12px', backgroundColor: '#fdfbfa' }}>
-                      {templates.map(temp => (
+                      {templates.map(temp => {
+                        const isExpanded = expandedTeamTemplates[temp.id];
+                        return (
                         <div key={temp.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', paddingBottom: '1rem', marginBottom: '1rem' }}>
-                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary-hover)', marginBottom: '0.5rem' }}>{temp.title}</h4>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div 
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.5rem 0', userSelect: 'none' }}
+                            onClick={() => setExpandedTeamTemplates(prev => ({ ...prev, [temp.id]: !prev[temp.id] }))}
+                          >
+                            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary-hover)', margin: 0 }}>{temp.title}</h4>
+                            <span style={{ transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}>
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </span>
+                          </div>
+                          {isExpanded && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '0.75rem' }}>
                             {temp.steps.map((step, sIdx) => {
                               // We store step assignments locally during edit. For team member we can check:
                               // If this step is assigned to current member or in editing process we are assigning it.
@@ -3514,8 +3523,9 @@ function App() {
                               );
                             })}
                           </div>
+                          )}
                         </div>
-                      ))}
+                      );})}
                       {templates.length === 0 && (
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                           No hay plantillas de procesos disponibles.
