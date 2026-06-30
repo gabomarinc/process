@@ -1,4 +1,5 @@
 import { useAlert } from './contexts/AlertContext';
+import Notifications from './components/ui/notifications';
 import React, { useState, useEffect } from 'react';
 import { 
   mockProcesses as initialTemplates 
@@ -1407,7 +1408,8 @@ function App() {
 
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
-            <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center' }}>
+            <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <Notifications />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
                   className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
@@ -2647,32 +2649,7 @@ function App() {
               )}
             </div>
 
-            {/* Real-time Overdue Notification Logs Drawer */}
-            <div className="notification-panel">
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Bell size={18} style={{ color: '#D32F2F' }} /> Registro de Notificaciones Enviadas
-              </h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Historial de alertas por atraso de plazos enviadas a los responsables.
-              </p>
-              <div className="notification-list">
-                {notificationLogs.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    No hay notificaciones de retraso por el momento. ¡Todo va en tiempo! ☀️
-                  </div>
-                ) : (
-                  notificationLogs.map(log => (
-                    <div key={log.id} className="notification-item">
-                      <div>
-                        <strong>{log.instanceName}</strong>
-                        <div style={{ marginTop: '2px', color: 'var(--text-muted)' }}>{log.message}</div>
-                      </div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.time}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+
 
           </div>
         )}
