@@ -224,9 +224,7 @@ function App() {
         const instancesRes = await fetch('/api/instances');
         const instancesData = await instancesRes.json();
         setInstances(instancesData);
-        if (instancesData.length > 0) {
-          setSelectedInstanceId(instancesData[0].id);
-        }
+
 
         const logsRes = await fetch('/api/notifications');
         const logsData = await logsRes.json();
@@ -633,8 +631,7 @@ function App() {
     e.stopPropagation();
     setInstances(prev => prev.filter(inst => inst.id !== id));
     if (selectedInstanceId === id) {
-      const remaining = instances.filter(inst => inst.id !== id);
-      setSelectedInstanceId(remaining[0]?.id || "");
+      setSelectedInstanceId("");
     }
 
     // Call Express DELETE endpoint
