@@ -2639,9 +2639,10 @@ function App() {
       {/* Active Execution Modal */}
       {selectedInstanceId && activeInstance && (
         <div className="modal-overlay" onClick={() => setSelectedInstanceId(null)}>
-          <div className="modal-card" style={{ maxWidth: '1000px', width: '95%', maxHeight: '90vh', overflowY: 'auto', padding: 0 }} onClick={e => e.stopPropagation()}>
-            <div style={{ position: 'sticky', top: 0, right: 0, display: 'flex', justifyContent: 'flex-end', padding: '1rem', background: 'var(--bg-main)', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-               <button onClick={() => setSelectedInstanceId(null)} className="btn btn-secondary" style={{ padding: '0.5rem' }}>Cerrar</button>
+          <div className="modal-card" style={{ maxWidth: '850px', width: '95%', maxHeight: '85vh', overflowY: 'auto', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ position: 'sticky', top: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(8px)', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+               <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Detalles de la Ejecución</span>
+               <button onClick={() => setSelectedInstanceId(null)} className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>Cerrar</button>
             </div>
             <div style={{ padding: '0 2rem 2rem 2rem' }}>
 <div className="achievement-card-unified">
