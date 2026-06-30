@@ -591,7 +591,7 @@ function App() {
           isOpen: true,
           title: "¡Perfil Guardado!",
           message: editingMember ? "Los cambios se guardaron correctamente." : "El nuevo colaborador fue añadido con éxito.",
-          ticketId: memberId,
+          ticketId: editingMember ? "Edición de Equipo" : "Nuevo Miembro",
           customFields: [
             { label: "Colaborador", value: newMember.name },
             { label: "Rol", value: newMember.role }
@@ -678,7 +678,7 @@ function App() {
       isOpen: true,
       title: "¡Ejecución Iniciada!",
       message: "Se ha lanzado la ejecución con éxito.",
-      ticketId: newInstance.id,
+      ticketId: "Nueva Ejecución",
       customFields: [
         { label: "Ejecución", value: newInstance.instanceName },
         { label: "Plantilla Base", value: newInstance.title }
@@ -864,7 +864,7 @@ function App() {
           isOpen: true,
           title: "¡Plantilla Creada!",
           message: "La plantilla se ha generado exitosamente.",
-          ticketId: newTemp.id,
+          ticketId: "Nueva Plantilla",
           customFields: [
             { label: "Nombre", value: newTemp.title }
           ]
@@ -977,7 +977,7 @@ function App() {
         isOpen: true,
         title: "¡Plantilla Creada!",
         message: "La plantilla se ha generado exitosamente.",
-        ticketId: finalTemplate.id,
+        ticketId: "Nueva Plantilla",
         customFields: [
           { label: "Nombre", value: finalTemplate.title }
         ]
@@ -2344,7 +2344,7 @@ function App() {
                                         isOpen: true,
                                         title: "¡Asignación Guardada!",
                                         message: `Se actualizaron los pasos de ${member.name} en la plantilla.`,
-                                        ticketId: member.id,
+                                        ticketId: "Asignación de Pasos",
                                         customFields: [
                                           { label: "Colaborador", value: member.name },
                                           { label: "Plantilla", value: activeTemplate.title }
