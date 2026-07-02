@@ -651,7 +651,22 @@ function App() {
   };
 
   // Delete team member
-  const handleDeleteMember = async (id) => {
+  
+  const handleResendInvite = async (id) => {
+    try {
+      const res = await fetch(`/api/team/${id}/resend-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al reenviar invitación.');
+      showAlert("Invitación reenviada con éxito al correo del usuario.");
+    } catch (err) {
+      showAlert(err.message);
+    }
+  };
+
+const handleDeleteMember = async (id) => {
     if (!window.confirm("¿Estás seguro de eliminar a este miembro del equipo?")) return;
     try {
       const res = await fetch(`/api/team/${id}`, { method: 'DELETE' });
@@ -2567,6 +2582,16 @@ function App() {
                             <span className="badge" style={{ fontSize: '0.75rem', padding: '0.1rem 0.5rem', marginTop: '2px', display: 'inline-block' }}>
                               {member.role}
                             </span>
+                            {member.status === 'pending' && (
+                              <span className="badge warning" style={{ fontSize: '0.75rem', padding: '0.1rem 0.5rem', marginTop: '2px', marginLeft: '6px', display: 'inline-block', backgroundColor: '#fff3cd', color: '#856404' }}>
+                                Pendiente
+                              </span>
+                            )}
+                            {member.status === 'active' && (
+                              <span className="badge success" style={{ fontSize: '0.75rem', padding: '0.1rem 0.5rem', marginTop: '2px', marginLeft: '6px', display: 'inline-block' }}>
+                                Activo
+                              </span>
+                            )}
                           </div>
                         </div>
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
@@ -2605,6 +2630,11 @@ function App() {
                       </div>
                       {!member.isSystem && (
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
+                          {member.status === 'pending' && (
+                            <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', marginRight: 'auto', backgroundColor: '#e2e8f0', color: '#475569' }} onClick={() => handleResendInvite(member.id)}>
+                              Reenviar Invitación
+                            </button>
+                          )}
                           <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
                             modifiedTemplateIds = new Set();
                             setEditingMember(member);

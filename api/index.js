@@ -540,7 +540,14 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
 // 9. Get all team members
 app.get('/api/team', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM team_members WHERE organization_id = $1 ORDER BY name ASC', [req.user.organizationId]);
+    const result = await pool.query(`
+      SELECT t.*, u.password_hash 
+      FROM team_members t 
+      LEFT JOIN users u ON t.email = u.email AND t.organization_id = u.organization_id
+      WHERE t.organization_id = $1 
+      ORDER BY t.name ASC
+    `, [req.user.organizationId]);
+    
     const usersResult = await pool.query("SELECT id, name, email, role, companion_avatar as avatar FROM users WHERE organization_id = $1 AND role = 'admin'", [req.user.organizationId]);
     
     const mapped = result.rows.map(row => ({
@@ -553,6 +560,7 @@ app.get('/api/team', authenticateToken, async (req, res) => {
       department: row.department || '',
       managerId: row.manager_id || '',
       geminiApiKey: row.gemini_api_key || '',
+      status: row.password_hash === 'INVITED_PENDING' ? 'pending' : 'active',
       isSystem: false
     }));
 
@@ -566,6 +574,7 @@ app.get('/api/team', authenticateToken, async (req, res) => {
       department: 'Administración',
       managerId: '',
       geminiApiKey: '',
+      status: 'active',
       isSystem: true
     }));
 
@@ -662,6 +671,69 @@ app.post('/api/team', authenticateToken, async (req, res) => {
 });
 
 // 11. Update a team member
+
+app.post('/api/team/:id/resend-invite', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const memberRes = await pool.query('SELECT name, email FROM team_members WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (memberRes.rows.length === 0) return res.status(404).json({ error: 'Miembro no encontrado' });
+    
+    const { name, email } = memberRes.rows[0];
+    const userExist = await pool.query("SELECT id FROM users WHERE email = $1 AND password_hash = 'INVITED_PENDING'", [email]);
+    
+    if (userExist.rows.length === 0) {
+      return res.status(400).json({ error: 'El usuario ya está activo o no existe.' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 24 * 3600000; // 24 hours
+
+    await pool.query(
+      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3',
+      [resetToken, resetTokenExpiry, email]
+    );
+
+    const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+    const inviteLink = `${origin}/?resetToken=${resetToken}`;
+    
+    const htmlContent = `
+      <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+        </div>
+        <h2 style="color: #111827; margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700; text-align: center;">Te han invitado a Kônsul Process (Recordatorio)</h2>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 1.5rem;">
+          Hola <strong>${name}</strong>, te recordamos que tienes una invitación pendiente para unirte al equipo en Kônsul Process.
+        </p>
+        <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 2rem;">
+          Presiona el botón de abajo para activar tu cuenta, definir tu contraseña y empezar a colaborar.
+        </p>
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <a href="${inviteLink}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Activar mi Cuenta</a>
+        </div>
+        <p style="color: #9ca3af; font-size: 0.85rem; line-height: 1.5; text-align: center; margin-top: 2rem;">
+          Este enlace expira en 24 horas.
+        </p>
+        <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+        <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+          Kônsul Process &copy; 2026. Todos los derechos reservados.
+        </p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: email,
+      subject: 'Recordatorio: Invitación a unirte a Kônsul Process',
+      html: htmlContent
+    });
+
+    res.json({ message: 'Invitación reenviada con éxito.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al reenviar invitación' });
+  }
+});
+
 app.put('/api/team/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
