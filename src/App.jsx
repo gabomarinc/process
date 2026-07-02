@@ -182,6 +182,8 @@ function App() {
   const [selectedClientFilter, setSelectedClientFilter] = useState(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
+  const [clients, setClients] = useState([]);
+
   // Team Management states
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -269,6 +271,10 @@ function App() {
         const teamRes = await fetch('/api/team');
         const teamData = await teamRes.json();
         setTeamMembers(teamData);
+
+        const clientsRes = await fetch('/api/clients');
+        const clientsData = await clientsRes.json();
+        setClients(clientsData);
 
         // Fetch users and organization details
         const savedUser = localStorage.getItem('user');
@@ -658,6 +664,22 @@ function App() {
       if (!templateToUse || !data.instanceName.trim()) return;
       startDateTime = data.startDate.getTime();
       instanceName = data.instanceName;
+      
+      if (data.isNewClient) {
+        try {
+          const clientRes = await fetch('/api/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ name: instanceName })
+          });
+          if (clientRes.ok) {
+            const newClient = await clientRes.json();
+            setClients(prev => [...prev, newClient]);
+          }
+        } catch (err) {
+          console.error("Error creating new client before launch", err);
+        }
+      }
     }
 
     
@@ -3218,6 +3240,7 @@ function App() {
         <LaunchExecutionModal
           templates={templates}
           teamMembers={teamMembers}
+          clients={clients}
           initialTemplateId={activeTemplate?.id || launchTemplateId}
           onSchedule={(data) => {
             handleLaunchInstance(data);

@@ -24,8 +24,15 @@ pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin';
   ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_name VARCHAR(100);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_avatar VARCHAR(50);
+  
+  CREATE TABLE IF NOT EXISTS clients (
+    id SERIAL PRIMARY KEY,
+    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar" y tabla "clients" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -346,6 +353,33 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al recuperar ejecuciones activas' });
+  }
+});
+
+// --- CLIENTS ROUTES ---
+
+app.get('/api/clients', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM clients WHERE organization_id = $1 ORDER BY name ASC', [req.user.organizationId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al recuperar clientes' });
+  }
+});
+
+app.post('/api/clients', authenticateToken, async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
+  try {
+    const result = await pool.query(
+      'INSERT INTO clients (organization_id, name) VALUES ($1, $2) RETURNING *',
+      [req.user.organizationId, name]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear el cliente' });
   }
 });
 

@@ -18,6 +18,7 @@ import "./LaunchExecutionModal.css";
 export const LaunchExecutionModal = ({
   templates,
   teamMembers,
+  clients = [],
   initialTemplateId,
   onSchedule,
   onCancel,
@@ -27,6 +28,9 @@ export const LaunchExecutionModal = ({
   
   const [launchInstanceName, setLaunchInstanceName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId || "");
+  const [clientMode, setClientMode] = useState("existing");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
 
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 }), // Week starts on Monday
@@ -72,6 +76,7 @@ export const LaunchExecutionModal = ({
       templateId: selectedTemplateId,
       instanceName: launchInstanceName,
       startDate: startDate,
+      isNewClient: clientMode === 'new'
     });
   };
 
@@ -166,15 +171,66 @@ export const LaunchExecutionModal = ({
             </div>
 
             <div className="form-group">
-              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Nombre de la Ejecución *</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Ej. Onboarding Ana Pérez"
-                value={launchInstanceName}
-                onChange={(e) => setLaunchInstanceName(e.target.value)}
-                required
-              />
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Cliente / Nombre de la Ejecución *</label>
+              
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.5rem' }}>
+                <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <input type="radio" name="clientMode" checked={clientMode === 'existing'} onChange={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }} /> Cliente Existente
+                </label>
+                <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <input type="radio" name="clientMode" checked={clientMode === 'new'} onChange={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }} /> Cliente Nuevo
+                </label>
+              </div>
+
+              {clientMode === 'new' ? (
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Ej. Empresa ABC"
+                  value={launchInstanceName}
+                  onChange={(e) => setLaunchInstanceName(e.target.value)}
+                  required
+                />
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Buscar cliente..."
+                    value={clientSearchQuery}
+                    onChange={(e) => {
+                      setClientSearchQuery(e.target.value);
+                      setLaunchInstanceName('');
+                      setShowClientDropdown(true);
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
+                    required
+                  />
+                  {showClientDropdown && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #eef0f2', borderRadius: '4px', maxHeight: '150px', overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                      {clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).length > 0 ? (
+                        clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).map(c => (
+                          <div 
+                            key={c.id} 
+                            style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #f3f4f6', fontSize: '0.9rem' }}
+                            onMouseDown={(e) => e.preventDefault()} /* Prevents onBlur before onClick */
+                            onClick={() => {
+                              setClientSearchQuery(c.name);
+                              setLaunchInstanceName(c.name);
+                              setShowClientDropdown(false);
+                            }}
+                          >
+                            {c.name}
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '0.5rem', fontSize: '0.85rem', color: '#9ca3af' }}>No se encontraron clientes</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="form-group">
