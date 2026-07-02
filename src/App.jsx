@@ -39,24 +39,34 @@ import {
 
 let modifiedTemplateIds = new Set();
 
-
-const clientsList = [
-  { id: 'cli_acme', name: 'Acme Corp', flag: '🏢', themeColor: '210 70% 40%', imageUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=600' },
-  { id: 'cli_konsul', name: 'Kônsul Digital', flag: '🚀', themeColor: '170 70% 35%', imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=600' },
-  { id: 'cli_globex', name: 'Globex Inc', flag: '🌐', themeColor: '340 70% 40%', imageUrl: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=600' },
-  { id: 'cli_initech', name: 'Initech', flag: '💻', themeColor: '250 70% 35%', imageUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?q=80&w=600' }
+const flagsList = ['🏢', '🚀', '🌐', '💻', '📈', '🤝', '🛠️', '💎'];
+const colorsList = ['210 70% 40%', '170 70% 35%', '340 70% 40%', '250 70% 35%', '280 70% 40%', '30 70% 40%', '120 70% 30%'];
+const imagesList = [
+  'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=600',
+  'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=600',
+  'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=600',
+  'https://images.unsplash.com/photo-1556761175-b413da4baf72?q=80&w=600'
 ];
 
-const getClientForInstance = (instance) => {
+const getClientDisplay = (client, idx) => {
+  if (!client) return null;
+  return {
+    id: client.id,
+    name: client.name,
+    flag: flagsList[idx % flagsList.length],
+    themeColor: colorsList[idx % colorsList.length],
+    imageUrl: imagesList[idx % imagesList.length]
+  };
+};
+
+const getClientForInstance = (instance, clientsData = []) => {
+  if (!instance || !instance.instanceName) return null;
   const nameLower = instance.instanceName.toLowerCase();
-  if (nameLower.includes('acme')) return 'cli_acme';
-  if (nameLower.includes('kônsul') || nameLower.includes('konsul')) return 'cli_konsul';
-  if (nameLower.includes('globex')) return 'cli_globex';
-  if (nameLower.includes('initech')) return 'cli_initech';
-  
-  const sum = instance.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const index = sum % clientsList.length;
-  return clientsList[index].id;
+  const found = clientsData.find(c => 
+    nameLower.includes(c.name.toLowerCase()) || 
+    c.name.toLowerCase().includes(nameLower)
+  );
+  return found ? found.id : null;
 };
 
 function App() {
@@ -287,16 +297,23 @@ function App() {
             companionName: parsed.companionName || '', 
             companionAvatar: parsed.companionAvatar || '' 
           });
+
+          // Fetch organization details for ALL users to load the shared Gemini API Key
+          const orgRes = await fetch('/api/organization');
+          if (orgRes.ok) {
+            const orgData = await orgRes.json();
+            setOrgFormData({ name: orgData.name });
+            if (orgData.gemini_api_key) {
+              setApiKey(orgData.gemini_api_key);
+              setTempKey(orgData.gemini_api_key);
+            }
+          }
+
           if (parsed.role === 'admin') {
             const usersRes = await fetch('/api/users');
             if (usersRes.ok) {
               const usersData = await usersRes.json();
               setOrgUsers(usersData);
-            }
-            const orgRes = await fetch('/api/organization');
-            if (orgRes.ok) {
-              const orgData = await orgRes.json();
-              setOrgFormData({ name: orgData.name });
             }
           }
         }
@@ -841,17 +858,43 @@ function App() {
   };
 
   // Save/Clear keys
-  const saveApiKey = () => {
-    localStorage.setItem('gemini_api_key', tempKey);
-    setApiKey(tempKey);
-    setShowKeyInput(false);
+  const saveApiKey = async () => {
+    try {
+      const res = await fetch('/api/organization', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: orgFormData.name, gemini_api_key: tempKey })
+      });
+      if (res.ok) {
+        localStorage.setItem('gemini_api_key', tempKey);
+        setApiKey(tempKey);
+        setShowKeyInput(false);
+      } else {
+        console.error("Error al guardar API Key en el servidor");
+      }
+    } catch (err) {
+      console.error("Error al guardar API Key:", err);
+    }
   };
 
-  const clearApiKey = () => {
-    localStorage.removeItem('gemini_api_key');
-    setApiKey('');
-    setTempKey('');
-    setShowKeyInput(false);
+  const clearApiKey = async () => {
+    try {
+      const res = await fetch('/api/organization', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: orgFormData.name, gemini_api_key: null })
+      });
+      if (res.ok) {
+        localStorage.removeItem('gemini_api_key');
+        setApiKey('');
+        setTempKey('');
+        setShowKeyInput(false);
+      } else {
+        console.error("Error al limpiar API Key en el servidor");
+      }
+    } catch (err) {
+      console.error("Error al limpiar API Key:", err);
+    }
   };
 
   // AI Prompt Call using fetch to v1beta gemini-flash-latest
@@ -1585,19 +1628,21 @@ function App() {
                           <p>Modifica tu contraseña, emoji avatar y acompañante de inteligencia</p>
                         </div>
 
-                        <div 
-                          className={`grid-card-nav ${apiKey ? 'configured' : ''}`}
-                          onClick={() => {
-                            setShowKeyInput(!showKeyInput);
-                            setOpenDropdown(null);
-                          }}
-                        >
-                          <div className="card-nav-header">
-                            <Key size={18} className="icon-orange" />
-                            <h4>Gemini API Key</h4>
+                        {user?.role !== 'guest' && (
+                          <div 
+                            className={`grid-card-nav ${apiKey ? 'configured' : ''}`}
+                            onClick={() => {
+                              setShowKeyInput(!showKeyInput);
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            <div className="card-nav-header">
+                              <Key size={18} className="icon-orange" />
+                              <h4>Gemini API Key</h4>
+                            </div>
+                            <p>{apiKey ? 'Clave IA configurada localmente' : 'Carga tu clave para habilitar Gemini IA'}</p>
                           </div>
-                          <p>{apiKey ? 'Clave IA configurada localmente' : 'Carga tu clave para habilitar Gemini IA'}</p>
-                        </div>
+                        )}
                       </div>
 
                       <div className="grid-split-small">
@@ -1714,24 +1759,26 @@ function App() {
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>Ejecuciones Activas</h2>
-                <button
-                  className="btn btn-primary"
-                  style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-                  onClick={() => {
-                    setLaunchInstanceName('');
-                    setLaunchStartDate(new Date().toISOString().split('T')[0]);
-                    setLaunchTemplateId('');
-                    setShowLaunchModal(true);
-                  }}
-                >
-                  🚀 Nueva Ejecución
-                </button>
+                {user?.role !== 'guest' && (
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                    onClick={() => {
+                      setLaunchInstanceName('');
+                      setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                      setLaunchTemplateId('');
+                      setShowLaunchModal(true);
+                    }}
+                  >
+                    🚀 Nueva Ejecución
+                  </button>
+                )}
               </div>
 
               {selectedClientFilter && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(var(--color-primary-rgb), 0.1)', padding: '0.5rem 1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
                   <span style={{ fontSize: '0.9rem', color: 'var(--color-primary-hover)', fontWeight: 'bold' }}>
-                    Filtrando por cliente: {clientsList.find(c => c.id === selectedClientFilter)?.name}
+                    Filtrando por cliente: {clients.find(c => c.id === selectedClientFilter)?.name}
                   </span>
                   <button 
                     className="btn btn-secondary" 
@@ -1742,27 +1789,29 @@ function App() {
                   </button>
                 </div>
               )}
-              {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst) === selectedClientFilter).length === 0 ? (
+              {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst, clients) === selectedClientFilter).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
                 <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Selecciona una plantilla e iníciala para comenzar a seguir un proceso en tiempo real.</p>
-                <button
-                  className="btn btn-primary"
-                  style={{ fontSize: '1rem', padding: '0.75rem 2rem' }}
-                  onClick={() => {
-                    setLaunchInstanceName('');
-                    setLaunchStartDate(new Date().toISOString().split('T')[0]);
-                    setLaunchTemplateId(templates[0]?.id || '');
-                    setShowLaunchModal(true);
-                  }}
-                >
-                  🚀 Iniciar Primera Ejecución
-                </button>
+                {user?.role !== 'guest' && (
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '1rem', padding: '0.75rem 2rem' }}
+                    onClick={() => {
+                      setLaunchInstanceName('');
+                      setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                      setLaunchTemplateId(templates[0]?.id || '');
+                      setShowLaunchModal(true);
+                    }}
+                  >
+                    🚀 Iniciar Primera Ejecución
+                  </button>
+                )}
               </div>
               ) : (
                 <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-                  {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst) === selectedClientFilter).map(inst => {
+                  {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst, clients) === selectedClientFilter).map(inst => {
                     const total = inst.steps.length;
                     const completed = inst.steps.filter(s => s.isCompleted).length;
                     const percentage = Math.round((completed / total) * 100) || 0;
@@ -2442,30 +2491,39 @@ function App() {
                   Clientes
                 </h2>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem', marginTop: '1.5rem' }}>
-                {clientsList.map(client => {
-                  const clientInstances = instances.filter(inst => getClientForInstance(inst) === client.id);
-                  const active = clientInstances.filter(inst => !inst.steps.every(s => s.isCompleted)).length;
-                  const completed = clientInstances.filter(inst => inst.steps.every(s => s.isCompleted)).length;
-                  const statsText = `${active} Activas • ${completed} Completadas`;
+              {clients.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem' }}>
+                  <Users size={48} style={{ color: 'var(--color-primary)', marginBottom: '1rem' }} />
+                  <h3>No hay clientes registrados</h3>
+                  <p>Inicia una ejecución y registra tu primer cliente para verlo aquí.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem', marginTop: '1.5rem' }}>
+                  {clients.map((c, idx) => {
+                    const client = getClientDisplay(c, idx);
+                    const clientInstances = instances.filter(inst => getClientForInstance(inst, clients) === client.id);
+                    const active = clientInstances.filter(inst => !inst.steps.every(s => s.isCompleted)).length;
+                    const completed = clientInstances.filter(inst => inst.steps.every(s => s.isCompleted)).length;
+                    const statsText = `${active} Activas • ${completed} Completadas`;
 
-                  return (
-                    <div key={client.id} style={{ height: '360px' }}>
-                      <DestinationCard
-                        imageUrl={client.imageUrl}
-                        location={client.name}
-                        flag={client.flag}
-                        stats={statsText}
-                        themeColor={client.themeColor}
-                        onClick={() => {
-                          setSelectedClientFilter(client.id);
-                          setActiveTab('instances');
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                    return (
+                      <div key={client.id} style={{ height: '360px' }}>
+                        <DestinationCard
+                          imageUrl={client.imageUrl}
+                          location={client.name}
+                          flag={client.flag}
+                          stats={statsText}
+                          themeColor={client.themeColor}
+                          onClick={() => {
+                            setSelectedClientFilter(client.id);
+                            setActiveTab('instances');
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
           ) : activeTab === 'team' ? (
@@ -2656,105 +2714,109 @@ function App() {
                 </div>
 
                 {/* Form 2: Organization Name */}
-                <div id="company-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
-                  <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre de la Organización</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        value={orgFormData.name} 
-                        onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} 
-                        required 
-                      />
+                {user?.role === 'admin' && (
+                  <div id="company-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
+                    <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <div className="form-group">
+                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre de la Organización</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={orgFormData.name} 
+                          onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                        Actualizar Empresa
+                      </button>
+                    </form>
+                    <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Resumen de Roles de la Cuenta:</h4>
+                      <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <li><strong>Admin:</strong> Control total, ve todos los procesos, plantillas y configuraciones.</li>
+                        <li><strong>Agente:</strong> Colabora en el equipo, ve procesos y plantillas, pero no modifica configuraciones.</li>
+                        <li><strong>Invitado:</strong> Clientes o proveedores. Límite de 10 por empresa. Solo ven ejecuciones en las que participan.</li>
+                      </ul>
                     </div>
-                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                      Actualizar Empresa
-                    </button>
-                  </form>
-                  <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Resumen de Roles de la Cuenta:</h4>
-                    <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      <li><strong>Admin:</strong> Control total, ve todos los procesos, plantillas y configuraciones.</li>
-                      <li><strong>Agente:</strong> Colabora en el equipo, ve procesos y plantillas, pero no modifica configuraciones.</li>
-                      <li><strong>Invitado:</strong> Clientes o proveedores. Límite de 10 por empresa. Solo ven ejecuciones en las que participan.</li>
-                    </ul>
                   </div>
-                </div>
+                )}
 
               </div>
 
               {/* User management list */}
-              <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-                  <div>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Gestión de Usuarios</h3>
-                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Administradores, Agentes e Invitados registrados.
-                    </p>
+              {user?.role === 'admin' && (
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Gestión de Usuarios</h3>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Administradores, Agentes e Invitados registrados.
+                      </p>
+                    </div>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={() => {
+                        setAddUserError('');
+                        setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
+                        setShowAddUserModal(true);
+                      }}
+                    >
+                      ➕ Invitar / Registrar Usuario
+                    </button>
                   </div>
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => {
-                      setAddUserError('');
-                      setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
-                      setShowAddUserModal(true);
-                    }}
-                  >
-                    ➕ Invitar / Registrar Usuario
-                  </button>
-                </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '0.75rem 1rem' }}>Nombre</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Email</th>
-                        <th style={{ padding: '0.75rem 1rem' }}>Rol</th>
-                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orgUsers.map(u => (
-                        <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                          <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
-                          <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
-                          <td style={{ padding: '1rem' }}>
-                            <span 
-                              className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'agent' ? 'info' : 'success'}`} 
-                              style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
-                            >
-                              {u.role === 'admin' ? 'Administrador' : u.role === 'agent' ? 'Agente' : 'Invitado'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '1rem', textAlign: 'right' }}>
-                            {u.id === user?.id ? (
-                              <span style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-muted)' }}>Tú</span>
-                            ) : (
-                              <button 
-                                className="btn btn-danger" 
-                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', color: '#d32f2f' }}
-                                onClick={() => handleDeleteOrgUser(u.id)}
-                              >
-                                Eliminar
-                              </button>
-                            )}
-                          </td>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '0.75rem 1rem' }}>Nombre</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Email</th>
+                          <th style={{ padding: '0.75rem 1rem' }}>Rol</th>
+                          <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Acciones</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {orgUsers.map(u => (
+                          <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                            <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
+                            <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
+                            <td style={{ padding: '1rem' }}>
+                              <span 
+                                className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'agent' ? 'info' : 'success'}`} 
+                                style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                              >
+                                {u.role === 'admin' ? 'Administrador' : u.role === 'agent' ? 'Agente' : 'Invitado'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem', textAlign: 'right' }}>
+                              {u.id === user?.id ? (
+                                <span style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-muted)' }}>Tú</span>
+                              ) : (
+                                <button 
+                                  className="btn btn-danger" 
+                                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', color: '#d32f2f' }}
+                                  onClick={() => handleDeleteOrgUser(u.id)}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
-                  {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
-                    <span style={{ color: '#d32f2f', fontWeight: 600 }}>⚠️ Límite de invitados alcanzado</span>
-                  )}
+                  <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
+                    {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
+                      <span style={{ color: '#d32f2f', fontWeight: 600 }}>⚠️ Límite de invitados alcanzado</span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>

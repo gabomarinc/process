@@ -24,6 +24,7 @@ pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin';
   ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_name VARCHAR(100);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_avatar VARCHAR(50);
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);
   
   CREATE TABLE IF NOT EXISTS clients (
     id SERIAL PRIMARY KEY,
@@ -32,7 +33,7 @@ pool.query(`
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar" y tabla "clients" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key" y tabla "clients" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -577,6 +578,7 @@ app.get('/api/team', authenticateToken, async (req, res) => {
 app.post('/api/team', authenticateToken, async (req, res) => {
   const { id, name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
   try {
+    // 1. Create team member
     await pool.query(
       `INSERT INTO team_members (id, organization_id, name, role, email, avatar, assigned_processes, department, manager_id, gemini_api_key)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
@@ -593,7 +595,64 @@ app.post('/api/team', authenticateToken, async (req, res) => {
         geminiApiKey || null
       ]
     );
-    res.status(201).json({ message: 'Miembro del equipo creado con éxito' });
+
+    // 2. Also register a user account with role 'guest' so they can log in
+    const userExist = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (userExist.rows.length === 0) {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenExpiry = Date.now() + 24 * 3600000; // 24 hours
+
+      await pool.query(
+        `INSERT INTO users (organization_id, name, email, password_hash, role, reset_token, reset_token_expiry)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          req.user.organizationId,
+          name,
+          email,
+          'INVITED_PENDING',
+          'guest',
+          resetToken,
+          resetTokenExpiry
+        ]
+      );
+
+      // Send activation email
+      const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+      const inviteLink = `${origin}/?resetToken=${resetToken}`;
+      
+      const htmlContent = `
+        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+          <div style="text-align: center; margin-bottom: 2rem;">
+            <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+          </div>
+          <h2 style="color: #111827; margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700; text-align: center;">Te han invitado a Kônsul Process</h2>
+          <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 1.5rem;">
+            Hola <strong>${name}</strong>, has sido invitado a unirte al equipo en Kônsul Process.
+          </p>
+          <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; text-align: center; margin-bottom: 2rem;">
+            Presiona el botón de abajo para activar tu cuenta, definir tu contraseña y empezar a colaborar.
+          </p>
+          <div style="text-align: center; margin-bottom: 2rem;">
+            <a href="${inviteLink}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Activar mi Cuenta</a>
+          </div>
+          <p style="color: #9ca3af; font-size: 0.85rem; line-height: 1.5; text-align: center; margin-top: 2rem;">
+            Este enlace expira en 24 horas.
+          </p>
+          <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+          <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+            Kônsul Process &copy; 2026. Todos los derechos reservados.
+          </p>
+        </div>
+      `;
+
+      await sendEmail({
+        to: email,
+        subject: 'Invitación a unirte a Kônsul Process',
+        html: htmlContent
+      });
+    }
+
+    res.status(201).json({ message: 'Miembro del equipo creado con éxito e invitación enviada.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear miembro del equipo' });
@@ -605,6 +664,13 @@ app.put('/api/team/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
   try {
+    // Also update in users table if they exist (sync email/name changes)
+    const oldMemberRes = await pool.query('SELECT email FROM team_members WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (oldMemberRes.rows.length > 0) {
+      const oldEmail = oldMemberRes.rows[0].email;
+      await pool.query('UPDATE users SET email = $1, name = $2 WHERE email = $3 AND organization_id = $4', [email, name, oldEmail, req.user.organizationId]);
+    }
+
     await pool.query(
       `UPDATE team_members 
        SET name = $1, role = $2, email = $3, avatar = $4, assigned_processes = $5, department = $6, manager_id = $7, gemini_api_key = $8
@@ -626,6 +692,27 @@ app.put('/api/team/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar miembro del equipo' });
+  }
+});
+
+// 12. Delete a team member
+app.delete('/api/team/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { id } = req.params;
+  try {
+    const memberRes = await pool.query('SELECT email FROM team_members WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (memberRes.rows.length > 0) {
+      const email = memberRes.rows[0].email;
+      await pool.query('DELETE FROM users WHERE email = $1 AND organization_id = $2', [email, req.user.organizationId]);
+    }
+    
+    await pool.query('DELETE FROM team_members WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    res.json({ message: 'Miembro del equipo eliminado con éxito.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar miembro del equipo.' });
   }
 });
 
@@ -817,6 +904,8 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 // Get organization details
 app.get('/api/organization', authenticateToken, async (req, res) => {
   try {
+    // Ensure column exists
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
     const result = await pool.query('SELECT * FROM organizations WHERE id = $1', [req.user.organizationId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Organización no encontrada.' });
     res.json(result.rows[0]);
@@ -826,21 +915,23 @@ app.get('/api/organization', authenticateToken, async (req, res) => {
   }
 });
 
-// Update organization name
+// Update organization details
 app.put('/api/organization', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
   }
-  const { name } = req.body;
+  const { name, gemini_api_key } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
   }
   try {
+    // Ensure column exists
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
     await pool.query(
-      'UPDATE organizations SET name = $1 WHERE id = $2',
-      [name, req.user.organizationId]
+      'UPDATE organizations SET name = $1, gemini_api_key = $2 WHERE id = $3',
+      [name, gemini_api_key !== undefined ? gemini_api_key : null, req.user.organizationId]
     );
-    res.json({ message: 'Nombre de la empresa actualizado con éxito.' });
+    res.json({ message: 'Organización actualizada con éxito.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la empresa.' });
