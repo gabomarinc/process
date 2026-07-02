@@ -372,6 +372,16 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
   try {
+    // Ensure table exists (Safe for Vercel Serverless cold starts)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
     const result = await pool.query(
       'INSERT INTO clients (organization_id, name) VALUES ($1, $2) RETURNING *',
       [req.user.organizationId, name]
