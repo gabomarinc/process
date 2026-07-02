@@ -173,13 +173,38 @@ export const LaunchExecutionModal = ({
             <div className="form-group">
               <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Cliente / Nombre de la Ejecución *</label>
               
-              <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.5rem' }}>
-                <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <input type="radio" name="clientMode" checked={clientMode === 'existing'} onChange={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }} /> Cliente Existente
-                </label>
-                <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <input type="radio" name="clientMode" checked={clientMode === 'new'} onChange={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }} /> Cliente Nuevo
-                </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div 
+                  onClick={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  style={{ 
+                    padding: '1rem', 
+                    border: clientMode === 'existing' ? '2px solid var(--color-primary)' : '1px solid #eef0f2',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: clientMode === 'existing' ? 'rgba(39, 190, 167, 0.05)' : 'transparent',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, color: clientMode === 'existing' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Existente</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Seleccionar del registro</div>
+                </div>
+                
+                <div 
+                  onClick={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  style={{ 
+                    padding: '1rem', 
+                    border: clientMode === 'new' ? '2px solid var(--color-primary)' : '1px solid #eef0f2',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: clientMode === 'new' ? 'rgba(39, 190, 167, 0.05)' : 'transparent',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, color: clientMode === 'new' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Nuevo</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Registrar uno nuevo</div>
+                </div>
               </div>
 
               {clientMode === 'new' ? (
