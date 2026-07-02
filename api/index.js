@@ -76,7 +76,7 @@ const sendEmail = async ({ to, subject, html }) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Kônsul Process <onboarding@resend.dev>',
+        from: 'Kônsul Process <somos@konsul.digital>',
         to,
         subject,
         html
@@ -538,6 +538,8 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
 app.get('/api/team', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM team_members WHERE organization_id = $1 ORDER BY name ASC', [req.user.organizationId]);
+    const usersResult = await pool.query("SELECT id, name, email, role, companion_avatar as avatar FROM users WHERE organization_id = $1 AND role = 'admin'", [req.user.organizationId]);
+    
     const mapped = result.rows.map(row => ({
       id: row.id,
       name: row.name,
@@ -547,9 +549,24 @@ app.get('/api/team', authenticateToken, async (req, res) => {
       assignedProcesses: row.assigned_processes || [],
       department: row.department || '',
       managerId: row.manager_id || '',
-      geminiApiKey: row.gemini_api_key || ''
+      geminiApiKey: row.gemini_api_key || '',
+      isSystem: false
     }));
-    res.json(mapped);
+
+    const adminUsers = usersResult.rows.map(row => ({
+      id: 'admin_' + row.id,
+      name: row.name + " (" + row.role + ")",
+      role: row.role,
+      email: row.email,
+      avatar: row.avatar,
+      assignedProcesses: [],
+      department: 'Administración',
+      managerId: '',
+      geminiApiKey: '',
+      isSystem: true
+    }));
+
+    res.json([...adminUsers, ...mapped]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al recuperar miembros del equipo' });

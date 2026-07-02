@@ -2545,20 +2545,22 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
-                          modifiedTemplateIds = new Set();
-                          setEditingMember(member);
-                          setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
-                          setMemberModalStep(1);
-                          setShowEditProfileModal(true);
-                        }}>
-                          Editar
-                        </button>
-                        <button className="btn btn-danger" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', color: '#d32f2f' }} onClick={() => handleDeleteMember(member.id)}>
-                          Eliminar
-                        </button>
-                      </div>
+                      {!member.isSystem && (
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '1.25rem', borderTop: '1px solid #f5f3f0', paddingTop: '0.75rem' }}>
+                          <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
+                            modifiedTemplateIds = new Set();
+                            setEditingMember(member);
+                            setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
+                            setMemberModalStep(1);
+                            setShowEditProfileModal(true);
+                          }}>
+                            Editar
+                          </button>
+                          <button className="btn btn-danger" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', color: '#d32f2f' }} onClick={() => handleDeleteMember(member.id)}>
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
