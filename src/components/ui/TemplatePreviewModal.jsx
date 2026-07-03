@@ -1,17 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Edit2, Check, GripVertical, Trash2, Plus } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X } from 'lucide-react';
+import { Button } from './button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card';
+import { Input } from './input';
+import { Label } from './label';
+import { Textarea } from './textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
+import { cn } from '../../lib/utils';
 import './TemplatePreviewModal.css';
 
-export const TemplatePreviewModal = ({ isOpen, onClose, initialTemplate, onSave }) => {
+export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [template, setTemplate] = useState(null);
   const [expandedStepIndex, setExpandedStepIndex] = useState(null);
-  
+
   useEffect(() => {
-    if (initialTemplate) {
-      setTemplate(JSON.parse(JSON.stringify(initialTemplate))); // deep copy
+    if (isOpen && initialData) {
+      setTemplate(JSON.parse(JSON.stringify(initialData)));
+      setExpandedStepIndex(null);
     }
-  }, [initialTemplate, isOpen]);
+  }, [isOpen, initialData]);
 
   if (!isOpen || !template) return null;
 
@@ -40,6 +48,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialTemplate, onSave 
       motivation: "¡Tú puedes!"
     });
     setTemplate(prev => ({ ...prev, steps: newSteps }));
+    setExpandedStepIndex(newSteps.length - 1);
   };
 
   const handleDeleteStep = (index) => {
@@ -52,125 +61,174 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialTemplate, onSave 
   };
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
       <motion.div
-        className="modal-card preview-modal"
+        className="w-full max-w-2xl mx-auto py-8 px-4"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={e => e.stopPropagation()}
       >
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div className="icon-circle primary" style={{ width: '40px', height: '40px' }}>
-              <Edit2 size={20} />
-            </div>
-            <div>
-              <h2 className="modal-title" style={{ margin: 0, fontSize: '1.4rem' }}>Vista Previa de Plantilla</h2>
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Revisa y ajusta los detalles antes de guardar.</p>
-            </div>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
           <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
 
-        <div className="modal-content scrollable-content">
-          <div className="preview-section">
-            <h3 className="section-subtitle">Detalles Generales</h3>
-            <div className="form-group">
-              <label>Título de la Plantilla</label>
-              <input type="text" className="form-input" value={template.title} onChange={e => handleTemplateChange('title', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label>Descripción</label>
-              <textarea className="form-input" rows={2} value={template.description} onChange={e => handleTemplateChange('description', e.target.value)} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="form-group">
-                <label>Nombre del Guía (IA)</label>
-                <input type="text" className="form-input" value={template.companionName || ''} onChange={e => handleTemplateChange('companionName', e.target.value)} />
+        <Card className="border shadow-md rounded-3xl overflow-hidden" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+          <CardHeader>
+            <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+               <Edit2 size={20} className="text-primary" /> Vista Previa de Plantilla
+            </CardTitle>
+            <CardDescription>
+              Revisa y ajusta los detalles generales y los pasos antes de guardar.
+            </CardDescription>
+          </CardHeader>
+          
+          <CardContent className="space-y-6" style={{ overflowY: 'auto' }}>
+            {/* Detalles Generales */}
+            <div className="space-y-4">
+              <h3 className="font-medium text-lg border-b pb-2">Detalles Generales</h3>
+              
+              <div className="space-y-2">
+                <Label>Título de la Plantilla</Label>
+                <Input 
+                  value={template.title} 
+                  onChange={e => handleTemplateChange('title', e.target.value)} 
+                  className="focus:ring-2 focus:ring-primary/20"
+                />
               </div>
-              <div className="form-group">
-                <label>Avatar (Emoji)</label>
-                <input type="text" className="form-input" value={template.companionAvatar || ''} onChange={e => handleTemplateChange('companionAvatar', e.target.value)} maxLength={2} />
+              <div className="space-y-2">
+                <Label>Descripción</Label>
+                <Textarea 
+                  value={template.description} 
+                  onChange={e => handleTemplateChange('description', e.target.value)} 
+                  className="focus:ring-2 focus:ring-primary/20 min-h-[60px]"
+                />
               </div>
-            </div>
-            <div className="form-group">
-              <label>Saludo de Bienvenida</label>
-              <textarea className="form-input" rows={2} value={template.companionGreeting || ''} onChange={e => handleTemplateChange('companionGreeting', e.target.value)} />
-            </div>
-          </div>
-
-          <div className="preview-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 className="section-subtitle" style={{ margin: 0 }}>Pasos del Proceso ({template.steps?.length || 0})</h3>
-              <button className="btn btn-secondary btn-sm" onClick={handleAddStep}>
-                <Plus size={14} /> Añadir Paso
-              </button>
-            </div>
-            
-            <div className="steps-editor-list">
-              {template.steps?.map((step, index) => {
-                const isExpanded = expandedStepIndex === index;
-                return (
-                <div key={index} className="step-editor-card">
-                  <div className="step-editor-header" onClick={() => toggleStep(index)} style={{ cursor: 'pointer', transition: 'background 0.2s', background: isExpanded ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.02)' }}>
-                    <div className="step-number">{index + 1}</div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <input 
-                        type="text" 
-                        className="form-input step-title-input" 
-                        value={step.title} 
-                        onChange={e => handleStepChange(index, 'title', e.target.value)} 
-                        onClick={e => e.stopPropagation()}
-                        style={{ padding: '4px 8px', margin: '-4px -8px' }}
-                      />
-                      {!isExpanded && (
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', paddingLeft: '8px' }}>
-                          {step.durationLabel || `Día ${step.relativeOffsetDays || 0}`} • {step.type === 'manual' ? 'Manual' : 'Digital'}
-                        </span>
-                      )}
-                    </div>
-                    <button className="circle-btn red" onClick={(e) => { e.stopPropagation(); handleDeleteStep(index); }}><Trash2 size={14} /></button>
-                  </div>
-                  
-                  {isExpanded && (
-                    <motion.div 
-                      className="step-editor-body"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      style={{ overflow: 'hidden' }}
-                    >
-                      <div className="form-group">
-                        <label>Descripción</label>
-                        <textarea className="form-input" rows={2} value={step.description} onChange={e => handleStepChange(index, 'description', e.target.value)} />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div className="form-group">
-                          <label>Día (Offset)</label>
-                          <input type="number" className="form-input" value={step.relativeOffsetDays || 0} onChange={e => handleStepChange(index, 'relativeOffsetDays', parseInt(e.target.value))} />
-                        </div>
-                        <div className="form-group">
-                          <label>Tipo</label>
-                          <select className="form-input" value={step.type} onChange={e => handleStepChange(index, 'type', e.target.value)}>
-                            <option value="manual">Manual</option>
-                            <option value="digital">Digital (Subir Archivo)</option>
-                          </select>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nombre del Guía (IA)</Label>
+                  <Input 
+                    value={template.companionName || ''} 
+                    onChange={e => handleTemplateChange('companionName', e.target.value)} 
+                  />
                 </div>
-              )})}
+                <div className="space-y-2">
+                  <Label>Avatar (Emoji)</Label>
+                  <Input 
+                    value={template.companionAvatar || ''} 
+                    onChange={e => handleTemplateChange('companionAvatar', e.target.value)} 
+                    maxLength={2} 
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Saludo de Bienvenida</Label>
+                <Textarea 
+                  value={template.companionGreeting || ''} 
+                  onChange={e => handleTemplateChange('companionGreeting', e.target.value)}
+                  className="min-h-[60px]"
+                />
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button type="button" className="btn btn-primary" onClick={handleSave}>
-            <Save size={16} style={{ marginRight: '6px' }} /> Guardar Plantilla
-          </button>
-        </div>
+            {/* Pasos */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center border-b pb-2">
+                <h3 className="font-medium text-lg">Pasos del Proceso ({template.steps?.length || 0})</h3>
+                <Button variant="outline" size="sm" onClick={handleAddStep} className="rounded-full flex gap-1">
+                  <Plus size={14} /> Añadir Paso
+                </Button>
+              </div>
+              
+              <div className="space-y-3">
+                {template.steps?.map((step, index) => {
+                  const isExpanded = expandedStepIndex === index;
+                  return (
+                  <Card key={index} className="overflow-hidden transition-all duration-200">
+                    <div 
+                      className={cn("p-3 flex items-center gap-3 cursor-pointer transition-colors", isExpanded ? "bg-accent/50" : "hover:bg-accent/30")}
+                      onClick={() => toggleStep(index)}
+                    >
+                      <div className="bg-primary/10 text-primary font-bold rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1 flex flex-col min-w-0">
+                        <Input 
+                          value={step.title} 
+                          onChange={e => handleStepChange(index, 'title', e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          className="h-8 bg-transparent border-transparent px-2 font-medium focus:border-input focus:bg-background"
+                        />
+                        {!isExpanded && (
+                          <span className="text-xs text-muted-foreground px-2 truncate">
+                            {step.durationLabel || `Día ${step.relativeOffsetDays || 0}`} • {step.type === 'manual' ? 'Manual' : 'Digital'}
+                          </span>
+                        )}
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 rounded-full"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteStep(index); }}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                    
+                    {isExpanded && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="px-4 pb-4 pt-2 space-y-4 border-t border-dashed"
+                      >
+                        <div className="space-y-2">
+                          <Label>Descripción del Paso</Label>
+                          <Textarea 
+                            value={step.description} 
+                            onChange={e => handleStepChange(index, 'description', e.target.value)}
+                            className="min-h-[60px]"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Día (Offset)</Label>
+                            <Input 
+                              type="number" 
+                              value={step.relativeOffsetDays || 0} 
+                              onChange={e => handleStepChange(index, 'relativeOffsetDays', parseInt(e.target.value))} 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Tipo de Paso</Label>
+                            <Select value={step.type} onValueChange={value => handleStepChange(index, 'type', value)}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Tipo" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="manual">Manual</SelectItem>
+                                <SelectItem value="digital">Digital (Subir Archivo)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </Card>
+                )})}
+              </div>
+            </div>
+          </CardContent>
+          
+          <CardFooter className="flex justify-end gap-3 pt-4 border-t bg-accent/20">
+            <Button variant="outline" onClick={onClose} className="rounded-full">Cancelar</Button>
+            <Button onClick={handleSave} className="rounded-full flex items-center gap-1">
+              <Save size={16} /> Guardar Plantilla
+            </Button>
+          </CardFooter>
+        </Card>
       </motion.div>
     </div>
   );

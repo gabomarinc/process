@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Button } from "./button";
 import "./SuccessTicketModal.css";
 
 const CheckCircleIcon = (props) => (
@@ -126,9 +127,9 @@ export const SuccessTicketModal = ({ isOpen, onClose, title, message, ticketId, 
           <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem 0 0.5rem' }}><img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '28px', objectFit: 'contain' }} /></div>
 
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-            <button className="btn btn-primary" onClick={onClose} style={{ width: '100%', justifyContent: 'center' }}>
+            <Button onClick={onClose} className="w-full justify-center">
               Aceptar
-            </button>
+            </Button>
           </div>
         </div>
       </div>
