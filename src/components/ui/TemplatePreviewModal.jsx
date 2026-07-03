@@ -49,7 +49,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialTemplate, onSave 
   return (
     <div className="modal-overlay">
       <motion.div
-        className="modal-container preview-modal"
+        className="modal-card preview-modal"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}

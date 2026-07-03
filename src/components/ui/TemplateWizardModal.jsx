@@ -38,7 +38,7 @@ export const TemplateWizardModal = ({ isOpen, onClose, onSubmit }) => {
   return (
     <div className="modal-overlay">
       <motion.div
-        className="modal-container wizard-modal"
+        className="modal-card wizard-modal"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
