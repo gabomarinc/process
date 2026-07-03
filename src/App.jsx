@@ -2099,14 +2099,13 @@ const handleDeleteMember = async (id) => {
                       <button className="close-btn-aesthetic" onClick={() => setSelectedTemplateId("")} title="Cerrar"><X size={20} /></button>
                     </div>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
                         <button className="btn btn-secondary" onClick={() => setShowLaunchModal(true)}>
                           🚀 Iniciar Ejecución
                         </button>
                         <button className="btn btn-danger" onClick={() => handleDeleteTemplate(activeTemplate.id)}>
                           Eliminar Plantilla
                         </button>
-                      </div>
                     </div>
 
                     <div style={{ marginTop: '1.5rem', marginBottom: '2rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(220, 200, 190, 0.15)' }}>

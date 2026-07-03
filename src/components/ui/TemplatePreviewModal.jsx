@@ -125,7 +125,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialTemplate, onSave 
                       />
                       {!isExpanded && (
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', paddingLeft: '8px' }}>
-                          {step.durationLabel || \`Día \${step.relativeOffsetDays || 0}\`} • {step.type === 'manual' ? 'Manual' : 'Digital'}
+                          {step.durationLabel || `Día ${step.relativeOffsetDays || 0}`} • {step.type === 'manual' ? 'Manual' : 'Digital'}
                         </span>
                       )}
                     </div>
