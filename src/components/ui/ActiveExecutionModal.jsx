@@ -89,12 +89,15 @@ export const ActiveExecutionModal = ({
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: '850px', width: '95%', maxHeight: '85vh', overflowY: 'auto', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ position: 'sticky', top: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(8px)', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-           <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Detalles de la Ejecución</span>
+      <div className="modal-card" style={{ maxWidth: '850px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        {/* Fixed Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
+           <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>
            <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
-        <div style={{ padding: '0 2rem 2rem 2rem' }}>
+        
+        {/* Scrollable Content Container */}
+        <div style={{ padding: '2.5rem 2rem 2rem 2rem', overflowY: 'auto', flex: 1 }}>
           <div className="achievement-card-unified">
             {/* Header info */}
             <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -172,7 +175,7 @@ export const ActiveExecutionModal = ({
                 <ChevronLeft size={20} />
               </button>
 
-              <div className="achievement-trio-display" style={{ flexGrow: 1, margin: '2rem 0' }}>
+              <div className="achievement-trio-display" style={{ flexGrow: 1, margin: '3.5rem 0 2rem 0' }}>
                 {highlighted.map((item, index) => {
                   const step = item.step;
                   const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
