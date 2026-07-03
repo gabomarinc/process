@@ -97,7 +97,7 @@ export const ActiveExecutionModal = ({
         </div>
         
         {/* Scrollable Content Container */}
-        <div style={{ padding: '2.5rem 2rem 2rem 2rem', overflowY: 'auto', flex: 1 }}>
+        <div style={{ padding: '0.75rem 2rem 2rem 2rem', overflowY: 'auto', flex: 1 }}>
           <div className="achievement-card-unified">
             {/* Header info */}
             <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -138,7 +138,9 @@ export const ActiveExecutionModal = ({
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 {checkOverdueSteps(activeInstance) && (
-                  <span className="overdue-badge">⚠️ Con Atraso</span>
+                  <span className="overdue-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertCircle size={14} /> Con Atraso
+                  </span>
                 )}
               </div>
             </div>

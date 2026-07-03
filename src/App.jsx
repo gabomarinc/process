@@ -1951,8 +1951,8 @@ const handleDeleteMember = async (id) => {
                             {inst.category}
                           </span>
                           {isOverdue && (
-                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
-                              ⚠️ Demorado
+                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <AlertCircle size={12} /> Demorado
                             </span>
                           )}
                         </div>
@@ -2463,7 +2463,7 @@ const handleDeleteMember = async (id) => {
                   <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
                     {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
-                      <span style={{ color: '#d32f2f', fontWeight: 600 }}>⚠️ Límite de invitados alcanzado</span>
+                      <span style={{ color: '#d32f2f', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={14} /> Límite de invitados alcanzado</span>
                     )}
                   </div>
                 </div>
