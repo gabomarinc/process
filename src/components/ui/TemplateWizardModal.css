@@ -35,25 +35,6 @@
   white-space: nowrap;
 }
 
-.close-btn-aesthetic {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.close-btn-aesthetic:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--text-main);
-}
-
 .wizard-form {
   display: flex;
   flex-direction: column;

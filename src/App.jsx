@@ -2093,11 +2093,13 @@ const handleDeleteMember = async (id) => {
                   <div className="modal-card" style={{ maxWidth: '800px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
                     
                     <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid rgba(220, 200, 190, 0.15)', paddingBottom: '1rem' }}>
-                      <button className="back-btn" onClick={() => setSelectedTemplateId("")}>
-                        ← Cerrar Detalles
-                      </button>
-                      
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Detalles de la Plantilla</h3>
+                      </div>
+                      <button className="close-btn-aesthetic" onClick={() => setSelectedTemplateId("")} title="Cerrar"><X size={20} /></button>
+                    </div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '1rem' }}>
                         <button className="btn btn-secondary" onClick={() => setShowLaunchModal(true)}>
                           🚀 Iniciar Ejecución
                         </button>
@@ -3016,8 +3018,8 @@ const handleDeleteMember = async (id) => {
         <div className="modal-overlay" onClick={() => setSelectedInstanceId(null)}>
           <div className="modal-card" style={{ maxWidth: '850px', width: '95%', maxHeight: '85vh', overflowY: 'auto', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} onClick={e => e.stopPropagation()}>
             <div style={{ position: 'sticky', top: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(8px)', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-               <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Detalles de la Ejecución</span>
-               <button onClick={() => setSelectedInstanceId(null)} className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>Cerrar</button>
+               <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Detalles de la Ejecución</span>
+               <button className="close-btn-aesthetic" onClick={() => setSelectedInstanceId(null)} title="Cerrar"><X size={20} /></button>
             </div>
             <div style={{ padding: '0 2rem 2rem 2rem' }}>
 <div className="achievement-card-unified">
@@ -3612,13 +3614,16 @@ const handleDeleteMember = async (id) => {
       {showMemberModal && (
         <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={() => { setShowMemberModal(false); setMemberModalStep(1); setEditingMember(null); }}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
-                {editingMember ? '📝 Editar Colaborador' : '👥 Nuevo Colaborador'}
-              </h3>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
-                Paso {memberModalStep} de 3
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', position: 'relative' }}>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
+                  {editingMember ? '📝 Editar Colaborador' : '👥 Nuevo Colaborador'}
+                </h3>
+                <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
+                  Paso {memberModalStep} de 3
+                </span>
+              </div>
+              <button className="close-btn-aesthetic" onClick={() => { setShowMemberModal(false); setMemberModalStep(1); setEditingMember(null); }} title="Cerrar"><X size={20} /></button>
             </div>
 
             {/* Stepper Progress Bar */}
@@ -3875,13 +3880,16 @@ const handleDeleteMember = async (id) => {
               handleAddOrgUser(e);
             }
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
-                👤 Registrar Nuevo Usuario
-              </h3>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
-                Paso {addUserModalStep} de 2
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', position: 'relative' }}>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-color)', margin: 0 }}>
+                  👤 Registrar Nuevo Usuario
+                </h3>
+                <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-primary)', background: 'rgba(26, 115, 232, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '50px' }}>
+                  Paso {addUserModalStep} de 2
+                </span>
+              </div>
+              <button type="button" className="close-btn-aesthetic" onClick={() => { setShowAddUserModal(false); setAddUserModalStep(1); }} title="Cerrar"><X size={20} /></button>
             </div>
 
             {/* Stepper Progress Bar */}

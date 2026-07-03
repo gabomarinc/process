@@ -2142,3 +2142,22 @@ button, input, select {
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
   }
 }
+
+.close-btn-aesthetic {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.close-btn-aesthetic:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-main);
+}
