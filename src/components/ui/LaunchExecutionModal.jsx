@@ -13,11 +13,6 @@ import {
 } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Rocket, X } from "lucide-react";
-import { Button } from "./button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card";
-import { Input } from "./input";
-import { Label } from "./label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 import { cn } from "../../lib/utils";
 import "./LaunchExecutionModal.css";
 
@@ -89,228 +84,277 @@ export const LaunchExecutionModal = ({
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onCancel}>
       <motion.div
-        className="w-full max-w-4xl mx-auto py-8 px-4"
+        className="launch-scheduler-card"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', zIndex: 20 }}>
           <button className="close-btn-aesthetic" onClick={onCancel} title="Cerrar"><X size={20} /></button>
         </div>
 
-        <Card className="border shadow-md rounded-3xl overflow-hidden" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
-          <CardHeader>
-            <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div className="bg-primary/10 text-primary rounded-full p-2">
-                <Rocket size={20} />
-              </div>
-              Iniciar Nueva Ejecución
-            </CardTitle>
-            <CardDescription>
-              Configura los parámetros para desplegar este proceso.
-            </CardDescription>
-          </CardHeader>
+        <div className="launch-header">
+          <div className="launch-icon-box">
+            <Rocket size={20} />
+          </div>
+          <div>
+            <h3 className="launch-title">Iniciar Nueva Ejecución</h3>
+            <p className="launch-desc">Configura los parámetros para desplegar este proceso.</p>
+          </div>
+        </div>
+        
+        <div className="launch-content">
+          {/* Left Side: Calendar */}
+          <div>
+            <div className="calendar-header">
+              <button type="button" onClick={prevMonth} className="close-btn-aesthetic" style={{ width: '32px', height: '32px' }}>
+                <ChevronLeft size={16} />
+              </button>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={format(currentMonth, "MMMM yyyy")}
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  transition={{ duration: 0.2 }}
+                  className="calendar-month capitalize"
+                >
+                  {format(currentMonth, "MMMM yyyy")}
+                </motion.div>
+              </AnimatePresence>
+              <button type="button" onClick={nextMonth} className="close-btn-aesthetic" style={{ width: '32px', height: '32px' }}>
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            
+            <div className="calendar-grid-header">
+              {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day) => (
+                <div key={day}>{day}</div>
+              ))}
+            </div>
+            
+            <div className="calendar-grid">
+              {days.map((day) => {
+                const isSelected = startDate && isSameDay(day, startDate);
+                const isMuted = !isSameMonth(day, currentMonth);
+                const isToday = isSameDay(day, new Date());
+
+                return (
+                  <button
+                    key={day.toString()}
+                    type="button"
+                    onClick={() => setStartDate(day)}
+                    className={cn(
+                      "calendar-day",
+                      isMuted ? "muted" : "",
+                      isToday ? "today" : "",
+                      isSelected ? "selected" : ""
+                    )}
+                  >
+                    {format(day, "d")}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Left Side: Calendar */}
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <Button variant="outline" size="icon" onClick={prevMonth} className="h-8 w-8 rounded-full">
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={format(currentMonth, "MMMM yyyy")}
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      transition={{ duration: 0.2 }}
-                      className="font-medium text-sm capitalize"
-                    >
-                      {format(currentMonth, "MMMM yyyy")}
-                    </motion.div>
-                  </AnimatePresence>
-                  <Button variant="outline" size="icon" onClick={nextMonth} className="h-8 w-8 rounded-full">
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-                
-                <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground mb-2">
-                  {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day) => (
-                    <div key={day}>{day}</div>
-                  ))}
-                </div>
-                
-                <div className="grid grid-cols-7 gap-1">
-                  {days.map((day) => {
-                    const isSelected = startDate && isSameDay(day, startDate);
-                    const isMuted = !isSameMonth(day, currentMonth);
-                    const isToday = isSameDay(day, new Date());
+          {/* Right Side: Inputs */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            
+            <div className="form-group">
+              <label className="custom-wizard-label">Plantilla a ejecutar *</label>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                className="custom-wizard-input"
+              >
+                <option value="">-- Seleccionar Plantilla --</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            </div>
 
-                    return (
-                      <motion.div
-                        key={day.toString()}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          onClick={() => setStartDate(day)}
-                          className={cn(
-                            "h-9 w-9 p-0 rounded-full font-normal",
-                            isMuted ? "text-muted-foreground opacity-50" : "text-foreground",
-                            isToday ? "bg-accent font-semibold" : "",
-                            isSelected ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground font-semibold" : ""
-                          )}
-                        >
-                          {format(day, "d")}
-                        </Button>
-                      </motion.div>
-                    );
-                  })}
+            <div className="form-group">
+              <label className="custom-wizard-label">Cliente / Nombre de la Ejecución *</label>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                <div 
+                  onClick={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  style={{
+                    padding: '10px',
+                    border: '1px solid',
+                    borderColor: clientMode === 'existing' ? 'var(--color-primary)' : '#d1d5db',
+                    backgroundColor: clientMode === 'existing' ? 'rgba(39, 190, 167, 0.05)' : 'white',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: clientMode === 'existing' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Existente</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Seleccionar del registro</div>
+                </div>
+                
+                <div 
+                  onClick={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  style={{
+                    padding: '10px',
+                    border: '1px solid',
+                    borderColor: clientMode === 'new' ? 'var(--color-primary)' : '#d1d5db',
+                    backgroundColor: clientMode === 'new' ? 'rgba(39, 190, 167, 0.05)' : 'white',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: clientMode === 'new' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Nuevo</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Registrar uno nuevo</div>
                 </div>
               </div>
-              
-              {/* Right Side: Inputs */}
-              <div className="space-y-6">
-                
-                <div className="space-y-2">
-                  <Label>Plantilla a ejecutar <span className="text-destructive">*</span></Label>
-                  <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                    <SelectTrigger className="focus:ring-2 focus:ring-primary/20">
-                      <SelectValue placeholder="-- Seleccionar Plantilla --" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <div className="space-y-2">
-                  <Label>Cliente / Nombre de la Ejecución <span className="text-destructive">*</span></Label>
-                  
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div 
-                      onClick={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
-                      className={cn(
-                        "p-3 border rounded-xl cursor-pointer text-center transition-all",
-                        clientMode === 'existing' ? "border-primary bg-primary/5" : "border-border hover:bg-accent"
-                      )}
-                    >
-                      <div className={cn("font-medium text-sm", clientMode === 'existing' ? "text-primary" : "text-foreground")}>Cliente Existente</div>
-                      <div className="text-xs text-muted-foreground mt-1">Seleccionar del registro</div>
-                    </div>
-                    
-                    <div 
-                      onClick={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
-                      className={cn(
-                        "p-3 border rounded-xl cursor-pointer text-center transition-all",
-                        clientMode === 'new' ? "border-primary bg-primary/5" : "border-border hover:bg-accent"
-                      )}
-                    >
-                      <div className={cn("font-medium text-sm", clientMode === 'new' ? "text-primary" : "text-foreground")}>Cliente Nuevo</div>
-                      <div className="text-xs text-muted-foreground mt-1">Registrar uno nuevo</div>
-                    </div>
-                  </div>
-
-                  {clientMode === 'new' ? (
-                    <Input
-                      type="text"
-                      placeholder="Ej. Empresa ABC"
-                      value={launchInstanceName}
-                      onChange={(e) => setLaunchInstanceName(e.target.value)}
-                      className="focus:ring-2 focus:ring-primary/20"
-                    />
-                  ) : (
-                    <div className="relative">
-                      <Input
-                        type="text"
-                        placeholder="Buscar cliente..."
-                        value={clientSearchQuery}
-                        onChange={(e) => {
-                          setClientSearchQuery(e.target.value);
-                          setLaunchInstanceName('');
-                          setShowClientDropdown(true);
-                        }}
-                        onFocus={() => setShowClientDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
-                        className="focus:ring-2 focus:ring-primary/20"
-                      />
-                      {showClientDropdown && (
-                        <Card className="absolute top-full left-0 right-0 mt-1 z-50 max-h-40 overflow-y-auto">
-                          {clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).length > 0 ? (
-                            clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).map(c => (
-                              <div 
-                                key={c.id} 
-                                className="p-2 cursor-pointer border-b last:border-b-0 hover:bg-accent text-sm"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  setClientSearchQuery(c.name);
-                                  setLaunchInstanceName(c.name);
-                                  setShowClientDropdown(false);
-                                }}
-                              >
-                                {c.name}
-                              </div>
-                            ))
-                          ) : (
-                            <div className="p-2 text-sm text-muted-foreground">No se encontraron clientes</div>
-                          )}
-                        </Card>
+              {clientMode === 'new' ? (
+                <input
+                  type="text"
+                  placeholder="Ej. Empresa ABC"
+                  value={launchInstanceName}
+                  onChange={(e) => setLaunchInstanceName(e.target.value)}
+                  className="custom-wizard-input"
+                />
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={clientSearchQuery}
+                    onChange={(e) => {
+                      setClientSearchQuery(e.target.value);
+                      setLaunchInstanceName('');
+                      setShowClientDropdown(true);
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
+                    className="custom-wizard-input"
+                  />
+                  {showClientDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      marginTop: '4px',
+                      zIndex: 50,
+                      maxHeight: '160px',
+                      overflowY: 'auto',
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      {clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).length > 0 ? (
+                        clients.filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())).map(c => (
+                          <div 
+                            key={c.id} 
+                            style={{
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f3f4f6',
+                              fontSize: '0.85rem'
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setClientSearchQuery(c.name);
+                              setLaunchInstanceName(c.name);
+                              setShowClientDropdown(false);
+                            }}
+                            className="hover-bg-accent"
+                          >
+                            {c.name}
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>No se encontraron clientes</div>
                       )}
                     </div>
                   )}
                 </div>
+              )}
+            </div>
 
-                <div className="space-y-2">
-                  <Label>Fecha de Inicio Elegida</Label>
-                  <div className="bg-accent/50 p-3 rounded-xl border text-sm text-primary font-medium">
-                    {startDate ? format(startDate, "dd 'de' MMMM, yyyy") : "Selecciona una fecha en el calendario"}
-                  </div>
-                </div>
-
-                {selectedTemplateId && (
-                  <div className="space-y-2">
-                    <Label className="text-muted-foreground">
-                      Miembros Involucrados ({involvedMembers.length})
-                    </Label>
-                    {involvedMembers.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {involvedMembers.map(m => (
-                          <div key={m.id} className="flex items-center gap-1.5 bg-accent rounded-full py-1 px-2 border text-xs">
-                            {m.avatar ? (
-                              <img src={m.avatar} alt={m.name} className="w-5 h-5 rounded-full" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium">
-                                {m.name.charAt(0)}
-                              </div>
-                            )}
-                            <span className="font-medium truncate max-w-[80px]">{m.name.split(' ')[0]}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Nadie asignado por defecto en esta plantilla.
-                      </p>
-                    )}
-                  </div>
-                )}
-                
+            <div className="form-group">
+              <label className="custom-wizard-label">Fecha de Inicio Elegida</label>
+              <div style={{
+                background: 'rgba(39, 190, 167, 0.05)',
+                padding: '10px 12px',
+                borderRadius: '12px',
+                border: '1px solid rgba(39, 190, 167, 0.15)',
+                fontSize: '0.85rem',
+                color: 'var(--color-primary)',
+                fontWeight: 600
+              }}>
+                {startDate ? format(startDate, "dd 'de' MMMM, yyyy") : "Selecciona una fecha en el calendario"}
               </div>
             </div>
-          </CardContent>
-          <CardFooter className="flex justify-end gap-3 pt-6 border-t bg-accent/20">
-            <Button variant="outline" onClick={onCancel} className="rounded-full">Cancelar</Button>
-            <Button onClick={handleSchedule} disabled={!startDate || !selectedTemplateId || !launchInstanceName.trim()} className="rounded-full">
-              Lanzar Ejecución
-            </Button>
-          </CardFooter>
-        </Card>
+
+            {selectedTemplateId && (
+              <div className="form-group">
+                <label className="custom-wizard-label" style={{ color: 'var(--text-muted)' }}>
+                  Miembros Involucrados ({involvedMembers.length})
+                </label>
+                {involvedMembers.length > 0 ? (
+                  <div className="involved-members">
+                    {involvedMembers.map(m => (
+                      <div key={m.id} className="involved-member-chip">
+                        {m.avatar ? (
+                          <img src={m.avatar} alt={m.name} />
+                        ) : (
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: 'var(--color-primary)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '9px',
+                            fontWeight: 'bold'
+                          }}>
+                            {m.name.charAt(0)}
+                          </div>
+                        )}
+                        <span>{m.name.split(' ')[0]}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Nadie asignado por defecto en esta plantilla.
+                  </p>
+                )}
+              </div>
+            )}
+            
+          </div>
+        </div>
+
+        <div className="launch-footer">
+          <button type="button" onClick={onCancel} className="custom-wizard-btn-back">Cancelar</button>
+          <button
+            type="button"
+            onClick={handleSchedule}
+            disabled={!startDate || !selectedTemplateId || !launchInstanceName.trim()}
+            className="custom-wizard-btn-next"
+            style={{
+              opacity: (!startDate || !selectedTemplateId || !launchInstanceName.trim()) ? 0.5 : 1,
+              cursor: (!startDate || !selectedTemplateId || !launchInstanceName.trim()) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Lanzar Ejecución
+          </button>
+        </div>
       </motion.div>
     </div>
   );
