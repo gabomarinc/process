@@ -3987,6 +3987,22 @@ const handleDeleteMember = async (id) => {
         ticketId={ticketModal.ticketId} 
         customFields={ticketModal.customFields} 
       />
+
+      <TemplateWizardModal 
+        isOpen={isWizardOpen} 
+        onClose={() => setIsWizardOpen(false)}
+        onSubmit={(prompt, title) => {
+          setIsWizardOpen(false);
+          generateTemplate(prompt, title);
+        }}
+      />
+
+      <TemplatePreviewModal 
+        isOpen={!!previewTemplate}
+        initialTemplate={previewTemplate}
+        onClose={() => setPreviewTemplate(null)}
+        onSave={handleSavePreview}
+      />
     </div>
   );
 }
