@@ -1,12 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from './button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
-import { Input } from './input';
-import { Label } from './label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
-import { cn } from '../../lib/utils';
 
 export const AddUserModal = ({
   isOpen,
@@ -32,131 +26,143 @@ export const AddUserModal = ({
     setStep(prev => prev + 1);
   };
 
+  const stepsList = [
+    { label: "Información" },
+    { label: "Rol & Accesos" }
+  ];
+
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
       <motion.div
-        className="w-full max-w-md mx-auto py-8 px-4"
+        className="custom-wizard-card"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem' }}>
           <button type="button" className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
 
-        <Card className="border shadow-md rounded-3xl overflow-hidden" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
-          <CardHeader>
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle>👤 Registrar Nuevo Usuario</CardTitle>
-                <div className="inline-flex mt-2 text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
-                  Paso {step} de 2
+        {/* Stepper Progress */}
+        <div className="custom-wizard-stepper">
+          {stepsList.map((s, idx) => {
+            const isCompleted = idx + 1 < step;
+            const isActive = idx + 1 === step;
+            return (
+              <div key={idx} className={`custom-wizard-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
+                <div className="custom-wizard-step-dot">
+                  {isCompleted ? "✓" : idx + 1}
                 </div>
+                <span className="custom-wizard-step-label">{s.label}</span>
               </div>
-            </div>
-          </CardHeader>
-          
-          <CardContent>
-            {/* Stepper Progress Bar */}
-            <div className="flex gap-2 mb-6">
-              <div className="flex-1 h-1.5 rounded-full bg-primary" />
-              <div className={cn("flex-1 h-1.5 rounded-full", step >= 2 ? "bg-primary" : "bg-muted")} />
-            </div>
+            );
+          })}
+        </div>
 
-            {error && (
-              <div className="bg-destructive/10 text-destructive p-3 rounded-lg mb-4 text-sm font-medium">
-                {error}
-              </div>
+        <div className="custom-wizard-header">
+          <h2 className="custom-wizard-title">
+            👤 Registrar Nuevo Usuario
+          </h2>
+          <p className="custom-wizard-description">
+            {step === 1 && "Ingresa los datos generales para crear el perfil de usuario de la organización."}
+            {step === 2 && "Genera una contraseña temporal y define los accesos del nuevo usuario."}
+          </p>
+        </div>
+
+        {error && (
+          <div style={{ background: '#fef2f2', color: '#ef4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 600 }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={step < 2 ? handleNextStep : handleSave} className="custom-wizard-form">
+          <AnimatePresence mode="wait">
+            {step === 1 && (
+              <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label className="custom-wizard-label">Nombre Completo *</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    autoFocus
+                    placeholder="Ej. Juan Doe"
+                    className="custom-wizard-input"
+                  />
+                </div>
+
+                <div>
+                  <label className="custom-wizard-label">Correo Electrónico *</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    required
+                    placeholder="juan@empresa.com"
+                    className="custom-wizard-input"
+                  />
+                </div>
+              </motion.div>
             )}
 
-            <form onSubmit={step < 2 ? handleNextStep : handleSave} className="space-y-6">
-              <AnimatePresence mode="wait">
-                {step === 1 && (
-                  <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Nombre Completo <span className="text-destructive">*</span></Label>
-                      <Input 
-                        type="text" 
-                        value={formData.name} 
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
-                        required 
-                        autoFocus
-                        className="focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
+            {step === 2 && (
+              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label className="custom-wizard-label">Contraseña Temporal *</label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    autoFocus
+                    placeholder="••••••••"
+                    className="custom-wizard-input"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <Label>Correo Electrónico <span className="text-destructive">*</span></Label>
-                      <Input 
-                        type="email" 
-                        value={formData.email} 
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })} 
-                        required 
-                        className="focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
-                  </motion.div>
-                )}
+                <div>
+                  <label className="custom-wizard-label">Rol del Usuario *</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="custom-wizard-input"
+                  >
+                    <option value="agent">Agente (Miembro de equipo)</option>
+                    <option value="guest">Invitado (Cliente o Proveedor)</option>
+                  </select>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', marginBlockEnd: 0 }}>
+                    Los invitados tienen un límite estricto de hasta 10 por empresa.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                {step === 2 && (
-                  <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Contraseña Temporal <span className="text-destructive">*</span></Label>
-                      <Input 
-                        type="password" 
-                        value={formData.password} 
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
-                        required 
-                        autoFocus
-                        className="focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Rol del Usuario <span className="text-destructive">*</span></Label>
-                      <Select 
-                        value={formData.role} 
-                        onValueChange={(val) => setFormData({ ...formData, role: val })}
-                      >
-                        <SelectTrigger className="focus:ring-2 focus:ring-primary/20">
-                          <SelectValue placeholder="Seleccionar rol" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="agent">Agente (Miembro de equipo)</SelectItem>
-                          <SelectItem value="guest">Invitado (Cliente o Proveedor)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Los invitados tienen un límite estricto de hasta 10 por empresa.
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="flex justify-end gap-3 pt-6 mt-4 border-t">
-                <Button 
-                  type="button" 
-                  variant="outline"
-                  onClick={() => {
-                    if (step > 1) {
-                      setStep(1);
-                    } else {
-                      onClose();
-                    }
-                  }}
-                  className="rounded-full"
-                >
-                  {step > 1 ? 'Atrás' : 'Cancelar'}
-                </Button>
-                <Button type="submit" className="rounded-full">
-                  {step === 2 ? 'Crear Usuario' : 'Siguiente'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+          {/* Footer controls */}
+          <div className="custom-wizard-footer">
+            <button
+              type="button"
+              className="custom-wizard-btn-back"
+              onClick={() => {
+                if (step > 1) {
+                  setStep(1);
+                } else {
+                  onClose();
+                }
+              }}
+            >
+              {step > 1 ? 'Atrás' : 'Cancelar'}
+            </button>
+            <button type="submit" className="custom-wizard-btn-next">
+              {step === 2 ? 'Crear' : 'Siguiente'}
+            </button>
+          </div>
+          <div className="custom-wizard-step-info">
+            Paso {step} de 2
+          </div>
+        </form>
       </motion.div>
     </div>
   );

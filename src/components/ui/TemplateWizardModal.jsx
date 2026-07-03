@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ChevronRight, ChevronLeft, X } from 'lucide-react';
-import { Button } from './button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card';
-import { Input } from './input';
-import { Label } from './label';
-import { Textarea } from './textarea';
-import { cn } from '../../lib/utils';
-import './TemplateWizardModal.css';
 
 const steps = [
   { id: 'name', title: 'Nombre' },
@@ -15,17 +8,6 @@ const steps = [
   { id: 'milestones', title: 'Hitos' },
   { id: 'duration', title: 'Duración' }
 ];
-
-const fadeInUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-};
-
-const contentVariants = {
-  hidden: { opacity: 0, x: 50 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
-  exit: { opacity: 0, x: -50, transition: { duration: 0.2 } },
-};
 
 export const TemplateWizardModal = ({ isOpen, onClose, onSubmit }) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -85,224 +67,157 @@ export const TemplateWizardModal = ({ isOpen, onClose, onSubmit }) => {
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
       <motion.div
-        className="w-full max-w-lg mx-auto py-8 px-4"
+        className="custom-wizard-card"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem' }}>
           <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
 
-        {/* Progress indicator */}
-        <motion.div
-          className="mb-8"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <div className="flex justify-between mb-2">
-            {steps.map((step, index) => (
-              <motion.div
-                key={index}
-                className="flex flex-col items-center"
-                whileHover={{ scale: 1.1 }}
-              >
-                <motion.div
-                  className={cn(
-                    "w-4 h-4 rounded-full cursor-pointer transition-colors duration-300",
-                    index < currentStep
-                      ? "bg-primary"
-                      : index === currentStep
-                        ? "bg-primary ring-4 ring-primary/20"
-                        : "bg-muted"
-                  )}
+        {/* Stepper Progress */}
+        <div className="custom-wizard-stepper">
+          {steps.map((step, index) => {
+            const isCompleted = index < currentStep;
+            const isActive = index === currentStep;
+            return (
+              <div key={index} className={`custom-wizard-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
+                <div
+                  className="custom-wizard-step-dot"
                   onClick={() => {
                     if (index <= currentStep) {
                       setCurrentStep(index);
                     }
                   }}
-                  whileTap={{ scale: 0.95 }}
-                />
-                <motion.span
-                  className={cn(
-                    "text-xs mt-1.5 hidden sm:block",
-                    index === currentStep
-                      ? "text-primary font-medium"
-                      : "text-muted-foreground"
-                  )}
+                  style={{ cursor: index <= currentStep ? 'pointer' : 'default' }}
                 >
-                  {step.title}
-                </motion.span>
-              </motion.div>
-            ))}
-          </div>
-          <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden mt-2">
+                  {isCompleted ? "✓" : index + 1}
+                </div>
+                <span className="custom-wizard-step-label">{step.title}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="custom-wizard-header">
+          <h2 className="custom-wizard-title">
+            <Sparkles size={24} style={{ color: 'var(--color-primary)' }} /> Asistente de Plantillas
+          </h2>
+          <p className="custom-wizard-description">
+            {currentStep === 0 && "¿Cómo se llama el proceso que deseas crear?"}
+            {currentStep === 1 && "¿Cuál es el objetivo principal de este proceso?"}
+            {currentStep === 2 && "¿Cuáles son los entregables o hitos clave de este proceso?"}
+            {currentStep === 3 && "¿Aproximadamente cuántos días dura en total este proceso?"}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="custom-wizard-form">
+          <AnimatePresence mode="wait">
             <motion.div
-              className="h-full bg-primary"
-              initial={{ width: 0 }}
-              animate={{ width: `${(currentStep / (steps.length - 1)) * 100}%` }}
-              transition={{ duration: 0.3 }}
-            />
+              key={currentStep}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Step 1: Nombre */}
+              {currentStep === 0 && (
+                <div>
+                  <label htmlFor="name" className="custom-wizard-label">Nombre del Proceso</label>
+                  <input
+                    id="name"
+                    type="text"
+                    placeholder="Ej: Onboarding de nuevos empleados..."
+                    value={formData.name}
+                    onChange={(e) => updateFormData('name', e.target.value)}
+                    className="custom-wizard-input"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Step 2: Objetivo */}
+              {currentStep === 1 && (
+                <div>
+                  <label htmlFor="objective" className="custom-wizard-label">Descripción del Objetivo</label>
+                  <textarea
+                    id="objective"
+                    placeholder="Ej: Asegurar que el empleado tenga todos sus accesos listos el primer día..."
+                    value={formData.objective}
+                    onChange={(e) => updateFormData('objective', e.target.value)}
+                    className="custom-wizard-input"
+                    style={{ minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }}
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Step 3: Hitos */}
+              {currentStep === 2 && (
+                <div>
+                  <label htmlFor="milestones" className="custom-wizard-label">Lista de Hitos</label>
+                  <textarea
+                    id="milestones"
+                    placeholder="Ej: Firmar contrato, Entrega de laptop, Presentación al equipo..."
+                    value={formData.milestones}
+                    onChange={(e) => updateFormData('milestones', e.target.value)}
+                    className="custom-wizard-input"
+                    style={{ minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }}
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Step 4: Duración */}
+              {currentStep === 3 && (
+                <div>
+                  <label htmlFor="duration" className="custom-wizard-label">Número de Días</label>
+                  <input
+                    id="duration"
+                    type="number"
+                    placeholder="Ej: 5"
+                    value={formData.duration}
+                    onChange={(e) => updateFormData('duration', e.target.value)}
+                    min="1"
+                    className="custom-wizard-input"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Footer controls */}
+          <div className="custom-wizard-footer">
+            <button
+              type="button"
+              className="custom-wizard-btn-back"
+              onClick={prevStep}
+              disabled={currentStep === 0}
+              style={{ opacity: currentStep === 0 ? 0.5 : 1, cursor: currentStep === 0 ? 'not-allowed' : 'pointer' }}
+            >
+              <ChevronLeft size={16} /> Atrás
+            </button>
+            <button
+              type="button"
+              className="custom-wizard-btn-next"
+              onClick={currentStep === steps.length - 1 ? handleSubmit : nextStep}
+              disabled={!isStepValid()}
+            >
+              {currentStep === steps.length - 1 ? "Generar Plantilla" : "Siguiente"}
+              {currentStep === steps.length - 1 ? (
+                <Sparkles size={16} style={{ marginLeft: '4px' }} />
+              ) : (
+                <ChevronRight size={16} style={{ marginLeft: '4px' }} />
+              )}
+            </button>
           </div>
-        </motion.div>
-
-        {/* Form card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          <Card className="border shadow-md rounded-3xl overflow-hidden" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
-            <div>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={currentStep}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  variants={contentVariants}
-                >
-                  {/* Step 1: Nombre */}
-                  {currentStep === 0 && (
-                    <>
-                      <CardHeader>
-                        <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                           <Sparkles size={20} className="text-primary" /> Asistente de Plantillas
-                        </CardTitle>
-                        <CardDescription>
-                          ¿Cómo se llama el proceso?
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <motion.div variants={fadeInUp} className="space-y-2">
-                          <Label htmlFor="name">Nombre del Proceso</Label>
-                          <Input
-                            id="name"
-                            placeholder="Ej: Onboarding de nuevos empleados..."
-                            value={formData.name}
-                            onChange={(e) => updateFormData('name', e.target.value)}
-                            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                            autoFocus
-                          />
-                        </motion.div>
-                      </CardContent>
-                    </>
-                  )}
-
-                  {/* Step 2: Objetivo */}
-                  {currentStep === 1 && (
-                    <>
-                      <CardHeader>
-                        <CardTitle>Objetivo Principal</CardTitle>
-                        <CardDescription>
-                          ¿Cuál es el objetivo principal de este proceso?
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <motion.div variants={fadeInUp} className="space-y-2">
-                          <Label htmlFor="objective">Descripción del objetivo</Label>
-                          <Textarea
-                            id="objective"
-                            placeholder="Ej: Asegurar que el empleado tenga todos sus accesos listos el primer día..."
-                            value={formData.objective}
-                            onChange={(e) => updateFormData('objective', e.target.value)}
-                            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[100px]"
-                            autoFocus
-                          />
-                        </motion.div>
-                      </CardContent>
-                    </>
-                  )}
-
-                  {/* Step 3: Hitos */}
-                  {currentStep === 2 && (
-                    <>
-                      <CardHeader>
-                        <CardTitle>Entregables Clave</CardTitle>
-                        <CardDescription>
-                          ¿Cuáles son los entregables o hitos clave?
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <motion.div variants={fadeInUp} className="space-y-2">
-                          <Label htmlFor="milestones">Lista de Hitos</Label>
-                          <Textarea
-                            id="milestones"
-                            placeholder="Ej: Firmar contrato, Entrega de laptop, Presentación al equipo..."
-                            value={formData.milestones}
-                            onChange={(e) => updateFormData('milestones', e.target.value)}
-                            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[100px]"
-                            autoFocus
-                          />
-                        </motion.div>
-                      </CardContent>
-                    </>
-                  )}
-
-                  {/* Step 4: Duración */}
-                  {currentStep === 3 && (
-                    <>
-                      <CardHeader>
-                        <CardTitle>Duración del Proceso</CardTitle>
-                        <CardDescription>
-                          ¿Aproximadamente cuántos días dura en total?
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <motion.div variants={fadeInUp} className="space-y-2">
-                          <Label htmlFor="duration">Número de días</Label>
-                          <Input
-                            id="duration"
-                            type="number"
-                            placeholder="Ej: 5"
-                            value={formData.duration}
-                            onChange={(e) => updateFormData('duration', e.target.value)}
-                            min="1"
-                            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                            autoFocus
-                          />
-                        </motion.div>
-                      </CardContent>
-                    </>
-                  )}
-                </motion.div>
-              </AnimatePresence>
-
-              <CardFooter className="flex justify-between pt-6 pb-4">
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={prevStep}
-                    disabled={currentStep === 0}
-                    className="flex items-center gap-1 transition-all duration-300 rounded-2xl"
-                  >
-                    <ChevronLeft className="h-4 w-4" /> Atrás
-                  </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button
-                    type="button"
-                    onClick={currentStep === steps.length - 1 ? handleSubmit : nextStep}
-                    disabled={!isStepValid()}
-                    className={cn(
-                      "flex items-center gap-1 transition-all duration-300 rounded-2xl"
-                    )}
-                  >
-                    {currentStep === steps.length - 1 ? "Generar Plantilla" : "Siguiente"}
-                    {currentStep === steps.length - 1 ? (
-                      <Sparkles className="h-4 w-4 ml-1" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    )}
-                  </Button>
-                </motion.div>
-              </CardFooter>
-            </div>
-          </Card>
-        </motion.div>
+          <div className="custom-wizard-step-info">
+            Paso {currentStep + 1} de {steps.length}
+          </div>
+        </form>
       </motion.div>
     </div>
   );
