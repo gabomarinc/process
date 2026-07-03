@@ -248,6 +248,25 @@ function App() {
   const [tempKey, setTempKey] = useState(apiKey);
   const [showPassword, setShowPassword] = useState(false);
 
+  // SMTP & IMAP/POP credentials state (stateless client storage)
+  const [smtpSettings, setSmtpSettings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('smtp_settings')) || { smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '' };
+    } catch {
+      return { smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '' };
+    }
+  });
+
+  const [imapSettings, setImapSettings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('imap_settings')) || { imapHost: '', imapPort: '993', imapSecure: true };
+    } catch {
+      return { imapHost: '', imapPort: '993', imapSecure: true };
+    }
+  });
+
+  const [emailTestStatus, setEmailTestStatus] = useState(null);
+
   // Celebration state
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMsg, setCelebrationMsg] = useState('');
@@ -536,6 +555,37 @@ function App() {
     } catch (err) {
       setSettingsErrorMsg(err.message);
     }
+  };
+
+  const handleTestEmailConnection = async () => {
+    setEmailTestStatus({ loading: true });
+    try {
+      const res = await fetch('/api/email/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...smtpSettings,
+          ...imapSettings
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falló la conexión de prueba.');
+      }
+      setEmailTestStatus({ success: true, message: data.message });
+    } catch (err) {
+      setEmailTestStatus({ success: false, message: err.message });
+    }
+  };
+
+  const handleSaveEmailSettings = (e) => {
+    e.preventDefault();
+    localStorage.setItem('smtp_settings', JSON.stringify(smtpSettings));
+    localStorage.setItem('imap_settings', JSON.stringify(imapSettings));
+    setSettingsSuccessMsg('Configuración de correo electrónico guardada localmente.');
   };
 
   const handleUpdateOrg = async (e) => {
@@ -2361,6 +2411,130 @@ const handleDeleteMember = async (id) => {
                     <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
                       Actualizar Perfil
                     </button>
+                  </form>
+                </div>
+
+                {/* Form: Email Settings (SMTP & IMAP/POP) */}
+                <div id="email-settings-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-main)' }}>Conexión de Correo</h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Conecta tus credenciales (IMAP/POP y SMTP) para enviar correos desde las ejecuciones.</p>
+                  
+                  <form onSubmit={handleSaveEmailSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px' }}>Envío (SMTP)</div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div className="form-group" style={{ flex: 2 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host SMTP</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="smtp.gmail.com"
+                          value={smtpSettings.smtpHost} 
+                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto SMTP</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="465"
+                          value={smtpSettings.smtpPort} 
+                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPort: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Usuario SMTP</label>
+                        <input 
+                          type="email" 
+                          className="form-input" 
+                          placeholder="usuario@correo.com"
+                          value={smtpSettings.smtpUser} 
+                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Contraseña SMTP</label>
+                        <input 
+                          type="password" 
+                          className="form-input" 
+                          placeholder="••••••••"
+                          value={smtpSettings.smtpPass} 
+                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPass: e.target.value })} 
+                          required 
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px', marginTop: '0.5rem' }}>Recepción (IMAP/POP)</div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div className="form-group" style={{ flex: 2 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host IMAP/POP</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="imap.gmail.com"
+                          value={imapSettings.imapHost} 
+                          onChange={(e) => setImapSettings({ ...imapSettings, imapHost: e.target.value })} 
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="993"
+                          value={imapSettings.imapPort} 
+                          onChange={(e) => setImapSettings({ ...imapSettings, imapPort: e.target.value })} 
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '6px' }}>
+                      <input 
+                        type="checkbox"
+                        id="imapSecure"
+                        checked={imapSettings.imapSecure}
+                        onChange={(e) => setImapSettings({ ...imapSettings, imapSecure: e.target.checked })}
+                      />
+                      <label htmlFor="imapSecure" style={{ fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>Conexión Segura (SSL/TLS)</label>
+                    </div>
+
+                    {emailTestStatus && (
+                      <div style={{ 
+                        backgroundColor: emailTestStatus.loading ? '#e0f2f1' : emailTestStatus.success ? '#e8f5e9' : '#ffebee',
+                        color: emailTestStatus.loading ? '#00695c' : emailTestStatus.success ? '#2e7d32' : '#c62828',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        marginTop: '0.25rem'
+                      }}>
+                        {emailTestStatus.loading ? 'Probando conexiones...' : emailTestStatus.message}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        onClick={handleTestEmailConnection}
+                        style={{ flex: 1 }}
+                      >
+                        Probar Conexión
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary" 
+                        style={{ flex: 1 }}
+                      >
+                        Guardar Correo
+                      </button>
+                    </div>
                   </form>
                 </div>
 

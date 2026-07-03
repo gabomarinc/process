@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail } from 'lucide-react';
 
 export const ActiveExecutionModal = ({
   isOpen,
@@ -15,6 +15,14 @@ export const ActiveExecutionModal = ({
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+
+  // Email sub-modal states
+  const [emailModalStep, setEmailModalStep] = useState(null);
+  const [emailToMode, setEmailToMode] = useState('client'); // 'client', 'member', 'other'
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [emailSendStatus, setEmailSendStatus] = useState(null);
 
   useEffect(() => {
     if (activeInstance && isOpen) {
@@ -40,6 +48,113 @@ export const ActiveExecutionModal = ({
       setFocusedIndex(activeIdx);
     }
   }, [activeInstance, isOpen]);
+
+  // Load subject/body when a step is selected for emailing
+  useEffect(() => {
+    if (emailModalStep && activeInstance) {
+      setEmailSubject(`[Proceso: ${activeInstance.instanceName}] Detalle del Paso: ${emailModalStep.title}`);
+      
+      let defaultBody = '';
+      if (emailModalStep.isCompleted) {
+        defaultBody = `Hola,\n\nTe informamos que el paso "${emailModalStep.title}" correspondiente al proceso "${activeInstance.instanceName}" ha sido COMPLETADO con éxito.\n\nSaludos cordiales.`;
+      } else {
+        defaultBody = `Hola,\n\nTe escribimos para informarte que el paso "${emailModalStep.title}" correspondiente al proceso "${activeInstance.instanceName}" se encuentra PENDIENTE de ejecución.\n\nFavor de estar atento para los siguientes avances.`;
+      }
+      setEmailBody(defaultBody);
+      setEmailRecipient('');
+      setEmailToMode('client');
+    }
+  }, [emailModalStep, activeInstance]);
+
+  // Update recipient email based on target mode selection
+  const handleRecipientModeChange = (mode) => {
+    setEmailToMode(mode);
+    if (mode === 'client') {
+      setEmailRecipient('');
+    } else if (mode === 'member') {
+      if (teamMembers.length > 0) {
+        setEmailRecipient(teamMembers[0].email);
+      } else {
+        setEmailRecipient('');
+      }
+    } else {
+      setEmailRecipient('');
+    }
+  };
+
+  const handleApplyTemplate = (type) => {
+    if (!emailModalStep) return;
+    let text = '';
+    if (type === 'completado') {
+      text = `Hola,\n\nTe informamos que el paso "${emailModalStep.title}" correspondiente al proceso "${activeInstance.instanceName}" ha sido COMPLETADO con éxito.\n\nSaludos cordiales.`;
+    } else if (type === 'pendiente_cliente') {
+      text = `Hola,\n\nPara poder avanzar con el paso "${emailModalStep.title}" de tu proceso "${activeInstance.instanceName}", requerimos tu apoyo con la información/documento correspondiente. Por favor haznos llegar lo solicitado a la brevedad.\n\nQuedamos atentos. ¡Muchas gracias!`;
+    } else if (type === 'interno_equipo') {
+      text = `Hola,\n\nTe escribo de forma interna para dar seguimiento al paso "${emailModalStep.title}" en el proceso "${activeInstance.instanceName}". Favor de revisarlo y coordinar los pendientes.\n\nSaludos.`;
+    }
+    setEmailBody(text);
+  };
+
+  const handleSendEmail = async (e) => {
+    e.preventDefault();
+    setEmailSendStatus({ loading: true });
+
+    let smtpSettings = null;
+    try {
+      smtpSettings = JSON.parse(localStorage.getItem('smtp_settings'));
+    } catch (err) {
+      // Ignored
+    }
+
+    if (!smtpSettings || !smtpSettings.smtpHost || !smtpSettings.smtpUser || !smtpSettings.smtpPass) {
+      setEmailSendStatus({
+        success: false,
+        msg: 'No tienes credenciales de correo SMTP guardadas. Por favor configúralas primero en tu sección Perfil/Configuración.'
+      });
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+
+    try {
+      const res = await fetch('/api/email/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          smtpSettings,
+          to: emailRecipient,
+          subject: emailSubject,
+          text: emailBody,
+          html: `<div style="font-family: sans-serif; line-height: 1.5; color: #2c2520;">
+            <div style="background-color: #27bea7; color: white; padding: 1.5rem; border-radius: 12px 12px 0 0;">
+              <h2 style="margin: 0; font-size: 1.5rem; font-family: Outfit, sans-serif;">Kônsul Process</h2>
+            </div>
+            <div style="padding: 2rem; border: 1px solid #eef0f2; border-radius: 0 0 12px 12px; border-top: none; background-color: #FAF8F5;">
+              <p style="white-space: pre-wrap; font-size: 1rem; color: #2c2520; margin: 0 0 1.5rem 0;">${emailBody.replace(/\n/g, '<br />')}</p>
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0;" />
+              <p style="font-size: 0.8rem; color: #7e7168; margin: 0;">Este es un correo enviado de forma segura desde el gestor de procesos Kônsul usando tu propio servidor SMTP.</p>
+            </div>
+          </div>`
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo enviar el correo electrónico.');
+      }
+
+      setEmailSendStatus({ success: true, msg: '¡Correo electrónico enviado con éxito!' });
+      setTimeout(() => {
+        setEmailModalStep(null);
+        setEmailSendStatus(null);
+      }, 1500);
+    } catch (err) {
+      setEmailSendStatus({ success: false, msg: err.message });
+    }
+  };
 
   if (!isOpen || !activeInstance) return null;
 
@@ -193,9 +308,20 @@ export const ActiveExecutionModal = ({
                     >
                       <div className="trio-card-header">
                         <span className="trio-badge-number">Paso {item.index + 1}</span>
-                        {item.status === 'completed' && <Check size={16} className="text-success-icon" />}
-                        {item.status === 'active' && <Clock size={16} className="text-active-icon animate-pulse" />}
-                        {item.status === 'upcoming' && <AlertCircle size={16} className="text-muted-icon" />}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setEmailModalStep(step); }}
+                            className="close-btn-aesthetic"
+                            style={{ width: '26px', height: '26px', padding: 0 }}
+                            title="Enviar Correo del Paso"
+                          >
+                            <Mail size={13} />
+                          </button>
+                          {item.status === 'completed' && <Check size={16} className="text-success-icon" />}
+                          {item.status === 'active' && <Clock size={16} className="text-active-icon animate-pulse" />}
+                          {item.status === 'upcoming' && <AlertCircle size={16} className="text-muted-icon" />}
+                        </div>
                       </div>
 
                       <h4 className="trio-card-title">{step.title}</h4>
@@ -372,9 +498,20 @@ export const ActiveExecutionModal = ({
                                 {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
                               </span>
                             </div>
-                            <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
-                              {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setEmailModalStep(step)}
+                                className="close-btn-aesthetic"
+                                style={{ width: '32px', height: '32px', padding: 0 }}
+                                title="Enviar Correo del Paso"
+                              >
+                                <Mail size={15} />
+                              </button>
+                              <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
+                                {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
+                              </span>
+                            </div>
                           </div>
                           <p>{step.description}</p>
 
@@ -568,6 +705,204 @@ export const ActiveExecutionModal = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Step Email Sub-Modal Overlay */}
+      {emailModalStep && (
+        <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0,0,0,0.6)' }} onClick={() => setEmailModalStep(null)}>
+          <div className="modal-card" style={{ maxWidth: '600px', width: '90%', padding: '1.5rem', background: '#fff', borderRadius: '16px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #eee', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-main)', fontWeight: 700 }}>Enviar Correo Informativo</h3>
+              <button className="close-btn-aesthetic" onClick={() => setEmailModalStep(null)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSendEmail} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              
+              {/* Recipient Destination Selector */}
+              <div className="form-group">
+                <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Destinatario del Correo</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '4px' }}>
+                  <div 
+                    onClick={() => handleRecipientModeChange('client')}
+                    style={{
+                      padding: '8px',
+                      border: '1px solid',
+                      borderColor: emailToMode === 'client' ? 'var(--color-primary)' : '#d1d5db',
+                      backgroundColor: emailToMode === 'client' ? 'rgba(39, 190, 167, 0.05)' : 'white',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: emailToMode === 'client' ? 'var(--color-primary)' : 'var(--text-main)'
+                    }}
+                  >
+                    Cliente
+                  </div>
+                  <div 
+                    onClick={() => handleRecipientModeChange('member')}
+                    style={{
+                      padding: '8px',
+                      border: '1px solid',
+                      borderColor: emailToMode === 'member' ? 'var(--color-primary)' : '#d1d5db',
+                      backgroundColor: emailToMode === 'member' ? 'rgba(39, 190, 167, 0.05)' : 'white',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: emailToMode === 'member' ? 'var(--color-primary)' : 'var(--text-main)'
+                    }}
+                  >
+                    Equipo
+                  </div>
+                  <div 
+                    onClick={() => handleRecipientModeChange('other')}
+                    style={{
+                      padding: '8px',
+                      border: '1px solid',
+                      borderColor: emailToMode === 'other' ? 'var(--color-primary)' : '#d1d5db',
+                      backgroundColor: emailToMode === 'other' ? 'rgba(39, 190, 167, 0.05)' : 'white',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: emailToMode === 'other' ? 'var(--color-primary)' : 'var(--text-main)'
+                    }}
+                  >
+                    Otro
+                  </div>
+                </div>
+
+                {emailToMode === 'client' && (
+                  <input
+                    type="email"
+                    required
+                    placeholder="Escribe el email del cliente..."
+                    value={emailRecipient}
+                    onChange={(e) => setEmailRecipient(e.target.value)}
+                    className="custom-wizard-input"
+                  />
+                )}
+
+                {emailToMode === 'member' && (
+                  <select
+                    value={emailRecipient}
+                    onChange={(e) => setEmailRecipient(e.target.value)}
+                    className="custom-wizard-input"
+                    required
+                  >
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={m.email}>{m.name} ({m.email})</option>
+                    ))}
+                    {teamMembers.length === 0 && (
+                      <option value="">No hay miembros de equipo registrados</option>
+                    )}
+                  </select>
+                )}
+
+                {emailToMode === 'other' && (
+                  <input
+                    type="email"
+                    required
+                    placeholder="correo@ejemplo.com"
+                    value={emailRecipient}
+                    onChange={(e) => setEmailRecipient(e.target.value)}
+                    className="custom-wizard-input"
+                  />
+                )}
+              </div>
+
+              {/* Subject */}
+              <div className="form-group">
+                <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Asunto *</label>
+                <input
+                  type="text"
+                  required
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="custom-wizard-input"
+                />
+              </div>
+
+              {/* Body and Templates */}
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Mensaje *</label>
+                  
+                  {/* Template Quick Actions */}
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTemplate('completado')}
+                      style={{ border: 'none', background: '#e8f5e9', color: '#2e7d32', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      ✓ Hecho
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTemplate('pendiente_cliente')}
+                      style={{ border: 'none', background: '#ffebee', color: '#c62828', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      ⚠ Pedir Cliente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTemplate('interno_equipo')}
+                      style={{ border: 'none', background: '#e0f2f1', color: '#00695c', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      ⚙ Interno
+                    </button>
+                  </div>
+                </div>
+                
+                <textarea
+                  required
+                  rows={6}
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  className="custom-wizard-input"
+                  style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: '1.4' }}
+                />
+              </div>
+
+              {emailSendStatus && (
+                <div style={{ 
+                  backgroundColor: emailSendStatus.loading ? '#e0f2f1' : emailSendStatus.success ? '#e8f5e9' : '#ffebee',
+                  color: emailSendStatus.loading ? '#00695c' : emailSendStatus.success ? '#2e7d32' : '#c62828',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600
+                }}>
+                  {emailSendStatus.loading ? 'Enviando correo...' : emailSendStatus.msg}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="custom-wizard-btn-back"
+                  onClick={() => setEmailModalStep(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="custom-wizard-btn-next"
+                  disabled={!!(emailSendStatus && emailSendStatus.loading)}
+                  style={{
+                    opacity: (emailSendStatus && emailSendStatus.loading) ? 0.5 : 1,
+                    cursor: (emailSendStatus && emailSendStatus.loading) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Enviar Email
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

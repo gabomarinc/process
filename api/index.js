@@ -5,6 +5,9 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import net from 'net';
+import tls from 'tls';
 
 dotenv.config();
 
@@ -1069,6 +1072,112 @@ app.delete('/api/notifications/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error deleting notification:', err);
     res.status(500).json({ error: 'Server error deleting notification' });
+  }
+});
+
+// Test SMTP and IMAP/POP connection settings (Stateless, zero server-resource storage)
+app.post('/api/email/test-connection', authenticateToken, async (req, res) => {
+  const { smtpHost, smtpPort, smtpUser, smtpPass, imapHost, imapPort, imapSecure } = req.body;
+
+  if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios de SMTP.' });
+  }
+
+  try {
+    // 1. Test SMTP Connection
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: parseInt(smtpPort),
+      secure: parseInt(smtpPort) === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      },
+      connectTimeout: 5000
+    });
+
+    await transporter.verify();
+
+    // 2. Test IMAP Connection (if provided) using light TCP/TLS socket
+    let imapOk = true;
+    let imapError = null;
+    if (imapHost && imapPort) {
+      try {
+        await new Promise((resolve, reject) => {
+          const isSecure = imapSecure === true || parseInt(imapPort) === 993;
+          const socket = (isSecure ? tls : net).connect({
+            host: imapHost,
+            port: parseInt(imapPort),
+            timeout: 5000,
+            rejectUnauthorized: false
+          }, () => {
+            socket.end();
+            resolve();
+          });
+          socket.on('error', reject);
+          socket.on('timeout', () => {
+            socket.destroy();
+            reject(new Error('Tiempo de espera agotado'));
+          });
+        });
+      } catch (err) {
+        imapOk = false;
+        imapError = err.message;
+      }
+    }
+
+    if (!imapOk) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Conexión SMTP exitosa, pero falló la conexión IMAP: ${imapError}` 
+      });
+    }
+
+    res.json({ success: true, message: 'Conexiones SMTP e IMAP verificadas correctamente.' });
+  } catch (err) {
+    console.error('Error al probar conexión de email:', err);
+    res.status(500).json({ success: false, error: `Error de conexión: ${err.message}` });
+  }
+});
+
+// Send email using user-provided SMTP credentials (stateless relay)
+app.post('/api/email/send-email', authenticateToken, async (req, res) => {
+  const { smtpSettings, to, subject, html, text } = req.body;
+
+  if (!smtpSettings || !to || !subject || (!html && !text)) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios para enviar el correo.' });
+  }
+
+  const { smtpHost, smtpPort, smtpUser, smtpPass } = smtpSettings;
+
+  if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+    return res.status(400).json({ error: 'Configuración SMTP incompleta.' });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: parseInt(smtpPort),
+      secure: parseInt(smtpPort) === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      }
+    });
+
+    const mailOptions = {
+      from: `"${req.user.name || 'Kônsul User'}" <${smtpUser}>`,
+      to,
+      subject,
+      text,
+      html
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    res.json({ success: true, messageId: info.messageId });
+  } catch (err) {
+    console.error('Error al enviar correo vía SMTP del usuario:', err);
+    res.status(500).json({ error: `Fallo al enviar correo: ${err.message}` });
   }
 });
 
