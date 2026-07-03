@@ -3058,7 +3058,7 @@ const handleDeleteMember = async (id) => {
 
       <TemplatePreviewModal 
         isOpen={!!previewTemplate}
-        initialTemplate={previewTemplate}
+        initialData={previewTemplate}
         onClose={() => setPreviewTemplate(null)}
         onSave={handleSavePreview}
       />
