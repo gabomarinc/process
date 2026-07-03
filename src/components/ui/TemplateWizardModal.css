@@ -1,0 +1,63 @@
+.wizard-modal {
+  max-width: 500px;
+}
+
+.wizard-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2rem;
+}
+
+.progress-bar-container {
+  height: 6px;
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.step-indicator {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: right;
+  font-weight: 500;
+}
+
+.wizard-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.wizard-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.wizard-form label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.field-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem 0;
+}
+
+.wizard-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}

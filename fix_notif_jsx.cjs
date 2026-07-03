@@ -1,0 +1,147 @@
+const fs = require('fs');
+
+const cssAppend = `
+.radix-notif-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+  align-items: center;
+}
+.radix-notif-action-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.radix-notif-action-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+`;
+fs.appendFileSync('src/components/ui/notifications.css', cssAppend);
+
+const jsxContent = `"use client";
+
+import * as React from "react";
+import { useState, useEffect } from "react";
+import { BellRing, MessageCircle, AlertTriangle, CheckCircle, Trash2, Check } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
+import "./notifications.css";
+
+const defaultNotifications = [
+  { id: 1, type: "message", message: "Nuevo mensaje de John", timestamp: "hace 2m" },
+  { id: 2, type: "success", message: "Reporte generado exitosamente", timestamp: "hace 10m", instanceId: 1 },
+  { id: 3, type: "alert", message: "Mantenimiento del servidor programado", timestamp: "hace 1h", read: true },
+];
+
+export default function Notifications({
+  initialNotifications = defaultNotifications,
+  icon,
+  onNavigate
+}) {
+  const [notifs, setNotifs] = useState(initialNotifications);
+  const unreadCount = notifs.filter((n) => !n.read).length;
+
+  const getIcon = (type) => {
+    switch (type) {
+      case "message":
+        return <MessageCircle size={20} color="#3b82f6" />;
+      case "alert":
+        return <AlertTriangle size={20} color="#f59e0b" />;
+      case "success":
+        return <CheckCircle size={20} color="#10b981" />;
+      default:
+        return <BellRing size={20} color="#6b7280" />;
+    }
+  };
+
+  const markAsRead = (e, id) => {
+    e.stopPropagation();
+    setNotifs(notifs.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const deleteNotif = (e, id) => {
+    e.stopPropagation();
+    setNotifs(notifs.filter(n => n.id !== id));
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="notifications-trigger">
+        {icon || <BellRing size={20} />}
+        {unreadCount > 0 && (
+          <span className="notifications-badge">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        side="bottom"
+        align="end" 
+        className="notifications-content"
+      >
+        {notifs.length === 0 ? (
+          <DropdownMenuItem className="radix-notif-item-empty">
+            No tienes notificaciones
+          </DropdownMenuItem>
+        ) : (
+          notifs.map((n) => (
+            <DropdownMenuItem
+              key={n.id}
+              className={\`radix-notif-item \${n.read ? "read" : "unread"}\`}
+            >
+              <div 
+                style={{ display: 'flex', gap: '0.75rem', flexGrow: 1 }} 
+                onClick={() => onNavigate && onNavigate(n)}
+              >
+                <div className="radix-notif-item-icon">{getIcon(n.type)}</div>
+                <div className="radix-notif-item-body">
+                  <span className="radix-notif-item-message">{n.message}</span>
+                  {n.timestamp && (
+                    <span className="radix-notif-item-time">{n.timestamp}</span>
+                  )}
+                </div>
+              </div>
+              
+              <div className="radix-notif-actions">
+                {!n.read && (
+                  <button 
+                    className="radix-notif-action-btn" 
+                    onClick={(e) => markAsRead(e, n.id)}
+                    title="Marcar como leída"
+                  >
+                    <Check size={14} />
+                  </button>
+                )}
+                <button 
+                  className="radix-notif-action-btn" 
+                  onClick={(e) => deleteNotif(e, n.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+`;
+
+fs.writeFileSync('src/components/ui/notifications.jsx', jsxContent);
+console.log('Fixed jsx');

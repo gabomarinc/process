@@ -1,5 +1,7 @@
 import { LaunchExecutionModal } from "./components/ui/LaunchExecutionModal";
 import { SuccessTicketModal } from "./components/ui/SuccessTicketModal";
+import { TemplateWizardModal } from "./components/ui/TemplateWizardModal";
+import { TemplatePreviewModal } from "./components/ui/TemplatePreviewModal";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { useAlert } from './contexts/AlertContext';
@@ -34,7 +36,12 @@ import {
   ChevronDown,
   LogOut,
   Menu,
-  X
+  X,
+  Lock,
+  ListTodo,
+  HelpCircle,
+  Save,
+  Mic
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -198,6 +205,10 @@ function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [ticketModal, setTicketModal] = useState({ isOpen: false, title: "", message: "", ticketId: "", customFields: [] });
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
@@ -913,7 +924,81 @@ const handleDeleteMember = async (id) => {
   };
 
   // AI Prompt Call using fetch to v1beta gemini-flash-latest
-  const generateTemplate = async (textSource, titleSuggestion = "Nuevo Proceso") => {
+  
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      setMediaRecorder(recorder);
+      
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      
+      recorder.onstop = () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        handleAudioSubmit(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      showAlert("No se pudo acceder al micrófono.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleAudioSubmit = (audioBlob) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(audioBlob);
+    reader.onloadend = () => {
+      const base64data = reader.result.split(',')[1];
+      generateTemplate("Audio grabado por el usuario", "Proceso por Audio", {
+        inlineData: {
+          mimeType: "audio/webm",
+          data: base64data
+        }
+      });
+    };
+  };
+
+  const handleSavePreview = async (templateData) => {
+    try {
+      setPreviewTemplate(null);
+      setTemplates(prev => [templateData, ...prev]);
+      setSelectedTemplateId(templateData.id);
+      
+      setTicketModal({
+        isOpen: true,
+        title: "¡Plantilla Creada!",
+        message: "La plantilla se ha guardado exitosamente.",
+        ticketId: "Nueva Plantilla",
+        customFields: [
+          { label: "Nombre", value: templateData.title }
+        ]
+      });
+      setActiveTab('templates');
+
+      await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateData)
+      });
+    } catch (err) {
+      console.error("Error saving template", err);
+    }
+  };
+
+  const generateTemplate = async (textSource, titleSuggestion = "Nuevo Proceso", audioData = null) => {
     setIsUploading(true);
     setUploadProgress(10);
     setUploadStatusMsg("Analizando directrices del proceso...");
@@ -959,27 +1044,10 @@ const handleDeleteMember = async (id) => {
             }
           ]
         };
-        setTemplates(prev => [newTemp, ...prev]);
-        setSelectedTemplateId(newTemp.id);
+        setPreviewTemplate(newTemp);
         setIsUploading(false);
-        setTicketModal({
-          isOpen: true,
-          title: "¡Plantilla Creada!",
-          message: "La plantilla se ha generado exitosamente.",
-          ticketId: "Nueva Plantilla",
-          customFields: [
-            { label: "Nombre", value: newTemp.title }
-          ]
-        });
+        setUploadStatusMsg("");
         setManualText('');
-        setActiveTab('templates');
-
-        // Save to Database
-        fetch('/api/templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newTemp)
-        }).catch(err => console.error("Error al guardar plantilla simulada en Neon:", err));
       }, 2000);
       return;
     }
@@ -1042,7 +1110,8 @@ const handleDeleteMember = async (id) => {
               parts: [
                 {
                   text: prompt
-                }
+                },
+                ...(audioData ? [audioData] : [])
               ]
             }
           ]
@@ -1072,31 +1141,10 @@ const handleDeleteMember = async (id) => {
         id: tempId
       };
 
-      setTemplates(prev => [finalTemplate, ...prev]);
-      setSelectedTemplateId(tempId);
+      setPreviewTemplate(finalTemplate);
       setIsUploading(false);
-      setTicketModal({
-        isOpen: true,
-        title: "¡Plantilla Creada!",
-        message: "La plantilla se ha generado exitosamente.",
-        ticketId: "Nueva Plantilla",
-        customFields: [
-          { label: "Nombre", value: finalTemplate.title }
-        ]
-      });
+      setUploadStatusMsg("");
       setManualText('');
-      setActiveTab('templates');
-
-      // Save to Neon DB
-      try {
-        await fetch('/api/templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(finalTemplate)
-        });
-      } catch (err) {
-        console.error("Error al guardar plantilla generada en Neon:", err);
-      }
       
     } catch (error) {
       console.error(error);
@@ -2896,24 +2944,26 @@ const handleDeleteMember = async (id) => {
 
               <div className="divider">O pega las pautas directamente</div>
 
-              <form onSubmit={handleManualSubmit}>
-                <textarea 
-                  className="textarea-input"
-                  placeholder="Ejemplo: Proceso de Onboarding. Día 1: Kickoff inicial. Día 2: Subir identificación (digital). Día 3: Firma de contrato de confidencialidad."
-                  value={manualText}
-                  onChange={(e) => setManualText(e.target.value)}
-                  disabled={isUploading}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginTop: '0.5rem' }}>
                 <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  disabled={isUploading || !manualText.trim()}
+                  className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'}`} 
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isUploading || !apiKey}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '1rem', position: 'relative' }}
                 >
-                  <Sparkles size={16} />
-                  {apiKey ? "Generar Plantilla con Gemini" : "Generar Plantilla Simulada"}
+                  {isRecording && <span className="recording-pulse" style={{ position: 'absolute', right: '15px', width: '10px', height: '10px', background: 'white', borderRadius: '50%', animation: 'pulse 1s infinite' }} />}
+                  <Mic size={18} />
+                  {isRecording ? "Detener Grabación" : "Dictar por Audio"}
                 </button>
-              </form>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setIsWizardOpen(true)}
+                  disabled={isUploading || !apiKey}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '1rem' }}
+                >
+                  <Sparkles size={18} /> Asistente Paso a Paso
+                </button>
+              </div>
             </div>
 
             {/* List based on active tab */}
