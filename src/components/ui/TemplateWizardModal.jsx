@@ -43,14 +43,17 @@ export const TemplateWizardModal = ({ isOpen, onClose, onSubmit }) => {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
       >
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className="icon-circle primary">
+        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-circle primary" style={{ width: '40px', height: '40px' }}>
               <Sparkles size={20} />
             </div>
-            <h2 className="modal-title">Asistente de Plantillas</h2>
+            <div>
+              <h2 className="modal-title" style={{ margin: 0, fontSize: '1.4rem' }}>Asistente de Plantillas</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Genera procesos interactivos paso a paso.</p>
+            </div>
           </div>
-          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+          <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
 
         <div className="modal-content">
