@@ -32,7 +32,7 @@ pool.query(`
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);
   
   CREATE TABLE IF NOT EXISTS clients (
-    id SERIAL PRIMARY KEY,
+    id VARCHAR(255) PRIMARY KEY,
     organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -381,16 +381,17 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
     // Ensure table exists (Safe for Vercel Serverless cold starts)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
-        id SERIAL PRIMARY KEY,
+        id VARCHAR(255) PRIMARY KEY,
         organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
     `);
     
+    const clientId = 'cli_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
     const result = await pool.query(
-      'INSERT INTO clients (organization_id, name) VALUES ($1, $2) RETURNING *',
-      [req.user.organizationId, name]
+      'INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3) RETURNING *',
+      [clientId, req.user.organizationId, name]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
