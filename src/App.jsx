@@ -2081,7 +2081,7 @@ const handleDeleteMember = async (id) => {
                           <div className="avatar-group" style={{ display: 'flex', gap: '4px' }}>
                             {(() => {
                               // Get unique members involved in this template
-                              const assignedIds = new Set((temp.steps || []).map(s => s.assignedTo).filter(Boolean));
+                              const assignedIds = new Set((temp.steps || []).filter(Boolean).map(s => s.assignedTo).filter(Boolean));
                               const uniqueMembers = teamMembers.filter(m => assignedIds.has(m.id));
                               return uniqueMembers.slice(0, 4).map(member => (
                                 <div 
@@ -2105,7 +2105,7 @@ const handleDeleteMember = async (id) => {
                                 </div>
                               ));
                             })()}
-                            {((temp.steps || []).map(s => s.assignedTo).filter(Boolean).length === 0) && (
+                            {((temp.steps || []).filter(Boolean).map(s => s.assignedTo).filter(Boolean).length === 0) && (
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin asignar</span>
                             )}
                           </div>
@@ -2165,7 +2165,6 @@ const handleDeleteMember = async (id) => {
                 handleAddStep={handleAddStep}
                 expandedTemplateMembers={expandedTemplateMembers}
                 setExpandedTemplateMembers={setExpandedTemplateMembers}
-                setActiveTemplate={setActiveTemplate}
                 setTicketModal={setTicketModal}
               />
             </div>

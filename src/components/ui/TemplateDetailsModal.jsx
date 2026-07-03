@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks } from 'lucide-react';
 import { Button } from './button';
@@ -33,7 +33,22 @@ export const TemplateDetailsModal = ({
   setActiveTemplate,
   setTicketModal
 }) => {
+  useEffect(() => {
+    if (activeTemplate && activeTemplate.steps && teamMembers) {
+      const initial = {};
+      teamMembers.forEach(m => {
+        initial[m.id] = (activeTemplate.steps || [])
+          .map((s, i) => ({ s, i }))
+          .filter(({ s }) => s && String(s.assignedTo) === String(m.id))
+          .map(({ i }) => i);
+      });
+      setDraftAssignment(initial);
+    }
+  }, [activeTemplate, teamMembers, setDraftAssignment]);
+
   if (!isOpen || !activeTemplate) return null;
+
+  const stepsList = (activeTemplate.steps || []).filter(Boolean);
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
@@ -121,7 +136,7 @@ export const TemplateDetailsModal = ({
           <div className="p-6 overflow-y-auto flex-1">
             {detailModalTab === 'steps' ? (
               <div className="space-y-4">
-                {activeTemplate.steps.map((step, idx) => {
+                {stepsList.map((step, idx) => {
                   const isEditing = editingStepIndex === idx;
 
                   return (
@@ -338,7 +353,7 @@ export const TemplateDetailsModal = ({
 
                             {expandedTemplateMembers[member.id] && (
                               <div className="flex flex-col gap-2 mb-4 bg-background p-3 rounded-xl border shadow-inner">
-                                {activeTemplate.steps.map((step, sIdx) => {
+                                {stepsList.map((step, sIdx) => {
                                   const isOn = draftSteps.includes(sIdx);
                                   const ownedByOther = teamMembers.find(m =>
                                     m.id !== member.id &&
@@ -411,7 +426,7 @@ export const TemplateDetailsModal = ({
                             <Button
                               className="w-full rounded-full"
                               onClick={async () => {
-                                const newSteps = activeTemplate.steps.map((s, sIdx) => {
+                                const newSteps = stepsList.map((s, sIdx) => {
                                   if (String(s.assignedTo) === String(member.id)) {
                                     return { ...s, assignedTo: draftSteps.includes(sIdx) ? member.id : '' };
                                   }
@@ -421,7 +436,7 @@ export const TemplateDetailsModal = ({
                                   return s;
                                 });
                                 await saveTemplate({ ...activeTemplate, steps: newSteps });
-                                setActiveTemplate(null);
+                                onClose();
                                 setTicketModal({
                                   isOpen: true,
                                   title: "¡Asignación Guardada!",

@@ -182,7 +182,7 @@ export const MemberModal = ({
                         </div>
                         {isExpanded && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '0.5rem' }}>
-                            {temp.steps.map((step, sIdx) => {
+                            {(temp.steps || []).filter(Boolean).map((step, sIdx) => {
                               const isStepAssigned = String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
                               return (
                                 <div key={sIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
@@ -197,8 +197,10 @@ export const MemberModal = ({
                                         modifiedTemplateIds.add(temp.id);
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
-                                          const updatedSteps = [...t.steps];
-                                          updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: editingMember?.id || 'temp_new_member' };
+                                          const updatedSteps = [...(t.steps || [])].filter(Boolean);
+                                          if (updatedSteps[sIdx]) {
+                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: editingMember?.id || 'temp_new_member' };
+                                          }
                                           return { ...t, steps: updatedSteps };
                                         }));
                                         if (!formData.assignedProcesses.includes(temp.id)) {
@@ -224,8 +226,8 @@ export const MemberModal = ({
                                         modifiedTemplateIds.add(temp.id);
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
-                                          const updatedSteps = [...t.steps];
-                                          if (String(updatedSteps[sIdx].assignedTo) === String(editingMember?.id || 'temp_new_member')) {
+                                          const updatedSteps = [...(t.steps || [])].filter(Boolean);
+                                          if (updatedSteps[sIdx] && String(updatedSteps[sIdx].assignedTo) === String(editingMember?.id || 'temp_new_member')) {
                                             updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: '' };
                                           }
                                           return { ...t, steps: updatedSteps };
