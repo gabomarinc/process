@@ -218,6 +218,7 @@ function App() {
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+  const [fileStore, setFileStore] = useState({});
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -2592,6 +2593,8 @@ const handleDeleteMember = async (id) => {
         checkOverdueSteps={checkOverdueSteps}
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
+        fileStore={fileStore}
+        setFileStore={setFileStore}
       />
 
 
