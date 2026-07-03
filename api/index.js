@@ -801,6 +801,24 @@ app.get('/api/users', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
   }
   try {
+    // Self-healing: Ensure all team members have a corresponding user account
+    const teamMembersRes = await pool.query(
+      'SELECT name, email FROM team_members WHERE organization_id = $1',
+      [req.user.organizationId]
+    );
+    for (const member of teamMembersRes.rows) {
+      const uExist = await pool.query('SELECT id FROM users WHERE email = $1', [member.email]);
+      if (uExist.rows.length === 0) {
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetTokenExpiry = Date.now() + 24 * 3600000;
+        await pool.query(
+          `INSERT INTO users (organization_id, name, email, password_hash, role, reset_token, reset_token_expiry)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [req.user.organizationId, member.name, member.email, 'INVITED_PENDING', 'guest', resetToken, resetTokenExpiry]
+        );
+      }
+    }
+
     const result = await pool.query(
       'SELECT id, name, email, role, created_at FROM users WHERE organization_id = $1 ORDER BY name ASC',
       [req.user.organizationId]
