@@ -1,0 +1,661 @@
+/* TemplateDetailsModal.css */
+
+.tdm-modal-card {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 24px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  max-width: 900px;
+  width: 95%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: none;
+  font-family: inherit;
+}
+
+.tdm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.75rem 2rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: #ffffff;
+}
+
+.tdm-header-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.tdm-header-avatar {
+  font-size: 2.5rem;
+  background: #f1f5f9;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+}
+
+.tdm-header-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  font-family: var(--font-serif), Georgia, serif;
+}
+
+.tdm-header-desc {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin: 0.25rem 0 0 0;
+  max-width: 500px;
+  line-height: 1.4;
+}
+
+.tdm-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.tdm-meta-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+}
+
+.tdm-meta-badge.primary {
+  background: rgba(39, 190, 167, 0.1);
+  color: var(--color-primary);
+}
+
+.tdm-meta-badge.secondary {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tdm-category-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  width: 130px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tdm-category-input:focus {
+  border-color: var(--color-primary);
+}
+
+.tdm-header-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.tdm-btn-launch {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(39, 190, 167, 0.2);
+  transition: opacity 0.2s;
+}
+
+.tdm-btn-launch:hover {
+  opacity: 0.9;
+}
+
+.tdm-btn-delete {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: opacity 0.2s;
+}
+
+.tdm-btn-delete:hover {
+  opacity: 0.9;
+}
+
+.tdm-tabs-container {
+  display: flex;
+  padding: 0 2rem;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  gap: 1.5rem;
+}
+
+.tdm-tab-trigger {
+  background: transparent;
+  border: none;
+  padding: 1rem 0;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tdm-tab-trigger:hover {
+  color: #0f172a;
+}
+
+.tdm-tab-trigger.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.tdm-content {
+  padding: 2rem;
+  overflow-y: auto;
+  flex: 1;
+  background: #f8fafc;
+}
+
+.tdm-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.tdm-step-card-wrapper {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.tdm-step-number {
+  background: rgba(39, 190, 167, 0.1);
+  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(39, 190, 167, 0.2);
+}
+
+.tdm-step-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  flex: 1;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  transition: box-shadow 0.2s;
+}
+
+.tdm-step-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+.tdm-step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.tdm-step-title-text {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.tdm-step-offset {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+  margin-top: 0.1rem;
+}
+
+.tdm-step-desc {
+  color: #475569;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 1rem 0;
+}
+
+.tdm-step-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.75rem;
+}
+
+.tdm-motivation-tag {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid #fde68a;
+}
+
+.tdm-assignee-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  background: #f1f5f9;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+}
+
+.tdm-assignee-avatar {
+  width: 20px;
+  height: 20px;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+}
+
+.tdm-step-action-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.tdm-icon-btn {
+  background: transparent;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.tdm-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.tdm-icon-btn.delete:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.tdm-step-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tdm-form-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+
+.tdm-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tdm-form-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.tdm-form-group input, 
+.tdm-form-group textarea, 
+.tdm-form-group select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tdm-form-group input:focus, 
+.tdm-form-group textarea:focus, 
+.tdm-form-group select:focus {
+  border-color: var(--color-primary);
+}
+
+.tdm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tdm-btn-save-step {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tdm-btn-cancel-step {
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tdm-add-step-btn {
+  width: 100%;
+  padding: 0.85rem;
+  border: 2px dashed rgba(39, 190, 167, 0.4);
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.tdm-add-step-btn:hover {
+  background: rgba(39, 190, 167, 0.04);
+  border-color: var(--color-primary);
+}
+
+/* Team Assignment Tab styling */
+.tdm-team-instruction {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.tdm-team-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 2px dashed #e2e8f0;
+}
+
+.tdm-team-empty p {
+  font-style: italic;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.tdm-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tdm-member-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  transition: all 0.25s ease;
+}
+
+.tdm-member-card.involved {
+  border-color: rgba(39, 190, 167, 0.3);
+  background: rgba(39, 190, 167, 0.01);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+}
+
+.tdm-member-card-body {
+  padding: 1.25rem;
+}
+
+.tdm-member-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.tdm-member-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(39, 190, 167, 0.2);
+}
+
+.tdm-member-info {
+  flex: 1;
+}
+
+.tdm-member-name {
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.tdm-member-role {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0.15rem 0 0 0;
+}
+
+.tdm-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(39, 190, 167, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(39, 190, 167, 0.15);
+}
+
+.tdm-toggle-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.tdm-toggle-btn {
+  color: var(--color-primary);
+  background: transparent;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.2s;
+}
+
+.tdm-toggle-btn:hover {
+  background: rgba(39, 190, 167, 0.08);
+}
+
+.tdm-steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: #f8fafc;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 1rem;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
+}
+
+.tdm-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  transition: all 0.2s;
+}
+
+.tdm-step-row.on {
+  background: rgba(39, 190, 167, 0.03);
+  border-color: rgba(39, 190, 167, 0.15);
+}
+
+.tdm-step-row.disabled {
+  opacity: 0.6;
+}
+
+.tdm-step-row-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tdm-step-row-title strong {
+  color: var(--color-primary);
+}
+
+.tdm-step-row-title em {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.tdm-step-toggle {
+  display: inline-flex;
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.tdm-btn-yes, .tdm-btn-no {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tdm-btn-yes.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+.tdm-btn-yes:not(.active) {
+  background: transparent;
+  color: #64748b;
+}
+
+.tdm-btn-yes:not(.active):hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.tdm-btn-no.active {
+  background: #ef4444;
+  color: white;
+}
+
+.tdm-btn-no:not(.active) {
+  background: transparent;
+  color: #64748b;
+}
+
+.tdm-btn-no:not(.active):hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.tdm-btn-yes:disabled, .tdm-btn-no:disabled {
+  cursor: not-allowed;
+}
+
+.tdm-save-btn {
+  width: 100%;
+  border-radius: 9999px;
+  padding: 0.65rem;
+  background: #0f172a;
+  color: white;
+  border: none;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.tdm-save-btn:hover {
+  background: #1e293b;
+}

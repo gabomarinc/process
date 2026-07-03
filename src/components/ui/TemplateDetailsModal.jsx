@@ -1,13 +1,8 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks } from 'lucide-react';
-import { Button } from './button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
-import { Input } from './input';
-import { Label } from './label';
-import { Textarea } from './textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { cn } from '../../lib/utils';
+import './TemplateDetailsModal.css';
 
 export const TemplateDetailsModal = ({
   isOpen,
@@ -30,7 +25,6 @@ export const TemplateDetailsModal = ({
   handleAddStep,
   expandedTemplateMembers,
   setExpandedTemplateMembers,
-  setActiveTemplate,
   setTicketModal
 }) => {
   useEffect(() => {
@@ -63,60 +57,56 @@ export const TemplateDetailsModal = ({
           <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
         </div>
 
-        <Card className="border shadow-md rounded-3xl overflow-hidden flex flex-col" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', maxHeight: '85vh' }}>
-          
-          <div className="p-6 border-b flex justify-between items-start shrink-0">
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="text-4xl">{activeTemplate.companionAvatar}</span>
+        <div className="tdm-modal-card">
+          {/* Header */}
+          <div className="tdm-header">
+            <div style={{ flex: 1 }}>
+              <div className="tdm-header-info">
+                <span className="tdm-header-avatar">{activeTemplate.companionAvatar || '⚙️'}</span>
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground font-serif">{activeTemplate.title}</h2>
-                  <p className="text-muted-foreground mt-1">{activeTemplate.description}</p>
+                  <h2 className="tdm-header-title">{activeTemplate.title}</h2>
+                  <p className="tdm-header-desc">{activeTemplate.description}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3 mt-4">
-                <span className="bg-primary/10 text-primary text-sm font-semibold px-3 py-1 rounded-full">
+              <div className="tdm-meta-row">
+                <span className="tdm-meta-badge primary">
                   Guía: {activeTemplate.companionName}
                 </span>
-                <span className="bg-secondary text-secondary-foreground text-sm font-semibold px-3 py-1 rounded-full">
+                <span className="tdm-meta-badge secondary">
                   Duración: {activeTemplate.durationDays} días
                 </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-muted-foreground">Categoría:</span>
-                  <Input 
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Categoría:</span>
+                  <input 
+                    type="text"
                     value={activeTemplate.category || ''} 
                     onChange={(e) => saveTemplate({ ...activeTemplate, category: e.target.value })} 
-                    className="h-8 w-32 focus:ring-2 focus:ring-primary/20 text-xs font-semibold"
+                    className="tdm-category-input"
                   />
                 </div>
               </div>
             </div>
             
-            <div className="flex flex-col gap-2">
-              <Button onClick={onLaunch} className="rounded-full shadow-sm">
-                <Rocket size={16} className="mr-2" /> Iniciar Ejecución
-              </Button>
-              <Button variant="destructive" onClick={() => onDelete(activeTemplate.id)} className="rounded-full">
-                <Trash2 size={16} className="mr-2" /> Eliminar Plantilla
-              </Button>
+            <div className="tdm-header-actions">
+              <button onClick={onLaunch} className="tdm-btn-launch">
+                <Rocket size={16} /> Iniciar Ejecución
+              </button>
+              <button onClick={() => onDelete(activeTemplate.id)} className="tdm-btn-delete">
+                <Trash2 size={16} /> Eliminar Plantilla
+              </button>
             </div>
           </div>
 
-          <div className="flex px-6 pt-4 border-b shrink-0 gap-4">
+          {/* Tabs Navigation */}
+          <div className="tdm-tabs-container">
             <button 
-              className={cn(
-                "pb-3 font-semibold transition-colors flex items-center gap-2 border-b-2",
-                detailModalTab === 'steps' ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
+              className={`tdm-tab-trigger ${detailModalTab === 'steps' ? 'active' : ''}`}
               onClick={() => setDetailModalTab('steps')}
             >
               <ListChecks size={18} /> Pasos del Proceso
             </button>
             <button 
-              className={cn(
-                "pb-3 font-semibold transition-colors flex items-center gap-2 border-b-2",
-                detailModalTab === 'team' ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
+              className={`tdm-tab-trigger ${detailModalTab === 'team' ? 'active' : ''}`}
               onClick={() => {
                 setDetailModalTab('team');
                 const initial = {};
@@ -133,32 +123,34 @@ export const TemplateDetailsModal = ({
             </button>
           </div>
 
-          <div className="p-6 overflow-y-auto flex-1">
+          {/* Modal Tab Content */}
+          <div className="tdm-content">
             {detailModalTab === 'steps' ? (
-              <div className="space-y-4">
+              <div className="tdm-steps-list">
                 {stepsList.map((step, idx) => {
                   const isEditing = editingStepIndex === idx;
 
                   return (
-                    <div key={idx} className="flex gap-4">
-                      <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-bold">
+                    <div key={idx} className="tdm-step-card-wrapper">
+                      <div className="tdm-step-number">
                         {idx + 1}
                       </div>
                       
-                      <Card className={cn("flex-1 transition-all duration-300", isEditing ? "ring-2 ring-primary border-transparent" : "border")}>
+                      <div className="tdm-step-card">
                         {isEditing ? (
-                          <CardContent className="p-4 space-y-4">
-                            <div className="grid grid-cols-3 gap-4">
-                              <div className="col-span-2 space-y-1.5">
-                                <Label>Título del Paso</Label>
-                                <Input 
+                          <div className="tdm-step-edit-form">
+                            <div className="tdm-form-row">
+                              <div className="tdm-form-group">
+                                <label>Título del Paso</label>
+                                <input 
+                                  type="text"
                                   value={editingStepData.title}
                                   onChange={(e) => setEditingStepData({ ...editingStepData, title: e.target.value })}
                                 />
                               </div>
-                              <div className="col-span-1 space-y-1.5">
-                                <Label>Día relativo</Label>
-                                <Input 
+                              <div className="tdm-form-group">
+                                <label>Día relativo</label>
+                                <input 
                                   type="number" 
                                   value={editingStepData.relativeOffsetDays}
                                   onChange={(e) => setEditingStepData({ ...editingStepData, relativeOffsetDays: parseInt(e.target.value) || 1 })}
@@ -167,81 +159,72 @@ export const TemplateDetailsModal = ({
                               </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                              <Label>Descripción del paso</Label>
-                              <Textarea 
-                                className="min-h-[60px]"
+                            <div className="tdm-form-group">
+                              <label>Descripción del paso</label>
+                              <textarea 
+                                rows={3}
                                 value={editingStepData.description}
                                 onChange={(e) => setEditingStepData({ ...editingStepData, description: e.target.value })}
                               />
                             </div>
 
-                            <div className="grid grid-cols-3 gap-4">
-                              <div className="col-span-1 space-y-1.5">
-                                <Label>Tipo de Acción</Label>
-                                <Select 
+                            <div className="tdm-form-row">
+                              <div className="tdm-form-group">
+                                <label>Tipo de Acción</label>
+                                <select 
                                   value={editingStepData.type}
-                                  onValueChange={(val) => setEditingStepData({ ...editingStepData, type: val })}
+                                  onChange={(e) => setEditingStepData({ ...editingStepData, type: e.target.value })}
                                 >
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="manual">Paso Manual (Checkbox)</SelectItem>
-                                    <SelectItem value="digital">Acción Digital (Archivo)</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                  <option value="manual">Paso Manual (Checkbox)</option>
+                                  <option value="digital">Acción Digital (Archivo)</option>
+                                </select>
                               </div>
-                              <div className="col-span-2 space-y-1.5">
-                                <Label>Mensaje Motivador (Diseño Emocional)</Label>
-                                <Input 
+                              <div className="tdm-form-group">
+                                <label>Mensaje Motivador</label>
+                                <input 
+                                  type="text"
                                   value={editingStepData.motivation}
                                   onChange={(e) => setEditingStepData({ ...editingStepData, motivation: e.target.value })}
                                 />
                               </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                              <Label>Responsable Asignado a este Paso</Label>
-                              <Select
+                            <div className="tdm-form-group">
+                              <label>Responsable Asignado</label>
+                              <select
                                 value={editingStepData.assignedTo || 'none'}
-                                onValueChange={(val) => setEditingStepData({ ...editingStepData, assignedTo: val === 'none' ? '' : val })}
+                                onChange={(e) => setEditingStepData({ ...editingStepData, assignedTo: e.target.value === 'none' ? '' : e.target.value })}
                               >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">-- Sin asignar (Nadie) --</SelectItem>
-                                  {teamMembers.map(m => (
-                                    <SelectItem key={m.id} value={String(m.id)}>
-                                      {m.name} ({m.role}) - {m.department || 'Sin Área'}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                <option value="none">-- Sin asignar (Nadie) --</option>
+                                {teamMembers.map(m => (
+                                  <option key={m.id} value={String(m.id)}>
+                                    {m.name} ({m.role})
+                                  </option>
+                                ))}
+                              </select>
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-2">
-                              <Button variant="outline" onClick={() => setEditingStepIndex(null)} size="sm" className="rounded-full">
+                            <div className="tdm-form-actions">
+                              <button className="tdm-btn-cancel-step" onClick={() => setEditingStepIndex(null)}>
                                 Cancelar
-                              </Button>
-                              <Button 
+                              </button>
+                              <button 
+                                className="tdm-btn-save-step"
                                 onClick={() => {
                                   handleUpdateStep(activeTemplate.id, idx, editingStepData);
                                   setEditingStepIndex(null);
                                 }}
-                                size="sm" className="rounded-full"
                               >
                                 Guardar Paso
-                              </Button>
+                              </button>
                             </div>
-                          </CardContent>
+                          </div>
                         ) : (
-                          <div className="p-4">
-                            <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="tdm-step-header">
                               <div>
-                                <h4 className="font-semibold text-foreground text-lg">{step.title}</h4>
-                                <span className="text-xs font-semibold text-primary">
+                                <h4 className="tdm-step-title-text">{step.title}</h4>
+                                <span className="tdm-step-offset">
                                   Límite estimado: {step.durationLabel} (+{step.relativeOffsetDays}d)
                                 </span>
                               </div>
@@ -252,34 +235,34 @@ export const TemplateDetailsModal = ({
                                 )}>
                                   {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
                                 </span>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
+                                <button className="tdm-icon-btn" onClick={() => {
                                   setEditingStepIndex(idx);
                                   setEditingStepData(step);
                                 }}>
-                                  <Edit2 size={14} className="text-muted-foreground" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDeleteStep(activeTemplate.id, idx)}>
-                                  <Trash2 size={14} className="text-muted-foreground" />
-                                </Button>
+                                  <Edit2 size={14} />
+                                </button>
+                                <button className="tdm-icon-btn delete" onClick={() => handleDeleteStep(activeTemplate.id, idx)}>
+                                  <Trash2 size={14} />
+                                </button>
                               </div>
                             </div>
                             
-                            <p className="text-muted-foreground text-sm mb-3">{step.description}</p>
+                            <p className="tdm-step-desc">{step.description}</p>
                             
-                            <div className="flex flex-wrap justify-between items-center gap-2">
-                              <div className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100">
+                            <div className="tdm-step-footer">
+                              <div className="tdm-motivation-tag">
                                 💡 {step.motivation}
                               </div>
                               {step.assignedTo && (
-                                <div className="flex items-center gap-1.5 text-xs bg-accent px-2 py-1 rounded-full font-medium border">
+                                <div className="tdm-assignee-tag">
                                   {(() => {
                                     const member = teamMembers.find(m => String(m.id) === String(step.assignedTo));
                                     return member ? (
                                       <>
-                                        <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px]">
+                                        <div className="tdm-assignee-avatar">
                                           {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
                                         </div>
-                                        <span>Asignado a: <strong className="text-foreground">{member.name}</strong> ({member.role})</span>
+                                        <span>Asignado a: <strong>{member.name}</strong> ({member.role})</span>
                                       </>
                                     ) : <span>Asignado</span>;
                                   })()}
@@ -288,71 +271,69 @@ export const TemplateDetailsModal = ({
                             </div>
                           </div>
                         )}
-                      </Card>
+                      </div>
                     </div>
                   );
                 })}
 
-                <Button 
-                  variant="outline" 
-                  className="w-full mt-4 border-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 hover:text-primary rounded-xl"
+                <button 
+                  className="tdm-add-step-btn"
                   onClick={() => handleAddStep(activeTemplate.id)}
                 >
-                  <Plus size={16} className="mr-2" /> Agregar Nuevo Paso
-                </Button>
+                  <Plus size={16} /> Agregar Nuevo Paso
+                </button>
               </div>
             ) : (
-              <div className="space-y-6">
-                <p className="text-sm text-muted-foreground mb-4">
+              <div>
+                <p className="tdm-team-instruction">
                   Activa o desactiva con el toggle cada paso donde el miembro interviene. Luego presiona <strong>Confirmar</strong> para guardar los cambios.
                 </p>
 
                 {teamMembers.length === 0 ? (
-                  <div className="text-center py-10 bg-accent/20 rounded-2xl border border-dashed">
-                    <p className="italic text-muted-foreground">No hay miembros de equipo registrados. Ve a la pestaña de "Equipo" para agregarlos.</p>
+                  <div className="tdm-team-empty">
+                    <p>No hay miembros de equipo registrados. Ve a la pestaña de "Equipo" para agregarlos.</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="tdm-member-list">
                     {teamMembers.map(member => {
                       const draftSteps = draftAssignment[member.id] || [];
                       const isInvolved = draftSteps.length > 0;
 
                       return (
-                        <Card key={member.id} className={cn("transition-all duration-300 overflow-hidden", isInvolved ? "border-primary/30 bg-primary/5 shadow-sm" : "")}>
-                          <div className="p-5">
-                            <div className="flex items-center gap-4 mb-4">
-                              <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-lg font-bold border-2 border-primary/20">
+                        <div key={member.id} className={`tdm-member-card ${isInvolved ? 'involved' : ''}`}>
+                          <div className="tdm-member-card-body">
+                            <div className="tdm-member-header">
+                              <div className="tdm-member-avatar">
                                 {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
                               </div>
-                              <div className="flex-1">
-                                <h4 className="font-bold text-foreground">{member.name}</h4>
-                                <span className="text-xs text-muted-foreground">
+                              <div className="tdm-member-info">
+                                <h4 className="tdm-member-name">{member.name}</h4>
+                                <p className="tdm-member-role">
                                   {member.role}{member.department ? ` · ${member.department}` : ''}
-                                </span>
+                                </p>
                               </div>
                               {isInvolved && (
-                                <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                                <span className="tdm-badge">
                                   {draftSteps.length} paso{draftSteps.length !== 1 ? 's' : ''} asignado{draftSteps.length !== 1 ? 's' : ''}
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex justify-center mb-2">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="text-primary hover:text-primary hover:bg-primary/10 rounded-full h-8 px-4 text-xs font-semibold"
+                            <div className="tdm-toggle-container">
+                              <button 
+                                type="button"
+                                className="tdm-toggle-btn"
                                 onClick={() => setExpandedTemplateMembers(prev => ({ ...prev, [member.id]: !prev[member.id] }))}
                               >
                                 {expandedTemplateMembers[member.id] ? 'Ocultar pasos' : 'Ver y asignar pasos'}
-                                <span className={cn("transition-transform duration-200 ml-1.5", expandedTemplateMembers[member.id] ? "rotate-180" : "")}>
+                                <span style={{ transform: expandedTemplateMembers[member.id] ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'flex' }}>
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                                 </span>
-                              </Button>
+                              </button>
                             </div>
 
                             {expandedTemplateMembers[member.id] && (
-                              <div className="flex flex-col gap-2 mb-4 bg-background p-3 rounded-xl border shadow-inner">
+                              <div className="tdm-steps-container">
                                 {stepsList.map((step, sIdx) => {
                                   const isOn = draftSteps.includes(sIdx);
                                   const ownedByOther = teamMembers.find(m =>
@@ -363,24 +344,19 @@ export const TemplateDetailsModal = ({
                                   return (
                                     <div
                                       key={sIdx}
-                                      className={cn(
-                                        "flex items-center justify-between p-3 rounded-lg transition-colors border",
-                                        isOn ? "bg-primary/5 border-primary/20" : "bg-accent/30 border-transparent",
-                                        ownedByOther ? "opacity-60" : ""
-                                      )}
+                                      className={`tdm-step-row ${isOn ? 'on' : ''} ${ownedByOther ? 'disabled' : ''}`}
                                     >
-                                      <span className="text-sm font-medium">
-                                        <strong className="text-primary mr-2">Paso {sIdx + 1}</strong>
+                                      <span className="tdm-step-row-title">
+                                        <strong>Paso {sIdx + 1}</strong>
                                         {step.title}
                                         {ownedByOther && (
-                                          <em className="text-xs text-muted-foreground ml-2 font-normal">
-                                            (ya asignado a {ownedByOther.name})
-                                          </em>
+                                          <em>(ya asignado a {ownedByOther.name})</em>
                                         )}
                                       </span>
 
-                                      <div className="inline-flex rounded-full overflow-hidden border bg-background shrink-0">
+                                      <div className="tdm-step-toggle">
                                         <button
+                                          type="button"
                                           disabled={!!ownedByOther}
                                           onClick={() => {
                                             if (ownedByOther) return;
@@ -392,13 +368,10 @@ export const TemplateDetailsModal = ({
                                               return { ...prev, [member.id]: next };
                                             });
                                           }}
-                                          className={cn(
-                                            "px-3 py-1 text-xs font-bold transition-colors",
-                                            isOn ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
-                                            ownedByOther ? "cursor-not-allowed" : "cursor-pointer"
-                                          )}
+                                          className={`tdm-btn-yes ${isOn ? 'active' : ''}`}
                                         >Sí</button>
                                         <button
+                                          type="button"
                                           disabled={!!ownedByOther}
                                           onClick={() => {
                                             if (ownedByOther) return;
@@ -410,11 +383,7 @@ export const TemplateDetailsModal = ({
                                               return { ...prev, [member.id]: next };
                                             });
                                           }}
-                                          className={cn(
-                                            "px-3 py-1 text-xs font-bold transition-colors",
-                                            !isOn ? "bg-destructive text-destructive-foreground" : "text-muted-foreground hover:bg-accent",
-                                            ownedByOther ? "cursor-not-allowed" : "cursor-pointer"
-                                          )}
+                                          className={`tdm-btn-no ${!isOn ? 'active' : ''}`}
                                         >No</button>
                                       </div>
                                     </div>
@@ -423,8 +392,9 @@ export const TemplateDetailsModal = ({
                               </div>
                             )}
 
-                            <Button
-                              className="w-full rounded-full"
+                            <button
+                              type="button"
+                              className="tdm-save-btn"
                               onClick={async () => {
                                 const newSteps = stepsList.map((s, sIdx) => {
                                   if (String(s.assignedTo) === String(member.id)) {
@@ -450,9 +420,9 @@ export const TemplateDetailsModal = ({
                               }}
                             >
                               ✅ Confirmar asignación de {member.name}
-                            </Button>
+                            </button>
                           </div>
-                        </Card>
+                        </div>
                       );
                     })}
                   </div>
@@ -460,7 +430,7 @@ export const TemplateDetailsModal = ({
               </div>
             )}
           </div>
-        </Card>
+        </div>
       </motion.div>
     </div>
   );
