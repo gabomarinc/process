@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Check, Edit, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const MemberModal = ({
@@ -65,7 +65,7 @@ export const MemberModal = ({
             return (
               <div key={idx} className={`custom-wizard-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
                 <div className="custom-wizard-step-dot">
-                  {isCompleted ? "✓" : idx + 1}
+                  {isCompleted ? <Check size={16}/> : idx + 1}
                 </div>
                 <span className="custom-wizard-step-label">{s.label}</span>
               </div>
@@ -75,7 +75,7 @@ export const MemberModal = ({
 
         <div className="custom-wizard-header">
           <h2 className="custom-wizard-title">
-            {editingMember ? '📝 Editar Colaborador' : '👥 Nuevo Colaborador'}
+            {editingMember ? <><Edit size={20} className="inline-block mr-2"/> Editar Colaborador</> : <><Users size={20} className="inline-block mr-2"/> Nuevo Colaborador</>}
           </h2>
           <p className="custom-wizard-description">
             {step === 1 && "Comencemos con los datos básicos de contacto del colaborador."}

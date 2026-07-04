@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings } from 'lucide-react';
 
 export const ActiveExecutionModal = ({
   isOpen,
@@ -404,7 +404,7 @@ export const ActiveExecutionModal = ({
 
                           {step.motivation && (
                             <div className="step-motivation" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                              💡 {step.motivation}
+                              <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
                             </div>
                           )}
 
@@ -637,7 +637,7 @@ export const ActiveExecutionModal = ({
                 ) : (
                   // Other formats card
                   <div style={{ textAlign: 'center', padding: '2rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', width: '100%' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📄</div>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem', color: 'var(--color-primary)' }}><FileText size={48} /></div>
                     <h4 style={{ margin: '0 0 0.5rem 0', wordBreak: 'break-all' }}>{previewFile.name}</h4>
                     <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '99px', fontWeight: 600 }}>
                       {previewFile.type || 'Archivo'}
@@ -651,7 +651,7 @@ export const ActiveExecutionModal = ({
                 // Mock preview for pre-existing uploaded files
                 <div style={{ width: '100%' }}>
                   <div style={{ textAlign: 'center', padding: '1.5rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📄</div>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem', color: 'var(--color-primary)' }}><FileText size={48} /></div>
                     <h4 style={{ margin: '0 0 0.5rem 0', wordBreak: 'break-all' }}>{previewFile.name}</h4>
                     <span style={{ fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '99px', fontWeight: 600 }}>
                       Firma de Integridad Válida
@@ -840,21 +840,21 @@ export const ActiveExecutionModal = ({
                       onClick={() => handleApplyTemplate('completado')}
                       style={{ border: 'none', background: '#e8f5e9', color: '#2e7d32', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
                     >
-                      ✓ Hecho
+                      <Check size={14} className="inline-block mr-1"/> Hecho
                     </button>
                     <button
                       type="button"
                       onClick={() => handleApplyTemplate('pendiente_cliente')}
                       style={{ border: 'none', background: '#ffebee', color: '#c62828', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
                     >
-                      ⚠ Pedir Cliente
+                      <AlertTriangle size={14} className="inline-block mr-1"/> Pedir Cliente
                     </button>
                     <button
                       type="button"
                       onClick={() => handleApplyTemplate('interno_equipo')}
                       style={{ border: 'none', background: '#e0f2f1', color: '#00695c', fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
                     >
-                      ⚙ Interno
+                      <Settings size={14} className="inline-block mr-1"/> Interno
                     </button>
                   </div>
                 </div>

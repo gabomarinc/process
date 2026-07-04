@@ -62,7 +62,7 @@ export const TemplateDetailsModal = ({
           <div className="tdm-header">
             <div style={{ flex: 1 }}>
               <div className="tdm-header-info">
-                <span className="tdm-header-avatar">{activeTemplate.companionAvatar || '⚙️'}</span>
+                <span className="tdm-header-avatar">{activeTemplate.companionAvatar || <Settings size={24}/>}</span>
                 <div>
                   <h2 className="tdm-header-title">{activeTemplate.title}</h2>
                   <p className="tdm-header-desc">{activeTemplate.description}</p>
@@ -251,7 +251,7 @@ export const TemplateDetailsModal = ({
                             
                             <div className="tdm-step-footer">
                               <div className="tdm-motivation-tag">
-                                💡 {step.motivation}
+                                <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
                               </div>
                               {step.assignedTo && (
                                 <div className="tdm-assignee-tag">
@@ -419,7 +419,7 @@ export const TemplateDetailsModal = ({
                                 });
                               }}
                             >
-                              ✅ Confirmar asignación de {member.name}
+                              <CheckCircle size={18} className="inline-block mr-2"/> Confirmar asignación de {member.name}
                             </button>
                           </div>
                         </div>

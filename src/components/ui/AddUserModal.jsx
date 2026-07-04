@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Check, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const AddUserModal = ({
@@ -52,7 +52,7 @@ export const AddUserModal = ({
             return (
               <div key={idx} className={`custom-wizard-step ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
                 <div className="custom-wizard-step-dot">
-                  {isCompleted ? "✓" : idx + 1}
+                  {isCompleted ? <Check size={16}/> : idx + 1}
                 </div>
                 <span className="custom-wizard-step-label">{s.label}</span>
               </div>
@@ -62,7 +62,7 @@ export const AddUserModal = ({
 
         <div className="custom-wizard-header">
           <h2 className="custom-wizard-title">
-            👤 Registrar Nuevo Usuario
+            <User size={20} className="inline-block mr-2"/> Registrar Nuevo Usuario
           </h2>
           <p className="custom-wizard-description">
             {step === 1 && "Ingresa los datos generales para crear el perfil de usuario de la organización."}

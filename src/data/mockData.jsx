@@ -1,3 +1,6 @@
+import React from 'react';
+import { Sparkles, Coffee } from 'lucide-react';
+
 export const mockProcesses = [
   {
     id: "p1",
@@ -6,7 +9,7 @@ export const mockProcesses = [
     durationDays: 5,
     startedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // started 2 days ago
     companionName: "Lumi",
-    companionAvatar: "✨",
+    companionAvatar: <Sparkles size={24} />,
     companionGreeting: "¡Hola! Soy Lumi, tu guía en este proceso. ¡Hagamos sentir en casa a nuestro nuevo cliente! Recuerda que un buen comienzo define el camino.",
     category: "Clientes",
     steps: [
@@ -69,7 +72,7 @@ export const mockProcesses = [
     durationDays: 3,
     startedAt: new Date().toISOString(), // started today
     companionName: "Kofi",
-    companionAvatar: "☕",
+    companionAvatar: <Coffee size={24} />,
     companionGreeting: "¡Hola, soy Kofi! Qué alegría recibir a un nuevo miembro en el equipo. Vamos a guiarlo paso a paso sin prisas ni estrés.",
     category: "Recursos Humanos",
     steps: [

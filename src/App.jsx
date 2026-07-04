@@ -46,12 +46,14 @@ import {
   ListTodo,
   HelpCircle,
   Save,
-  Mic
+  Mic,
+  Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
+  Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
 
-const flagsList = ['🏢', '🚀', '🌐', '💻', '📈', '🤝', '🛠️', '💎'];
+const flagsList = [<Building size={18}/>, <Rocket size={18}/>, <Globe size={18}/>, <Laptop size={18}/>, <TrendingUp size={18}/>, <Handshake size={18}/>, <Wrench size={18}/>, <Gem size={18}/>];
 const colorsList = ['210 70% 40%', '170 70% 35%', '340 70% 40%', '250 70% 35%', '280 70% 40%', '30 70% 40%', '120 70% 30%'];
 const imagesList = [
   'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=600',
@@ -382,7 +384,7 @@ function App() {
                 stepId: step.id,
                 instanceName: inst.instanceName,
                 stepTitle: step.title,
-                message: `⚠️ RETRASO: El paso "${step.title}" venció el ${dueDate.toLocaleDateString()}. Notificaciones enviadas al equipo de ${inst.category}.`
+                message: `RETRASO: El paso "${step.title}" venció el ${dueDate.toLocaleDateString()}. Notificaciones enviadas al equipo de ${inst.category}.`
               };
 
               // Local state update
@@ -483,7 +485,7 @@ function App() {
     const allDone = updatedSteps.every(s => s.isCompleted);
     if (allDone && !inst.steps.every(s => s.isCompleted)) {
       setTimeout(() => {
-        setCelebrationMsg(`¡Excelente! Has completado el proceso "${inst.instanceName}". Todo el equipo está al día. 🎉`);
+        setCelebrationMsg(`¡Excelente! Has completado el proceso "${inst.instanceName}". Todo el equipo está al día.`);
         setShowCelebration(true);
         triggerConfetti();
       }, 300);
@@ -1069,7 +1071,7 @@ const handleDeleteMember = async (id) => {
           description: `Plantilla generada a partir de las directrices de "${titleSuggestion}".`,
           durationDays: 3,
           companionName: "Mimi",
-          companionAvatar: "🐰",
+          companionAvatar: <Bot size={24} />,
           companionGreeting: "¡Hola! He preparado esta plantilla de 3 días para ti. ¡A darle marcha!",
           category: "Operaciones",
           steps: [
@@ -1857,8 +1859,8 @@ const handleDeleteMember = async (id) => {
             <h3>{activeInstance.companionName} • Tu Guía</h3>
             <p>
               {activeInstance.steps.every(s => s.isCompleted) 
-                ? `¡Increíble logro! 🎉 Hemos terminado todo el flujo de "${activeInstance.instanceName}". ¡Estoy sumamente orgulloso/a de tu dedicación!`
-                : `¡Hola! Estamos en marcha con "${activeInstance.instanceName}". ¡Confío plenamente en ti! 🧡`
+                ? `¡Increíble logro! Hemos terminado todo el flujo de "${activeInstance.instanceName}". ¡Estoy sumamente orgulloso/a de tu dedicación!`
+                : `¡Hola! Estamos en marcha con "${activeInstance.instanceName}". ¡Confío plenamente en ti!`
               }
             </p>
           </div>
@@ -1885,7 +1887,7 @@ const handleDeleteMember = async (id) => {
                       setShowLaunchModal(true);
                     }}
                   >
-                    🚀 Nueva Ejecución
+                    <Rocket size={18} style={{marginRight:'4px'}} /> Nueva Ejecución
                   </button>
                 )}
               </div>
@@ -1906,7 +1908,7 @@ const handleDeleteMember = async (id) => {
               )}
               {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst, clients) === selectedClientFilter).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', color: 'var(--color-primary)' }}><Rocket size={64} /></div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
                 <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Selecciona una plantilla e iníciala para comenzar a seguir un proceso en tiempo real.</p>
                 {user?.role !== 'guest' && (
@@ -1920,7 +1922,7 @@ const handleDeleteMember = async (id) => {
                       setShowLaunchModal(true);
                     }}
                   >
-                    🚀 Iniciar Primera Ejecución
+                    <Rocket size={18} style={{marginRight:'4px'}} /> Iniciar Primera Ejecución
                   </button>
                 )}
               </div>
@@ -2068,7 +2070,7 @@ const handleDeleteMember = async (id) => {
                         
                         <div className="template-card-badges">
                           <span className="template-card-badge">{temp.category || 'General'}</span>
-                          <span className="template-card-badge">🤖 {temp.companionName || 'Guía'}</span>
+                          <span className="template-card-badge"><Bot size={14} style={{marginRight:'4px', display:'inline-block'}}/> {temp.companionName || 'Guía'}</span>
                         </div>
                         
                         <hr className="template-card-divider" />
@@ -2221,7 +2223,7 @@ const handleDeleteMember = async (id) => {
                   setMemberModalStep(1);
                   setShowMemberModal(true);
                 }}>
-                  ➕ Agregar Personal
+                  <Plus size={18} style={{marginRight:'4px', display:'inline-block'}}/> Agregar Personal
                 </button>
               </div>
               <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
@@ -2261,14 +2263,14 @@ const handleDeleteMember = async (id) => {
                           </div>
                         </div>
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                          📧 {member.email}
+                          <Mail size={16} style={{marginRight:'4px', display:'inline-block'}}/> {member.email}
                         </p>
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                          🏢 <strong>Área:</strong> {member.department || 'Sin especificar'}
+                          <Building size={16} style={{marginRight:'4px', display:'inline-block'}}/> <strong>Área:</strong> {member.department || 'Sin especificar'}
                         </div>
                         {member.managerId && (
                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                            👤 <strong>Jefe Directo:</strong> {(() => {
+                            <User size={16} style={{marginRight:'4px', display:'inline-block'}}/> <strong>Jefe Directo:</strong> {(() => {
                               const mgr = teamMembers.find(m => m.id === member.managerId);
                               if (mgr) return mgr.name;
                               const orgAdmin = orgUsers.find(u => u.id === member.managerId || `admin_${u.id}` === member.managerId || `u_${u.id}` === member.managerId || String(u.id) === String(member.managerId));
@@ -2325,7 +2327,7 @@ const handleDeleteMember = async (id) => {
             <div>
               <div className="section-title">
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
-                  ⚙️ Configuración del Sistema
+                  <Settings size={20} style={{marginRight:'4px', display:'inline-block'}}/> Configuración del Sistema
                 </h2>
               </div>
               <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
@@ -2396,7 +2398,7 @@ const handleDeleteMember = async (id) => {
                           <input 
                             type="text" 
                             className="form-input" 
-                            placeholder="Ej. 🤖" 
+                            placeholder="Ej. Avatar URL" 
                             value={profileFormData.companionAvatar} 
                             onChange={(e) => setProfileFormData({ ...profileFormData, companionAvatar: e.target.value })} 
                           />
@@ -2583,7 +2585,7 @@ const handleDeleteMember = async (id) => {
                         setShowAddUserModal(true);
                       }}
                     >
-                      ➕ Invitar / Registrar Usuario
+                      <Plus size={18} style={{marginRight:'4px', display:'inline-block'}}/> Invitar / Registrar Usuario
                     </button>
                   </div>
 
@@ -2786,7 +2788,7 @@ const handleDeleteMember = async (id) => {
       {showCelebration && (
         <div className="celebration-overlay">
           <div className="celebration-modal">
-            <div className="celebration-emoji">🎉✨🏆</div>
+            <div className="celebration-emoji" style={{ display: "flex", justifyContent: "center", gap: "1rem", color: "var(--color-primary)" }}><PartyPopper size={64}/><Sparkles size={64}/><Trophy size={64}/></div>
             <h2>¡Súper Hazaña Lograda!</h2>
             <p>{celebrationMsg}</p>
             <button className="celebration-btn" onClick={() => setShowCelebration(false)}>

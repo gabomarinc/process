@@ -93,7 +93,7 @@ export const TemplateWizardModal = ({ isOpen, onClose, onSubmit }) => {
                   }}
                   style={{ cursor: index <= currentStep ? 'pointer' : 'default' }}
                 >
-                  {isCompleted ? "✓" : index + 1}
+                  {isCompleted ? <Check size={16}/> : index + 1}
                 </div>
                 <span className="custom-wizard-step-label">{step.title}</span>
               </div>
