@@ -2847,7 +2847,7 @@ const handleDeleteMember = async (id) => {
                 <button 
                   className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'}`} 
                   onClick={isRecording ? stopRecording : startRecording}
-                  disabled={isUploading || !apiKey}
+                  disabled={(isUploading && !isRecording) || !apiKey}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '1rem', position: 'relative' }}
                 >
                   {isRecording && <span className="recording-pulse" style={{ position: 'absolute', right: '15px', width: '10px', height: '10px', background: 'white', borderRadius: '50%', animation: 'pulse 1s infinite' }} />}
