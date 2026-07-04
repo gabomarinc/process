@@ -221,6 +221,11 @@ function App() {
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
   const [fileStore, setFileStore] = useState({});
+  const [clickupToken, setClickupToken] = useState('');
+  const [clickupRules, setClickupRules] = useState([]);
+  const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
+  const [isTestingClickup, setIsTestingClickup] = useState(false);
+  const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -345,6 +350,18 @@ function App() {
               setApiKey(orgData.gemini_api_key);
               setTempKey(orgData.gemini_api_key);
             }
+          }
+
+          // Fetch ClickUp Settings and Rules
+          const clickupRes = await fetch('/api/organization/clickup');
+          if (clickupRes.ok) {
+            const clickupData = await clickupRes.json();
+            setClickupToken(clickupData.clickupToken || '');
+          }
+          const clickupRulesRes = await fetch('/api/integrations/clickup/rules');
+          if (clickupRulesRes.ok) {
+            const clickupRulesData = await clickupRulesRes.json();
+            setClickupRules(clickupRulesData);
           }
 
           if (parsed.role === 'admin') {
@@ -631,6 +648,85 @@ function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo actualizar la empresa.');
       setSettingsSuccessMsg('Empresa actualizada con éxito.');
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
+  const handleSaveClickupSettings = async (e) => {
+    e.preventDefault();
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch('/api/organization/clickup', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clickupToken, clickupWorkspaceId: '' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo guardar la configuración de ClickUp.');
+      setSettingsSuccessMsg('Configuración de ClickUp guardada con éxito.');
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
+  const handleTestClickupConnection = async () => {
+    if (!clickupToken.trim()) return;
+    setIsTestingClickup(true);
+    setClickupConnectionStatus(null);
+    try {
+      const res = await fetch('/api/integrations/clickup/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: clickupToken })
+      });
+      const data = await res.json();
+      setIsTestingClickup(false);
+      if (res.ok) {
+        setClickupConnectionStatus({ success: true, message: `Conexión exitosa. Usuario: ${data.username}` });
+      } else {
+        setClickupConnectionStatus({ success: false, message: data.error || 'Token inválido' });
+      }
+    } catch (err) {
+      setIsTestingClickup(false);
+      setClickupConnectionStatus({ success: false, message: 'Fallo al conectar con el servidor' });
+    }
+  };
+
+  const handleCreateClickupRule = async (e) => {
+    e.preventDefault();
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch('/api/integrations/clickup/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newClickupRule)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo crear la regla.');
+      setClickupRules([data, ...clickupRules]);
+      setNewClickupRule({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
+      setSettingsSuccessMsg('Regla de automatización de ClickUp creada.');
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteClickupRule = async (ruleId) => {
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch(`/api/integrations/clickup/rules/${ruleId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'No se pudo eliminar la regla.');
+      }
+      setClickupRules(clickupRules.filter(r => r.id !== ruleId));
+      setSettingsSuccessMsg('Regla eliminada correctamente.');
     } catch (err) {
       setSettingsErrorMsg(err.message);
     }
@@ -2736,6 +2832,185 @@ const handleDeleteMember = async (id) => {
                 )}
 
               </div>
+
+              {/* ClickUp Integration Section */}
+              {user?.role === 'admin' && (
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem', borderBottom: '1px solid #eef', paddingBottom: '8px' }}>
+                    <Settings size={22} style={{ color: 'var(--color-primary)' }} />
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Integración con ClickUp</h3>
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                    Conecta ClickUp a Kônsul para disparar flujos automáticos. Configura webhooks en ClickUp apuntando a <code>{window.location.origin}/api/webhooks/clickup</code>.
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                    {/* Connection Form */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>1. Conectar ClickUp</h4>
+                      <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Personal API Token</label>
+                          <input 
+                            type="password" 
+                            className="form-input" 
+                            placeholder="pk_..." 
+                            value={clickupToken} 
+                            onChange={(e) => setClickupToken(e.target.value)} 
+                            required 
+                          />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            Obtenlo en ClickUp: Configuración &gt; Apps &gt; API Token.
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ flex: 1 }} disabled={isTestingClickup}>
+                            {isTestingClickup ? 'Probando...' : 'Probar Conexión'}
+                          </button>
+                          <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                            Guardar Token
+                          </button>
+                        </div>
+                      </form>
+
+                      {clickupConnectionStatus && (
+                        <div style={{ 
+                          backgroundColor: clickupConnectionStatus.success ? '#e8f5e9' : '#ffebee',
+                          color: clickupConnectionStatus.success ? '#2e7d32' : '#c62828',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          fontSize: '0.85rem',
+                          fontWeight: 600
+                        }}>
+                          {clickupConnectionStatus.message}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Rule Builder Form */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '1px solid #eef', paddingLeft: '1.5rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>2. Crear Regla de Automatización</h4>
+                      <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Nombre de la Regla</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Ej. Iniciar Onboarding" 
+                            value={newClickupRule.ruleName} 
+                            onChange={(e) => setNewClickupRule({ ...newClickupRule, ruleName: e.target.value })} 
+                            required 
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>ClickUp List ID</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="Ej. 9012015024" 
+                              value={newClickupRule.clickupListId} 
+                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListId: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Nombre de la Lista (Ref.)</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="Ej. Ventas Cerradas" 
+                              value={newClickupRule.clickupListName} 
+                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListName: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Estado Activador</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="Ej. closed" 
+                              value={newClickupRule.clickupStatus} 
+                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Plantilla a Iniciar</label>
+                            <select 
+                              className="form-input" 
+                              value={newClickupRule.templateId} 
+                              onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })} 
+                              required
+                            >
+                              <option value="">-- Seleccionar --</option>
+                              {templates.map(t => (
+                                <option key={t.id} value={t.id}>{t.title}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                          Agregar Regla
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  {/* List of active rules */}
+                  <div style={{ marginTop: '2rem', borderTop: '1px solid #eef', paddingTop: '1.5rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 600 }}>Reglas Activas</h4>
+                    {clickupRules.length === 0 ? (
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No has configurado ninguna regla de automatización todavía.</p>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #eee' }}>
+                              <th style={{ padding: '8px' }}>Nombre</th>
+                              <th style={{ padding: '8px' }}>Lista ClickUp</th>
+                              <th style={{ padding: '8px' }}>Estado Activador</th>
+                              <th style={{ padding: '8px' }}>Plantilla Asociada</th>
+                              <th style={{ padding: '8px' }}>Estado</th>
+                              <th style={{ padding: '8px', textAlign: 'right' }}>Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clickupRules.map(rule => {
+                              const associatedTemplate = templates.find(t => t.id === rule.templateId);
+                              return (
+                                <tr key={rule.id} style={{ borderBottom: '1px solid #eee' }}>
+                                  <td style={{ padding: '8px', fontWeight: 600 }}>{rule.ruleName}</td>
+                                  <td style={{ padding: '8px' }}>{rule.clickupListName} <span style={{ color: 'var(--text-muted)' }}>({rule.clickupListId})</span></td>
+                                  <td style={{ padding: '8px' }}><span className="badge badge-secondary">{rule.clickupStatus}</span></td>
+                                  <td style={{ padding: '8px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
+                                  <td style={{ padding: '8px' }}>
+                                    <span style={{ color: rule.active ? '#2e7d32' : '#c62828', fontWeight: 600 }}>
+                                      {rule.active ? 'Activa' : 'Inactiva'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                                    <button 
+                                      className="btn btn-danger" 
+                                      style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
+                                      onClick={() => handleDeleteClickupRule(rule.id)}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* User management list */}
               {user?.role === 'admin' && (

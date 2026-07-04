@@ -30,6 +30,8 @@ pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry BIGINT;
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_token VARCHAR(255);
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_workspace_id VARCHAR(100);
   
   CREATE TABLE IF NOT EXISTS clients (
     id VARCHAR(255) PRIMARY KEY,
@@ -37,8 +39,20 @@ pool.query(`
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS clickup_rules (
+    id SERIAL PRIMARY KEY,
+    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+    rule_name VARCHAR(255) NOT NULL,
+    clickup_list_id VARCHAR(100) NOT NULL,
+    clickup_list_name VARCHAR(255) NOT NULL,
+    clickup_status VARCHAR(100) NOT NULL,
+    template_id VARCHAR(100) NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key" y tabla "clients" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id" y tablas "clients" y "clickup_rules" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -1249,6 +1263,243 @@ app.post('/api/email/send-email', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error al enviar correo vía SMTP del usuario:', err);
     res.status(500).json({ error: `Fallo al enviar correo: ${err.message}` });
+  }
+});
+
+// CLICKUP INTEGRATION ENDPOINTS
+// ==========================================
+
+// Get ClickUp Settings
+app.get('/api/organization/clickup', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT clickup_token, clickup_workspace_id FROM organizations WHERE id = $1',
+      [req.user.organizationId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Organización no encontrada' });
+    res.json({
+      clickupToken: result.rows[0].clickup_token || '',
+      clickupWorkspaceId: result.rows[0].clickup_workspace_id || ''
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al recuperar configuración de ClickUp' });
+  }
+});
+
+// Update ClickUp Settings
+app.put('/api/organization/clickup', authenticateToken, async (req, res) => {
+  const { clickupToken, clickupWorkspaceId } = req.body;
+  try {
+    await pool.query(
+      'UPDATE organizations SET clickup_token = $1, clickup_workspace_id = $2 WHERE id = $3',
+      [clickupToken || null, clickupWorkspaceId || null, req.user.organizationId]
+    );
+    res.json({ message: 'Configuración de ClickUp guardada con éxito' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar configuración de ClickUp' });
+  }
+});
+
+// Get Rules
+app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.user.organizationId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al recuperar reglas de ClickUp' });
+  }
+});
+
+// Create Rule
+app.post('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
+  const { ruleName, clickupListId, clickupListName, clickupStatus, templateId } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_status, template_id)
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active`,
+      [req.user.organizationId, ruleName, clickupListId, clickupListName, clickupStatus, templateId]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar regla de ClickUp' });
+  }
+});
+
+// Delete Rule
+app.delete('/api/integrations/clickup/rules/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query(
+      'DELETE FROM clickup_rules WHERE id = $1 AND organization_id = $2',
+      [id, req.user.organizationId]
+    );
+    res.json({ message: 'Regla eliminada con éxito' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar regla de ClickUp' });
+  }
+});
+
+// Webhook Receiver (ClickUp calls this)
+app.post('/api/webhooks/clickup', async (req, res) => {
+  const { event, task_id } = req.body;
+  
+  if (event !== 'taskStatusUpdated' || !task_id) {
+    return res.status(200).json({ message: 'Evento no procesado o sin id de tarea' });
+  }
+
+  try {
+    // 1. Find organizations that have a ClickUp Token and active rules
+    const activeOrgsRes = await pool.query(
+      `SELECT DISTINCT o.id, o.clickup_token 
+       FROM organizations o
+       JOIN clickup_rules r ON o.id = r.organization_id
+       WHERE o.clickup_token IS NOT NULL AND r.active = TRUE`
+    );
+
+    if (activeOrgsRes.rows.length === 0) {
+      return res.status(200).json({ message: 'No hay reglas activas configuradas' });
+    }
+
+    // Try to fetch task details from ClickUp using one of the tokens
+    let taskData = null;
+    
+    for (const org of activeOrgsRes.rows) {
+      try {
+        const clickupRes = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+          headers: { 'Authorization': org.clickup_token }
+        });
+        if (clickupRes.ok) {
+          taskData = await clickupRes.json();
+          break; // Found it!
+        }
+      } catch (err) {
+        console.error(`Error querying task with token for org ${org.id}:`, err);
+      }
+    }
+
+    if (!taskData || !taskData.list?.id) {
+      return res.status(200).json({ message: 'No se pudo obtener detalles de la tarea desde ClickUp' });
+    }
+
+    const listId = taskData.list.id;
+    const taskStatus = taskData.status?.status;
+    const taskName = taskData.name;
+
+    // Find rules for this specific listId and status
+    const rulesRes = await pool.query(
+      `SELECT * FROM clickup_rules 
+       WHERE clickup_list_id = $1 AND LOWER(clickup_status) = LOWER($2) AND active = TRUE`,
+      [listId, taskStatus]
+    );
+
+    if (rulesRes.rows.length === 0) {
+      return res.status(200).json({ message: 'Ninguna regla coincide con el estado o la lista de la tarea' });
+    }
+
+    for (const rule of rulesRes.rows) {
+      // Create a process execution based on the rule's template
+      const templateRes = await pool.query(
+        'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
+        [rule.template_id, rule.organization_id]
+      );
+
+      if (templateRes.rows.length > 0) {
+        const template = templateRes.rows[0];
+        const startedAt = new Date().toISOString();
+        const instanceId = `inst_clickup_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+        
+        // Calculate offset steps
+        const steps = (template.steps || []).map((step, idx) => {
+          const dueDate = new Date(startedAt);
+          dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || 0));
+          return {
+            ...step,
+            id: `step_run_${idx}_${Date.now()}`,
+            dueDate,
+            isCompleted: false,
+            completedAt: null,
+            uploadedFileName: null
+          };
+        });
+
+        // Insert new instance
+        await pool.query(
+          `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            instanceId,
+            rule.organization_id,
+            template.id,
+            template.title,
+            `${template.title} - ${taskName}`,
+            startedAt,
+            template.companion_name || 'Lumi',
+            template.companion_avatar || '✨',
+            template.companion_greeting || 'Hola!',
+            template.category,
+            JSON.stringify(steps)
+          ]
+        );
+
+        // Notify Admins
+        const message = `Ejecución automática de proceso "${template.title} - ${taskName}" iniciada con éxito desde ClickUp.`;
+        
+        // Find Admins of this org
+        const adminsRes = await pool.query(
+          "SELECT id FROM users WHERE organization_id = $1 AND role = 'admin'",
+          [rule.organization_id]
+        );
+
+        // Insert notification log
+        const logId = `clickup-auto-${instanceId}`;
+        await pool.query(
+          `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO NOTHING`,
+          [logId, rule.organization_id, instanceId, 'clickup', `${template.title} - ${taskName}`, 'ClickUp Webhook', message]
+        );
+
+        // Send notification to each admin
+        for (const admin of adminsRes.rows) {
+          await pool.query(
+            `INSERT INTO notifications (user_id, type, message, instance_id)
+             VALUES ($1, $2, $3, $4)`,
+            [admin.id, 'message', message, instanceId]
+          );
+        }
+      }
+    }
+
+    res.status(200).json({ message: 'Automatización completada con éxito' });
+  } catch (err) {
+    console.error('Error in ClickUp webhook processing:', err);
+    res.status(500).json({ error: 'Server error processing webhook' });
+  }
+// Test ClickUp Connection
+app.post('/api/integrations/clickup/test', authenticateToken, async (req, res) => {
+  const { token } = req.body;
+  try {
+    const clickupRes = await fetch('https://api.clickup.com/api/v2/user', {
+      headers: { 'Authorization': token }
+    });
+    if (clickupRes.ok) {
+      const data = await clickupRes.json();
+      res.json({ success: true, username: data.user?.username });
+    } else {
+      res.status(400).json({ error: 'Token de ClickUp inválido o expirado.' });
+    }
+  } catch (err) {
+    console.error('Error testing ClickUp connection:', err);
+    res.status(500).json({ error: 'Error de red al conectar con ClickUp' });
   }
 });
 
