@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks } from 'lucide-react';
+import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import './TemplateDetailsModal.css';
 

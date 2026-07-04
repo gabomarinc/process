@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { Sparkles, ChevronRight, ChevronLeft, X, Check } from 'lucide-react';
 
 const steps = [
   { id: 'name', title: 'Nombre' },
