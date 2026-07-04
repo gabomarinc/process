@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Save, Plus, Trash2, Edit2, X } from 'lucide-react';
-import { Button } from './button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card';
-import { Input } from './input';
-import { Label } from './label';
-import { Textarea } from './textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
-import { cn } from '../../lib/utils';
 import './TemplatePreviewModal.css';
 
 export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) => {
@@ -63,172 +56,150 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
       <motion.div
-        className="w-full max-w-2xl mx-auto py-8 px-4"
+        className="tpm-modal-card"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-          <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
+        <div className="tpm-header">
+          <div className="tpm-header-info">
+            <h2 className="tpm-header-title">
+              <Edit2 size={22} style={{ color: 'var(--color-primary)' }} /> Vista Previa de Plantilla
+            </h2>
+            <p className="tpm-header-desc">Revisa y ajusta los detalles generales y los pasos antes de guardar la plantilla analizada.</p>
+          </div>
+          <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar">
+            <X size={20} />
+          </button>
         </div>
 
-        <Card className="border shadow-md rounded-3xl overflow-hidden" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-          <CardHeader>
-            <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-               <Edit2 size={20} className="text-primary" /> Vista Previa de Plantilla
-            </CardTitle>
-            <CardDescription>
-              Revisa y ajusta los detalles generales y los pasos antes de guardar.
-            </CardDescription>
-          </CardHeader>
-          
-          <CardContent className="space-y-6" style={{ overflowY: 'auto' }}>
-            {/* Detalles Generales */}
-            <div className="space-y-4">
-              <h3 className="font-medium text-lg border-b pb-2">Detalles Generales</h3>
-              
-              <div className="space-y-2">
-                <Label>Título de la Plantilla</Label>
-                <Input 
-                  value={template.title} 
-                  onChange={e => handleTemplateChange('title', e.target.value)} 
-                  className="focus:ring-2 focus:ring-primary/20"
+        <div className="tpm-content">
+          {/* General Details Section */}
+          <div className="tpm-section">
+            <h3 className="tpm-section-title">Detalles Generales</h3>
+            <div className="tpm-form-group">
+              <label>Título de la Plantilla</label>
+              <input 
+                type="text"
+                value={template.title} 
+                onChange={e => handleTemplateChange('title', e.target.value)} 
+              />
+            </div>
+            <div className="tpm-form-group">
+              <label>Descripción</label>
+              <textarea 
+                value={template.description} 
+                onChange={e => handleTemplateChange('description', e.target.value)} 
+                rows={3}
+              />
+            </div>
+            <div className="tpm-form-row">
+              <div className="tpm-form-group">
+                <label>Nombre del Guía (IA)</label>
+                <input 
+                  type="text"
+                  value={template.companionName || ''} 
+                  onChange={e => handleTemplateChange('companionName', e.target.value)} 
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Descripción</Label>
-                <Textarea 
-                  value={template.description} 
-                  onChange={e => handleTemplateChange('description', e.target.value)} 
-                  className="focus:ring-2 focus:ring-primary/20 min-h-[60px]"
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nombre del Guía (IA)</Label>
-                  <Input 
-                    value={template.companionName || ''} 
-                    onChange={e => handleTemplateChange('companionName', e.target.value)} 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Avatar (Emoji)</Label>
-                  <Input 
-                    value={template.companionAvatar || ''} 
-                    onChange={e => handleTemplateChange('companionAvatar', e.target.value)} 
-                    maxLength={2} 
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Saludo de Bienvenida</Label>
-                <Textarea 
-                  value={template.companionGreeting || ''} 
-                  onChange={e => handleTemplateChange('companionGreeting', e.target.value)}
-                  className="min-h-[60px]"
+              <div className="tpm-form-group">
+                <label>Avatar (Emoji)</label>
+                <input 
+                  type="text"
+                  value={template.companionAvatar || ''} 
+                  onChange={e => handleTemplateChange('companionAvatar', e.target.value)} 
+                  maxLength={2}
                 />
               </div>
             </div>
+            <div className="tpm-form-group">
+              <label>Saludo de Bienvenida</label>
+              <textarea 
+                value={template.companionGreeting || ''} 
+                onChange={e => handleTemplateChange('companionGreeting', e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
 
-            {/* Pasos */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center border-b pb-2">
-                <h3 className="font-medium text-lg">Pasos del Proceso ({template.steps?.length || 0})</h3>
-                <Button variant="outline" size="sm" onClick={handleAddStep} className="rounded-full flex gap-1">
-                  <Plus size={14} /> Añadir Paso
-                </Button>
-              </div>
-              
-              <div className="space-y-3">
-                {template.steps?.map((step, index) => {
-                  const isExpanded = expandedStepIndex === index;
-                  return (
-                  <Card key={index} className="overflow-hidden transition-all duration-200">
-                    <div 
-                      className={cn("p-3 flex items-center gap-3 cursor-pointer transition-colors", isExpanded ? "bg-accent/50" : "hover:bg-accent/30")}
-                      onClick={() => toggleStep(index)}
-                    >
-                      <div className="bg-primary/10 text-primary font-bold rounded-full w-8 h-8 flex items-center justify-center shrink-0">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1 flex flex-col min-w-0">
-                        <Input 
-                          value={step.title} 
-                          onChange={e => handleStepChange(index, 'title', e.target.value)}
-                          onClick={e => e.stopPropagation()}
-                          className="h-8 bg-transparent border-transparent px-2 font-medium focus:border-input focus:bg-background"
-                        />
-                        {!isExpanded && (
-                          <span className="text-xs text-muted-foreground px-2 truncate">
-                            {step.durationLabel || `Día ${step.relativeOffsetDays || 0}`} • {step.type === 'manual' ? 'Manual' : 'Digital'}
-                          </span>
-                        )}
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 rounded-full"
+          {/* Steps Section */}
+          <div className="tpm-section">
+            <div className="tpm-section-header">
+              <h3 className="tpm-section-title">Pasos del Proceso ({template.steps?.length || 0})</h3>
+              <button className="tpm-btn-secondary" onClick={handleAddStep}>
+                <Plus size={14} /> Añadir Paso
+              </button>
+            </div>
+            
+            <div className="tpm-steps-list">
+              {template.steps?.map((step, index) => {
+                const isExpanded = expandedStepIndex === index;
+                return (
+                  <div key={index} className={`tpm-step-card ${isExpanded ? 'expanded' : ''}`}>
+                    <div className="tpm-step-header" onClick={() => toggleStep(index)}>
+                      <div className="tpm-step-number">{index + 1}</div>
+                      <input 
+                        type="text"
+                        value={step.title} 
+                        onChange={e => handleStepChange(index, 'title', e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        className="tpm-step-title-input"
+                      />
+                      <button 
+                        className="tpm-btn-delete"
                         onClick={(e) => { e.stopPropagation(); handleDeleteStep(index); }}
+                        title="Eliminar Paso"
                       >
                         <Trash2 size={16} />
-                      </Button>
+                      </button>
                     </div>
                     
                     {isExpanded && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="px-4 pb-4 pt-2 space-y-4 border-t border-dashed"
-                      >
-                        <div className="space-y-2">
-                          <Label>Descripción del Paso</Label>
-                          <Textarea 
+                      <div className="tpm-step-body">
+                        <div className="tpm-form-group">
+                          <label>Descripción del Paso</label>
+                          <textarea 
                             value={step.description} 
                             onChange={e => handleStepChange(index, 'description', e.target.value)}
-                            className="min-h-[60px]"
+                            rows={2}
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Día (Offset)</Label>
-                            <Input 
+                        <div className="tpm-form-row">
+                          <div className="tpm-form-group">
+                            <label>Día (Offset)</label>
+                            <input 
                               type="number" 
                               value={step.relativeOffsetDays || 0} 
                               onChange={e => handleStepChange(index, 'relativeOffsetDays', parseInt(e.target.value))} 
                             />
                           </div>
-                          <div className="space-y-2">
-                            <Label>Tipo de Paso</Label>
-                            <Select value={step.type} onValueChange={value => handleStepChange(index, 'type', value)}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Tipo" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="manual">Manual</SelectItem>
-                                <SelectItem value="digital">Digital (Subir Archivo)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                          <div className="tpm-form-group">
+                            <label>Tipo de Paso</label>
+                            <select 
+                              value={step.type} 
+                              onChange={e => handleStepChange(index, 'type', e.target.value)}
+                            >
+                              <option value="manual">Manual</option>
+                              <option value="digital">Digital (Subir Archivo)</option>
+                            </select>
                           </div>
                         </div>
-                      </motion.div>
+                      </div>
                     )}
-                  </Card>
-                )})}
-              </div>
+                  </div>
+                );
+              })}
             </div>
-          </CardContent>
-          
-          <CardFooter className="flex justify-end gap-3 pt-4 border-t bg-accent/20">
-            <Button variant="outline" onClick={onClose} className="rounded-full">Cancelar</Button>
-            <Button onClick={handleSave} className="rounded-full flex items-center gap-1">
-              <Save size={16} /> Guardar Plantilla
-            </Button>
-          </CardFooter>
-        </Card>
+          </div>
+        </div>
+
+        <div className="tpm-footer">
+          <button className="tpm-btn-cancel" onClick={onClose}>Cancelar</button>
+          <button className="tpm-btn-save" onClick={handleSave}>
+            <Save size={16} /> Guardar Plantilla
+          </button>
+        </div>
       </motion.div>
     </div>
   );
