@@ -1481,10 +1481,6 @@ const handleDeleteMember = async (id) => {
           {/* Logo Section */}
           <div className="logo-section" onClick={() => { setActiveTab('instances'); setOpenDropdown(null); }} style={{ cursor: 'pointer' }}>
             <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" className="logo-img" />
-            <div className="logo-text">
-              <h1>Process</h1>
-              <span>Emotional Design Flow</span>
-            </div>
           </div>
 
           {/* Desktop Navigation Menu (Middle) */}
