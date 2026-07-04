@@ -1292,7 +1292,7 @@ const handleDeleteMember = async (id) => {
   };
 
   if (!token) {
-    let title = 'Kônsul';
+    let title = '';
     let subtitle = 'Bienvenido de nuevo';
     let btnText = 'Iniciar Sesión';
     
@@ -1311,9 +1311,9 @@ const handleDeleteMember = async (id) => {
       <div className="auth-container">
         <div className="auth-card">
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
-            <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '48px', objectFit: 'contain' }} />
+            <img src="https://konsul.digital/images/logo-app-konsul.png" alt="Logo" style={{ height: '64px', objectFit: 'contain' }} />
           </div>
-          <h2 className="auth-title">{title}</h2>
+          {title && <h2 className="auth-title">{title}</h2>}
           <p className="auth-subtitle">{subtitle}</p>
           
           {authError && (
