@@ -1104,6 +1104,87 @@ const handleDeleteMember = async (id) => {
     }
   };
 
+  const getEmbedding = async (text, keyToUse) => {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${keyToUse}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: "models/text-embedding-004",
+          content: { parts: [{ text }] }
+        })
+      });
+      if (!res.ok) throw new Error(`Embedding API status: ${res.status}`);
+      const data = await res.json();
+      return data.embedding?.values || null;
+    } catch (err) {
+      console.error("Error fetching embedding:", err);
+      return null;
+    }
+  };
+
+  const cosineSimilarity = (vecA, vecB) => {
+    if (!vecA || !vecB) return 0;
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  };
+
+  const vectorizeAndFilterContext = async (textSource, keyToUse) => {
+    if (textSource.length < 3000) {
+      return textSource;
+    }
+
+    // Split text into chunks of approx 800 characters
+    const chunks = [];
+    const chunkSize = 800;
+    let index = 0;
+    while (index < textSource.length) {
+      chunks.push(textSource.substring(index, index + chunkSize));
+      index += chunkSize - 100; // overlap of 100 chars
+    }
+
+    setUploadStatusMsg("Vectorizando fragmentos del documento...");
+    setUploadProgress(20);
+
+    const query = "estructura de procesos, pasos, responsabilidades, plazos y métricas";
+    const queryEmbedding = await getEmbedding(query, keyToUse);
+    if (!queryEmbedding) return textSource;
+
+    const chunkEmbeddings = [];
+    for (let i = 0; i < chunks.length; i++) {
+      setUploadStatusMsg(`Vectorizando fragmento ${i + 1}/${chunks.length}...`);
+      const emb = await getEmbedding(chunks[i], keyToUse);
+      if (emb) {
+        chunkEmbeddings.push({ text: chunks[i], embedding: emb });
+      }
+    }
+
+    if (chunkEmbeddings.length === 0) return textSource;
+
+    // Score chunks
+    const scoredChunks = chunkEmbeddings.map(item => {
+      return {
+        text: item.text,
+        score: cosineSimilarity(queryEmbedding, item.embedding)
+      };
+    });
+
+    // Sort and take top 4 most relevant chunks
+    scoredChunks.sort((a, b) => b.score - a.score);
+    const topChunks = scoredChunks.slice(0, 4).map(c => c.text);
+
+    console.log("Vectorization completed. Selected chunks count:", topChunks.length);
+    return topChunks.join("\n\n---\n\n");
+  };
+
   const generateTemplate = async (textSource, titleSuggestion = "Nuevo Proceso", audioData = null) => {
     setIsUploading(true);
     setUploadProgress(10);
@@ -1159,7 +1240,11 @@ const handleDeleteMember = async (id) => {
     }
 
     try {
-      setUploadProgress(30);
+      setUploadProgress(15);
+      // Run client-side vectorization if text is large
+      const processedText = await vectorizeAndFilterContext(textSource, apiKey);
+
+      setUploadProgress(35);
       setUploadStatusMsg("Consultando a Gemini AI...");
 
       const prompt = `
@@ -1167,9 +1252,15 @@ const handleDeleteMember = async (id) => {
         
         Asegúrate de aplicar principios de "Diseño Emocional" (Emotional Design):
         1. Asigna un nombre encantador y avatar (emoji) a un "companion" (compañero/guía) del proceso.
-        2. Escribe saludos y mensajes de motivación empáticos, amigables, cálidos y que reduzcan el estrés o la ansiedad del usuario.
+        2. Escribe saludos y mensajes de motivación empáticos y profesionales.
         3. Identifica cuáles pasos son físicos/manuales (deben ser "manual" en el tipo) y cuáles requieren subir un documento o entregable (deben ser "digital").
         4. Define un relativeOffsetDays (entero, ej: 1 para primer día, 3 para tercer día) para cada paso, lo cual servirá para calcular plazos a partir de una fecha de inicio.
+        
+        REGLAS DE TONO Y ESTILO (CRÍTICO):
+        - NO utilices adjetivos ni palabras exageradas o floridas como "blindada", "imparable", "impecable", "espectacular", "increíble", "maravilloso", "cálido", "bonito".
+        - El tono debe ser altamente profesional, directo, analítico, sobrio, formal y sin adornos.
+        - Actúa como un experto consultor corporativo en planteamiento, optimización y seguimiento de procesos.
+        - Las frases de motivación deben ser profesionales y de aliento enfocado en el logro, la eficiencia y el control, no empalagosas ni excesivamente emocionales (evita exclamaciones infantiles).
         
         El resultado DEBE ser estrictamente un objeto JSON válido, sin ningún texto adicional, explicaciones ni formato HTML. Puedes usar bloques de código markdown si es necesario, pero asegúrate de que el JSON sea perfectamente analizable.
         
@@ -1195,9 +1286,9 @@ const handleDeleteMember = async (id) => {
           ]
         }
         
-        Texto de directrices:
+        Texto de directrices (fragmentos vectorizados más relevantes):
         """
-        ${textSource}
+        ${processedText}
         """
       `;
 
