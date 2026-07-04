@@ -215,7 +215,7 @@ function App() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const recognitionRef = React.useRef(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
@@ -1031,50 +1031,66 @@ const handleDeleteMember = async (id) => {
 
   // AI Prompt Call using fetch to v1beta gemini-flash-latest
   
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      setMediaRecorder(recorder);
-      
-      const chunks = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-      
-      recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        handleAudioSubmit(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      recorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
-      showAlert("No se pudo acceder al micrófono.");
+  const startRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showAlert("Tu navegador no soporta el reconocimiento de voz. Te recomendamos usar Google Chrome.");
+      return;
     }
+
+    let finalTranscript = '';
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.lang = 'es-ES';
+
+    rec.onstart = () => {
+      setIsRecording(true);
+      setIsUploading(true);
+      setUploadProgress(20);
+      setUploadStatusMsg("Escuchando tu voz... Habla ahora.");
+    };
+
+    rec.onerror = (e) => {
+      console.error("Speech recognition error:", e);
+      setIsRecording(false);
+      setIsUploading(false);
+      setUploadStatusMsg("");
+      if (e.error === 'not-allowed') {
+        showAlert("Permiso para usar el micrófono denegado. Por favor habilítalo en tu navegador.");
+      } else {
+        showAlert(`Error en el micrófono o reconocimiento: ${e.error}`);
+      }
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+      setIsUploading(false);
+      setUploadStatusMsg("");
+      if (!finalTranscript.trim()) {
+        showAlert("No se detectó ninguna palabra hablada. Asegúrate de hablar claramente cerca del micrófono.");
+        return;
+      }
+      generateTemplate(finalTranscript, "Proceso por Audio");
+    };
+
+    rec.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+    rec.start();
   };
 
   const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-      setIsRecording(false);
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
     }
-  };
-
-  const handleAudioSubmit = (audioBlob) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(audioBlob);
-    reader.onloadend = () => {
-      const base64data = reader.result.split(',')[1];
-      generateTemplate("Audio grabado por el usuario", "Proceso por Audio", {
-        inlineData: {
-          mimeType: "audio/webm",
-          data: base64data
-        }
-      });
-    };
+    setIsRecording(false);
   };
 
   const handleSavePreview = async (templateData) => {
