@@ -1484,6 +1484,8 @@ app.post('/api/webhooks/clickup', async (req, res) => {
     console.error('Error in ClickUp webhook processing:', err);
     res.status(500).json({ error: 'Server error processing webhook' });
   }
+});
+
 // Test ClickUp Connection
 app.post('/api/integrations/clickup/test', authenticateToken, async (req, res) => {
   const { token } = req.body;
