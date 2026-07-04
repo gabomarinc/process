@@ -1278,9 +1278,16 @@ const handleDeleteMember = async (id) => {
         - Actúa como un experto consultor corporativo en planteamiento, optimización y seguimiento de procesos.
         - Las frases de motivación deben ser profesionales y de aliento enfocado en el logro, la eficiencia y el control, no empalagosas ni excesivamente emocionales (evita exclamaciones infantiles).
         
+        VALIDACIÓN DE CONTENIDO (CRÍTICO):
+        - Si el texto de directrices NO describe un proceso organizacional real, contiene únicamente frases de prueba vacías (ej: "esto es una prueba", "hola", "ejemplo", "probando micrófono"), o carece por completo de pasos lógicos estructurables, NO inventes una plantilla de procesos ficticia.
+        - En su lugar, debes responder ÚNICAMENTE con el siguiente objeto JSON de error (ningún otro campo en la respuesta):
+          {
+            "error": "El audio o texto ingresado no describe un proceso organizativo válido o contiene información insuficiente para estructurar una plantilla de pasos."
+          }
+        
         El resultado DEBE ser estrictamente un objeto JSON válido, sin ningún texto adicional, explicaciones ni formato HTML. Puedes usar bloques de código markdown si es necesario, pero asegúrate de que el JSON sea perfectamente analizable.
         
-        Estructura esperada:
+        Estructura esperada en caso de éxito:
         {
           "title": "Título corto y amigable del Proceso (ej: Onboarding de Marketing)",
           "description": "Breve descripción empática del propósito del proceso",
@@ -1347,6 +1354,14 @@ const handleDeleteMember = async (id) => {
       setUploadStatusMsg("Diseñando tu plantilla...");
 
       const parsedTemplate = JSON.parse(responseText);
+      
+      if (parsedTemplate.error) {
+        setUploadStatusMsg("");
+        setIsUploading(false);
+        showAlert(parsedTemplate.error);
+        return;
+      }
+
       const tempId = "t_ai_" + Date.now();
       
       const finalTemplate = {
