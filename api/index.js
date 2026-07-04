@@ -466,20 +466,40 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
 
 // 8. Add a notification log
 app.post('/api/notifications', authenticateToken, async (req, res) => {
-  const { id, instanceId, stepId, instanceName, stepTitle, message } = req.body;
+  const { id, instanceId, stepId, instanceName, stepTitle, message, type = 'message' } = req.body;
   try {
+    // 1. Insert into notification_logs table (on conflict do nothing)
     await pool.query(
       `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO NOTHING`,
       [id, req.user.organizationId, instanceId, stepId, instanceName, stepTitle, message]
     );
 
-    // Look up assignee details in the database to send alert email
+    // 2. Determine recipients
+    const recipients = new Set();
+
+    // 2.a. Admins of the organization receive all notifications
+    const adminsRes = await pool.query(
+      "SELECT id FROM users WHERE organization_id = $1 AND role = 'admin'",
+      [req.user.organizationId]
+    );
+    adminsRes.rows.forEach(row => recipients.add(row.id));
+
+    // 2.b. Check the instance steps for assignee and involved members
     const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1', [instanceId]);
     if (instRes.rows.length > 0) {
       const steps = instRes.rows[0].steps || [];
+      const assignedMemberIds = new Set();
+      steps.forEach(s => {
+        if (s.assignedTo) {
+          assignedMemberIds.add(s.assignedTo);
+        }
+      });
+
       const step = steps.find(s => s.id === stepId || s.title === stepTitle);
       
+      // Send email alert to direct assignee (if exists)
       if (step && step.assignedTo) {
         const memberRes = await pool.query(
           'SELECT name, email FROM team_members WHERE id = $1 AND organization_id = $2',
@@ -532,12 +552,44 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
           });
         }
       }
+
+      // Convert all assigned team member IDs to matching user IDs
+      if (assignedMemberIds.size > 0) {
+        const memberIdsArr = Array.from(assignedMemberIds);
+        const placeholders = memberIdsArr.map((_, idx) => `$${idx + 2}`).join(', ');
+        
+        const membersEmailsRes = await pool.query(
+          `SELECT email FROM team_members WHERE id IN (${placeholders}) AND organization_id = $1`,
+          [req.user.organizationId, ...memberIdsArr]
+        );
+        
+        if (membersEmailsRes.rows.length > 0) {
+          const emails = membersEmailsRes.rows.map(m => m.email);
+          const emailPlaceholders = emails.map((_, idx) => `$${idx + 2}`).join(', ');
+          
+          const usersRes = await pool.query(
+            `SELECT id FROM users WHERE email IN (${emailPlaceholders}) AND organization_id = $1`,
+            [req.user.organizationId, ...emails]
+          );
+          
+          usersRes.rows.forEach(row => recipients.add(row.id));
+        }
+      }
     }
 
-    res.status(201).json({ message: 'Log de notificación registrado' });
+    // 3. Insert notification records for all identified recipients
+    for (const userId of recipients) {
+      await pool.query(
+        `INSERT INTO notifications (user_id, type, message, instance_id)
+         VALUES ($1, $2, $3, $4)`,
+        [userId, type, message, instanceId]
+      );
+    }
+
+    res.status(201).json({ message: 'Log de notificación registrado y notificaciones despachadas' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al registrar notificación' });
+    console.error("Error al registrar notificaciones:", err);
+    res.status(500).json({ error: 'Error al registrar la notificación' });
   }
 });
 

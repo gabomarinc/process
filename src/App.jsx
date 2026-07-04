@@ -384,7 +384,8 @@ function App() {
                 stepId: step.id,
                 instanceName: inst.instanceName,
                 stepTitle: step.title,
-                message: `RETRASO: El paso "${step.title}" venció el ${dueDate.toLocaleDateString()}. Notificaciones enviadas al equipo de ${inst.category}.`
+                message: `RETRASO: El paso "${step.title}" venció el ${dueDate.toLocaleDateString()}. Notificaciones enviadas al equipo de ${inst.category}.`,
+                type: 'alert'
               };
 
               // Local state update
@@ -481,6 +482,32 @@ function App() {
     // Trigger active assignee notification
     await checkAndNotifyActiveAssignee(inst, updatedSteps);
 
+    // Trigger progress notification (for completion)
+    if (isCompleted) {
+      const completedStep = updatedSteps.find(s => s.id === stepId);
+      if (completedStep) {
+        const completeLogId = `complete-${instanceId}-${stepId}`;
+        const progressMessage = `Avance: Se completó el paso "${completedStep.title}" en la ejecución "${inst.instanceName}".`;
+        try {
+          await fetch('/api/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: completeLogId,
+              instanceId,
+              stepId,
+              instanceName: inst.instanceName,
+              stepTitle: completedStep.title,
+              message: progressMessage,
+              type: 'success'
+            })
+          });
+        } catch (err) {
+          console.error("Error al registrar notificacion de avance:", err);
+        }
+      }
+    }
+
     // Celebration if all steps completed
     const allDone = updatedSteps.every(s => s.isCompleted);
     if (allDone && !inst.steps.every(s => s.isCompleted)) {
@@ -516,7 +543,8 @@ function App() {
           stepId: activeStep.id,
           instanceName: instance.instanceName,
           stepTitle: activeStep.title,
-          message
+          message,
+          type: 'alert'
         };
 
         setNotificationLogs(prev => [newLog, ...prev]);
@@ -831,6 +859,26 @@ const handleDeleteMember = async (id) => {
     });
     // Trigger active assignee notification for the first step
     await checkAndNotifyActiveAssignee(newInstance, newInstance.steps);
+
+    // Trigger launch notification for Admin
+    try {
+      const launchLogId = `launch-${newInstance.id}`;
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: launchLogId,
+          instanceId: newInstance.id,
+          stepId: 'launch',
+          instanceName: newInstance.instanceName,
+          stepTitle: 'Inicio de Ejecución',
+          message: `Se inició la ejecución "${newInstance.instanceName}" basada en la plantilla "${newInstance.title}".`,
+          type: 'message'
+        })
+      });
+    } catch (err) {
+      console.error("Error al registrar notificacion de lanzamiento:", err);
+    }
 
     // Post to Express backend
     try {
@@ -1709,7 +1757,7 @@ const handleDeleteMember = async (id) => {
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
             <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Notifications user={user} apiUrl="" onNavigate={(n) => { if (n.instanceId) setSelectedInstanceId(n.instanceId); }} />
+              <Notifications user={user} apiUrl="/api" onNavigate={(n) => { if (n.instanceId) setSelectedInstanceId(n.instanceId); }} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
                   className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
