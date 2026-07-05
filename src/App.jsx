@@ -227,6 +227,10 @@ function App() {
   const [isTestingClickup, setIsTestingClickup] = useState(false);
   const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
+  const [chatTemplateId, setChatTemplateId] = useState('');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -569,6 +573,49 @@ function App() {
       });
     } catch (err) {
       console.error("Error saving step comments:", err);
+    }
+  };
+
+  const handleSendChatMessage = async (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !chatTemplateId) return;
+
+    const userMsg = chatInput;
+    setChatMessages(prev => [...prev, { sender: 'user', text: userMsg }]);
+    setChatInput('');
+    setIsChatLoading(true);
+
+    const template = templates.find(t => t.id === chatTemplateId);
+    const stepsContext = (template?.steps || []).map((s, i) => `Paso ${i+1}: ${s.title}. Descripción: ${s.description}.`).join('\n');
+
+    const prompt = `Eres un consultor experto y guía del proceso llamado "${template?.title}".
+Descripción del proceso: ${template?.description || 'No especificada'}.
+Pasos del proceso:
+${stepsContext}
+
+El usuario tiene la siguiente pregunta o duda sobre este proceso:
+"${userMsg}"
+
+Responde de forma concisa, profesional, clara y directa. Sin adornos exagerados, centrado en ayudarle a completar el proceso.`;
+
+    try {
+      const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      const data = await response.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No pude obtener una respuesta de guía en este momento.';
+      setChatMessages(prev => [...prev, { sender: 'ai', text: aiText }]);
+    } catch (err) {
+      console.error("Error querying chat assistant:", err);
+      setChatMessages(prev => [...prev, { sender: 'ai', text: 'Lo siento, hubo un error de red al consultar al asistente.' }]);
+    } finally {
+      setIsChatLoading(false);
     }
   };
 
@@ -3280,7 +3327,98 @@ const handleDeleteMember = async (id) => {
             {/* List based on active tab */}
             <div className="card-section">
               {activeTab === 'instances' ? (
-                <div style={{ display: 'none' }}></div>
+                <div>
+                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '1rem', margin: '0 0 0.5rem 0' }}>
+                    <Sparkles size={16} className="text-primary" /> Asistente de Guía de Procesos
+                  </h3>
+                  
+                  {!chatTemplateId ? (
+                    <div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                        Selecciona uno de tus procesos organizacionales para consultar detalles, plazos, guías de Gemini o resolver cualquier duda:
+                      </p>
+                      <select
+                        value={chatTemplateId}
+                        onChange={(e) => {
+                          const selected = e.target.value;
+                          setChatTemplateId(selected);
+                          const temp = templates.find(t => t.id === selected);
+                          if (temp) {
+                            setChatMessages([
+                              { sender: 'ai', text: `¡Hola! Soy tu asistente de Kônsul para **"${temp.title}"**. Puedes consultarme dudas como:\n- ¿Qué se hace en el paso 2?\n- ¿Cómo resolver el entregable?\n- ¿Cuál es el propósito general del flujo?` }
+                            ]);
+                          }
+                        }}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #ebd8c0', fontSize: '0.85rem', outline: 'none' }}
+                      >
+                        <option value="">-- Seleccionar Proceso --</option>
+                        {templates.map(t => (
+                          <option key={t.id} value={t.id}>{t.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary-hover)' }}>
+                          Consultando: {templates.find(t => t.id === chatTemplateId)?.title}
+                        </span>
+                        <button
+                          onClick={() => { setChatTemplateId(''); setChatMessages([]); }}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Cambiar proceso
+                        </button>
+                      </div>
+
+                      <div style={{ height: '180px', overflowY: 'auto', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: '#faf9f8', marginBottom: '0.5rem' }}>
+                        {chatMessages.map((msg, idx) => (
+                          <div key={idx} style={{
+                            padding: '6px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            maxWidth: '85%',
+                            lineHeight: 1.4,
+                            alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                            background: msg.sender === 'user' ? 'var(--color-primary)' : 'white',
+                            color: msg.sender === 'user' ? 'white' : 'var(--text-main)',
+                            border: msg.sender === 'user' ? 'none' : '1px solid rgba(0,0,0,0.05)',
+                            whiteSpace: 'pre-wrap',
+                            textAlign: 'left'
+                          }}>
+                            {msg.text}
+                          </div>
+                        ))}
+                        {isChatLoading && (
+                          <div style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: '12px', background: 'white', border: '1px solid rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite' }} />
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.2s' }} />
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.4s' }} />
+                          </div>
+                        )}
+                      </div>
+
+                      <form onSubmit={handleSendChatMessage} style={{ display: 'flex', gap: '4px' }}>
+                        <input
+                          type="text"
+                          placeholder="Pregúntale a la IA sobre el proceso..."
+                          value={chatInput}
+                          onChange={e => setChatInput(e.target.value)}
+                          disabled={isChatLoading || !apiKey}
+                          style={{ flex: 1, padding: '6px 10px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #ebd8c0', outline: 'none' }}
+                        />
+                        <button 
+                          type="submit" 
+                          className="btn btn-primary" 
+                          disabled={isChatLoading || !apiKey}
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px' }}
+                        >
+                          Preguntar
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
               ) : activeTab === 'templates' ? (
                 <div>
                   <h3 className="section-title">Plantillas Disponibles</h3>
