@@ -2288,7 +2288,6 @@ const handleDeleteMember = async (id) => {
                 const filteredInstances = instances.filter(inst => {
                   if (selectedClientFilter && getClientForInstance(inst, clients) !== selectedClientFilter) return false;
                   if (dashboardViewMode === 'birds-eye') return true;
-                  if (user?.role === 'admin') return true;
                   if (!myMember) return false;
                   return inst.steps.some(s => String(s.assignedTo) === String(myMember.id));
                 });
