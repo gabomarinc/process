@@ -531,11 +531,14 @@ button, input, select {
 
 /* File Upload inside Active Step */
 .step-file-upload {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
   border: 2px dashed rgba(220, 200, 190, 0.3);
   background-color: #FAF9F8;
   border-radius: var(--radius-sm);
   padding: 1rem;
-  text-align: center;
   cursor: pointer;
   transition: var(--transition-smooth);
 }

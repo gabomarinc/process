@@ -17,6 +17,7 @@ export const ActiveExecutionModal = ({
   const [isFocusMode, setIsFocusMode] = useState(true);
   const [commentingStepId, setCommentingStepId] = useState(null);
   const [commentText, setCommentText] = useState('');
+  const [mentionSearch, setMentionSearch] = useState(null);
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
@@ -368,10 +369,10 @@ export const ActiveExecutionModal = ({
                           )}
 
                           {/* Float Comments Block */}
-                          {commentingStepId === step.id && (
+                          {(commentingStepId === step.id || isCenter) && (
                             <div style={{ marginTop: '1rem', background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.75rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
                               <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span>Notas de Relevo</span>
+                                <span>Notas de Relevo / Colaboración</span>
                                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
                               </div>
                               <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -385,7 +386,7 @@ export const ActiveExecutionModal = ({
                                   </div>
                                 ))}
                                 {(step.comments || []).length === 0 && (
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe una abajo.</span>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe abajo (usa @ para mencionar a alguien).</span>
                                 )}
                               </div>
                               <form onSubmit={async (e) => {
@@ -400,12 +401,46 @@ export const ActiveExecutionModal = ({
                                 const updatedComments = [...(step.comments || []), newComment];
                                 await handleUpdateStepComments(activeInstance.id, step.id, updatedComments);
                                 setCommentText('');
-                              }} style={{ display: 'flex', gap: '4px' }}>
+                                setMentionSearch(null);
+                              }} style={{ display: 'flex', gap: '4px', position: 'relative' }}>
+                                
+                                {mentionSearch && mentionSearch.stepId === step.id && (() => {
+                                  const matches = teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.query.toLowerCase()));
+                                  if (matches.length === 0) return null;
+                                  return (
+                                    <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ebd8c0', borderRadius: '8px', zIndex: 50, display: 'flex', flexDirection: 'column', maxHeight: '120px', overflowY: 'auto', boxShadow: '0 -4px 10px rgba(0,0,0,0.08)' }}>
+                                      {matches.map(m => (
+                                        <div 
+                                          key={m.id} 
+                                          style={{ padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #f5f3f0', textAlign: 'left' }}
+                                          onClick={() => {
+                                            const words = commentText.split(' ');
+                                            words.pop(); // Remove @query
+                                            setCommentText([...words, `@${m.name} `].join(' '));
+                                            setMentionSearch(null);
+                                          }}
+                                        >
+                                          <strong>{m.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>({m.role})</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+
                                 <input
                                   type="text"
-                                  placeholder="Nota..."
+                                  placeholder="Nota... (ej. @Carlos)"
                                   value={commentText}
-                                  onChange={e => setCommentText(e.target.value)}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCommentText(val);
+                                    const lastWord = val.split(' ').pop();
+                                    if (lastWord.startsWith('@')) {
+                                      setMentionSearch({ query: lastWord.substring(1), stepId: step.id });
+                                    } else {
+                                      setMentionSearch(null);
+                                    }
+                                  }}
                                   style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
                                 />
                                 <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
