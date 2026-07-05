@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare } from 'lucide-react';
 
 export const ActiveExecutionModal = ({
   isOpen,
@@ -9,9 +9,14 @@ export const ActiveExecutionModal = ({
   checkOverdueSteps,
   handleStepComplete,
   handleAssignStepMember,
+  handleUpdateStepComments,
+  currentUser,
   fileStore = {},
   setFileStore
 }) => {
+  const [isFocusMode, setIsFocusMode] = useState(true);
+  const [commentingStepId, setCommentingStepId] = useState(null);
+  const [commentText, setCommentText] = useState('');
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
@@ -208,7 +213,15 @@ export const ActiveExecutionModal = ({
         {/* Fixed Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
            <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>
-           <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+             <button
+               onClick={() => setIsFocusMode(!isFocusMode)}
+               style={{ border: 'none', background: isFocusMode ? '#e8f7f5' : '#f5f3f0', color: isFocusMode ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+             >
+               {isFocusMode ? 'Modo Enfoque 🔍' : 'Modo Completo 📋'}
+             </button>
+             <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
+           </div>
         </div>
         
         {/* Scrollable Content Container */}
@@ -303,7 +316,10 @@ export const ActiveExecutionModal = ({
                     <div 
                       key={step.id} 
                       className={`trio-card ${alignmentClass} ${item.status}`}
-                      style={{ cursor: 'pointer' }}
+                      style={{ 
+                        cursor: 'pointer',
+                        ...(isFocusMode && !isCenter ? { opacity: 0.2, filter: 'blur(2px)', pointerEvents: 'none' } : {})
+                      }}
                       onClick={() => setFocusedIndex(item.index)}
                     >
                       <div className="trio-card-header">
@@ -317,6 +333,19 @@ export const ActiveExecutionModal = ({
                             title="Enviar Correo del Paso"
                           >
                             <Mail size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setCommentingStepId(commentingStepId === step.id ? null : step.id); 
+                              setCommentText('');
+                            }}
+                            className="close-btn-aesthetic"
+                            style={{ width: '26px', height: '26px', padding: 0, color: step.comments?.length ? 'var(--color-primary-hover)' : 'inherit' }}
+                            title="Comentarios / Notas"
+                          >
+                            <MessageSquare size={13} />
                           </button>
                           {item.status === 'completed' && <Check size={16} className="text-success-icon" />}
                           {item.status === 'active' && <Clock size={16} className="text-active-icon animate-pulse" />}
@@ -338,20 +367,107 @@ export const ActiveExecutionModal = ({
                             </div>
                           )}
 
+                          {/* Float Comments Block */}
+                          {commentingStepId === step.id && (
+                            <div style={{ marginTop: '1rem', background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.75rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>Notas de Relevo</span>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
+                              </div>
+                              <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                {(step.comments || []).map(c => (
+                                  <div key={c.id} style={{ display: 'flex', flexDirection: 'column', background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.03)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                      <span>{c.userName}</span>
+                                      <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{new Date(c.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-main)', marginTop: '2px' }}>{c.text}</span>
+                                  </div>
+                                ))}
+                                {(step.comments || []).length === 0 && (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe una abajo.</span>
+                                )}
+                              </div>
+                              <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!commentText.trim()) return;
+                                const newComment = {
+                                  id: `c_${Date.now()}`,
+                                  userName: currentUser?.name || 'Miembro',
+                                  text: commentText,
+                                  timestamp: new Date().toISOString()
+                                };
+                                const updatedComments = [...(step.comments || []), newComment];
+                                await handleUpdateStepComments(activeInstance.id, step.id, updatedComments);
+                                setCommentText('');
+                              }} style={{ display: 'flex', gap: '4px' }}>
+                                <input
+                                  type="text"
+                                  placeholder="Nota..."
+                                  value={commentText}
+                                  onChange={e => setCommentText(e.target.value)}
+                                  style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
+                                />
+                                <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
+                                  Guardar
+                                </button>
+                              </form>
+                            </div>
+                          )}
+
                           <div className="trio-card-action">
                             {step.type === 'manual' ? (
-                              <label className="emotional-checkbox-label" onClick={e => e.stopPropagation()}>
-                                <input 
-                                  type="checkbox"
-                                  checked={step.isCompleted}
-                                  disabled={step.isCompleted}
-                                  onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
-                                />
-                                <div className="checkbox-visual">
-                                  {step.isCompleted && <Check size={16} />}
-                                </div>
-                                <span>Marcar como hecho</span>
-                              </label>
+                              <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
+                                {step.isCompleted ? (
+                                  <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                    <Check size={16} /> Paso Completado
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
+                                      onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
+                                    >
+                                      {(() => {
+                                        const nextStep = activeInstance.steps[item.index + 1];
+                                        const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                        return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
+                                      })()}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                        try {
+                                          await fetch('/api/notifications', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              id: `help-${step.id}-${Date.now()}`,
+                                              instanceId: activeInstance.id,
+                                              stepId: step.id,
+                                              instanceName: activeInstance.instanceName,
+                                              stepTitle: step.title,
+                                              message: helpMsg,
+                                              type: 'alert'
+                                            })
+                                          });
+                                          alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                        } catch (err) {
+                                          console.error("Error al pedir ayuda:", err);
+                                        }
+                                      }}
+                                    >
+                                      🙋‍♂️ Pedir una mano
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             ) : (
                               <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
                                 {step.isCompleted ? (
@@ -373,30 +489,61 @@ export const ActiveExecutionModal = ({
                                     </button>
                                   </div>
                                 ) : (
-                                  <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.4rem' }}>
-                                    <input 
-                                      type="file" 
-                                      style={{ display: 'none' }}
-                                      accept={step.acceptedFormats?.join(',')}
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                          const fileUrl = URL.createObjectURL(file);
-                                          setFileStore(prev => ({
-                                            ...prev,
-                                            [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                          }));
-                                          handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                  <>
+                                    <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.4rem' }}>
+                                      <input 
+                                        type="file" 
+                                        style={{ display: 'none' }}
+                                        accept={step.acceptedFormats?.join(',')}
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            const fileUrl = URL.createObjectURL(file);
+                                            setFileStore(prev => ({
+                                              ...prev,
+                                              [step.id]: { url: fileUrl, name: file.name, type: file.type }
+                                            }));
+                                            handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                          }
+                                        }}
+                                      />
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                        <Upload size={14} className="text-primary" />
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                          Subir archivo ({step.acceptedFormats?.join(', ')})
+                                        </span>
+                                      </div>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                        try {
+                                          await fetch('/api/notifications', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              id: `help-${step.id}-${Date.now()}`,
+                                              instanceId: activeInstance.id,
+                                              stepId: step.id,
+                                              instanceName: activeInstance.instanceName,
+                                              stepTitle: step.title,
+                                              message: helpMsg,
+                                              type: 'alert'
+                                            })
+                                          });
+                                          alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                        } catch (err) {
+                                          console.error("Error al pedir ayuda:", err);
                                         }
                                       }}
-                                    />
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                      <Upload size={14} className="text-primary" />
-                                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                        Subir archivo ({step.acceptedFormats?.join(', ')})
-                                      </span>
-                                    </div>
-                                  </label>
+                                    >
+                                      🙋‍♂️ Pedir una mano
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             )}
@@ -484,7 +631,11 @@ export const ActiveExecutionModal = ({
                       <div 
                         key={step.id} 
                         className={`step-row ${step.isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
-                        style={{ opacity: isLocked ? 0.65 : 1 }}
+                        style={{
+                          opacity: isFocusMode ? (idx === activeInstance.steps.findIndex(s => !s.isCompleted) ? 1 : 0.2) : (isLocked ? 0.65 : 1),
+                          filter: isFocusMode && (idx !== activeInstance.steps.findIndex(s => !s.isCompleted)) ? 'blur(1.5px)' : 'none',
+                          pointerEvents: isFocusMode && (idx !== activeInstance.steps.findIndex(s => !s.isCompleted)) ? 'none' : 'auto'
+                        }}
                       >
                         <div className="step-indicator">
                           {step.isCompleted ? <Check size={20} /> : idx + 1}
@@ -508,12 +659,72 @@ export const ActiveExecutionModal = ({
                               >
                                 <Mail size={15} />
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCommentingStepId(commentingStepId === step.id ? null : step.id);
+                                  setCommentText('');
+                                }}
+                                className="close-btn-aesthetic"
+                                style={{ width: '32px', height: '32px', padding: 0, color: step.comments?.length ? 'var(--color-primary-hover)' : 'inherit' }}
+                                title="Comentarios / Notas"
+                              >
+                                <MessageSquare size={15} />
+                              </button>
                               <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
                                 {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
                               </span>
                             </div>
                           </div>
                           <p>{step.description}</p>
+
+                          {/* Steps List Comments Block */}
+                          {commentingStepId === step.id && (
+                            <div style={{ marginTop: '1rem', background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.75rem', textAlign: 'left' }}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>Notas de Relevo</span>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
+                              </div>
+                              <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                {(step.comments || []).map(c => (
+                                  <div key={c.id} style={{ display: 'flex', flexDirection: 'column', background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.03)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                      <span>{c.userName}</span>
+                                      <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{new Date(c.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-main)', marginTop: '2px' }}>{c.text}</span>
+                                  </div>
+                                ))}
+                                {(step.comments || []).length === 0 && (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe una abajo.</span>
+                                )}
+                              </div>
+                              <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!commentText.trim()) return;
+                                const newComment = {
+                                  id: `c_${Date.now()}`,
+                                  userName: currentUser?.name || 'Miembro',
+                                  text: commentText,
+                                  timestamp: new Date().toISOString()
+                                };
+                                const updatedComments = [...(step.comments || []), newComment];
+                                await handleUpdateStepComments(activeInstance.id, step.id, updatedComments);
+                                setCommentText('');
+                              }} style={{ display: 'flex', gap: '4px' }}>
+                                <input
+                                  type="text"
+                                  placeholder="Nota..."
+                                  value={commentText}
+                                  onChange={e => setCommentText(e.target.value)}
+                                  style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
+                                />
+                                <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
+                                  Guardar
+                                </button>
+                              </form>
+                            </div>
+                          )}
 
                           {isOverdue && (
                             <div className="overdue-banner">
@@ -539,66 +750,136 @@ export const ActiveExecutionModal = ({
                           </div>
 
                           {!isLocked && (
-                            <div className="step-action-area">
-                              {step.type === 'manual' ? (
-                                <label className="emotional-checkbox-label">
-                                  <input 
-                                    type="checkbox"
-                                    checked={step.isCompleted}
-                                    disabled={step.isCompleted}
-                                    onChange={(e) => handleStepComplete(activeInstance.id, step.id, e.target.checked)}
-                                  />
-                                  <div className="checkbox-visual">
-                                    {step.isCompleted && <Check size={16} />}
-                                  </div>
-                                  <span>{step.isCompleted ? 'Logrado' : 'Marcar como hecho'}</span>
-                                </label>
-                              ) : (
-                                <div>
-                                  {step.isCompleted ? (
-                                    <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <FileCheck size={16} />
-                                        <span>{step.uploadedFileName || 'Archivo cargado'}</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
-                                        className="close-btn-aesthetic"
-                                        style={{ width: '28px', height: '28px', padding: 0 }}
-                                        title="Previsualizar archivo"
-                                      >
-                                        <Eye size={14} />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <label className="step-file-upload">
-                                      <input 
-                                        type="file" 
-                                        style={{ display: 'none' }}
-                                        accept={step.acceptedFormats?.join(',')}
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const fileUrl = URL.createObjectURL(file);
-                                            setFileStore(prev => ({
-                                              ...prev,
-                                              [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                            }));
-                                            handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                          }
-                                        }}
-                                      />
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <Upload size={16} className="text-primary" />
-                                        <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
-                                      </div>
-                                    </label>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                             <div className="step-action-area" style={{ marginTop: '0.5rem' }}>
+                               {step.type === 'manual' ? (
+                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                                   {step.isCompleted ? (
+                                     <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                       <Check size={16} /> Paso Completado
+                                     </div>
+                                   ) : (
+                                     <>
+                                       <button
+                                         type="button"
+                                         className="btn btn-primary"
+                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
+                                         onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
+                                       >
+                                         {(() => {
+                                           const nextStep = activeInstance.steps[idx + 1];
+                                           const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                           return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
+                                         })()}
+                                       </button>
+                                       <button
+                                         type="button"
+                                         className="btn btn-secondary"
+                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                         onClick={async (e) => {
+                                           e.stopPropagation();
+                                           const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                           try {
+                                             await fetch('/api/notifications', {
+                                               method: 'POST',
+                                               headers: { 'Content-Type': 'application/json' },
+                                               body: JSON.stringify({
+                                                 id: `help-${step.id}-${Date.now()}`,
+                                                 instanceId: activeInstance.id,
+                                                 stepId: step.id,
+                                                 instanceName: activeInstance.instanceName,
+                                                 stepTitle: step.title,
+                                                 message: helpMsg,
+                                                 type: 'alert'
+                                               })
+                                             });
+                                             alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                           } catch (err) {
+                                             console.error("Error al pedir ayuda:", err);
+                                           }
+                                         }}
+                                       >
+                                         🙋‍♂️ Pedir una mano
+                                       </button>
+                                     </>
+                                   )}
+                                 </div>
+                               ) : (
+                                 <div style={{ width: '100%' }}>
+                                   {step.isCompleted ? (
+                                     <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                         <FileCheck size={16} />
+                                         <span>{step.uploadedFileName || 'Archivo cargado'}</span>
+                                       </div>
+                                       <button
+                                         type="button"
+                                         onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
+                                         className="close-btn-aesthetic"
+                                         style={{ width: '28px', height: '28px', padding: 0 }}
+                                         title="Previsualizar archivo"
+                                       >
+                                         <Eye size={14} />
+                                       </button>
+                                     </div>
+                                   ) : (
+                                     <>
+                                       <label className="step-file-upload">
+                                         <input 
+                                           type="file" 
+                                           style={{ display: 'none' }}
+                                           accept={step.acceptedFormats?.join(',')}
+                                           onChange={(e) => {
+                                             const file = e.target.files?.[0];
+                                             if (file) {
+                                               const fileUrl = URL.createObjectURL(file);
+                                               setFileStore(prev => ({
+                                                 ...prev,
+                                                 [step.id]: { url: fileUrl, name: file.name, type: file.type }
+                                               }));
+                                               handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                             }
+                                           }}
+                                         />
+                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                           <Upload size={16} className="text-primary" />
+                                           <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
+                                         </div>
+                                       </label>
+                                       <button
+                                         type="button"
+                                         className="btn btn-secondary"
+                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                         onClick={async (e) => {
+                                           e.stopPropagation();
+                                           const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                           try {
+                                             await fetch('/api/notifications', {
+                                               method: 'POST',
+                                               headers: { 'Content-Type': 'application/json' },
+                                               body: JSON.stringify({
+                                                 id: `help-${step.id}-${Date.now()}`,
+                                                 instanceId: activeInstance.id,
+                                                 stepId: step.id,
+                                                 instanceName: activeInstance.instanceName,
+                                                 stepTitle: step.title,
+                                                 message: helpMsg,
+                                                 type: 'alert'
+                                               })
+                                             });
+                                             alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                           } catch (err) {
+                                             console.error("Error al pedir ayuda:", err);
+                                           }
+                                         }}
+                                       >
+                                         🙋‍♂️ Pedir una mano
+                                       </button>
+                                     </>
+                                   )}
+                                 </div>
+                               )}
+                             </div>
+                           )}
                         </div>
                       </div>
                     );

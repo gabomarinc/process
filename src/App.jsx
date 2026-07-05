@@ -226,6 +226,7 @@ function App() {
   const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
   const [isTestingClickup, setIsTestingClickup] = useState(false);
   const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
+  const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -504,7 +505,15 @@ function App() {
       const completedStep = updatedSteps.find(s => s.id === stepId);
       if (completedStep) {
         const completeLogId = `complete-${instanceId}-${stepId}`;
-        const progressMessage = `Avance: Se completó el paso "${completedStep.title}" en la ejecución "${inst.instanceName}".`;
+        const completedIndex = updatedSteps.findIndex(s => s.id === stepId);
+        const nextStep = updatedSteps[completedIndex + 1];
+        let progressMessage = `Avance: ${user?.name || 'Un compañero'} completó el paso "${completedStep.title}" en "${inst.instanceName}".`;
+        if (nextStep && nextStep.assignedTo) {
+          const nextAssignee = teamMembers.find(m => String(m.id) === String(nextStep.assignedTo));
+          if (nextAssignee) {
+            progressMessage = `${user?.name || 'Un compañero'} completó el paso "${completedStep.title}" en "${inst.instanceName}" y se lo pasó a ${nextAssignee.name}. @${nextAssignee.name}, te toca.`;
+          }
+        }
         try {
           await fetch('/api/notifications', {
             method: 'POST',
@@ -535,6 +544,31 @@ function App() {
       }, 300);
     } else if (isCompleted) {
       triggerConfetti();
+    }
+  };
+
+  const handleUpdateStepComments = async (instanceId, stepId, comments) => {
+    const inst = instances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    const updatedSteps = inst.steps.map(s => {
+      if (s.id !== stepId) return s;
+      return { ...s, comments };
+    });
+
+    setInstances(prev => prev.map(i => {
+      if (i.id === instanceId) return { ...i, steps: updatedSteps };
+      return i;
+    }));
+
+    try {
+      await fetch(`/api/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: updatedSteps })
+      });
+    } catch (err) {
+      console.error("Error saving step comments:", err);
     }
   };
 
@@ -1975,7 +2009,7 @@ const handleDeleteMember = async (id) => {
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
             <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Notifications user={user} apiUrl="/api" onNavigate={(n) => { if (n.instanceId) setSelectedInstanceId(n.instanceId); }} />
+              <Notifications user={user} apiUrl="/api" onNavigate={(n) => { const instId = n.instance_id || n.instanceId; if (instId) setSelectedInstanceId(instId); }} onCompleteStep={handleStepComplete} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
                   className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
@@ -2140,8 +2174,26 @@ const handleDeleteMember = async (id) => {
         <div className="card-section" style={activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : {}}>
           {activeTab === 'instances' ? (
             <div style={{ width: '100%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>Ejecuciones Activas</h2>
+              {/* Focus vs Bird's Eye View Mode Toggle */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>Ejecuciones Activas</h2>
+                  <div style={{ display: 'inline-flex', background: '#f5f3f0', borderRadius: '20px', padding: '3px', marginLeft: '12px' }}>
+                    <button
+                      onClick={() => setDashboardViewMode('focus')}
+                      style={{ border: 'none', background: dashboardViewMode === 'focus' ? 'white' : 'transparent', color: dashboardViewMode === 'focus' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: dashboardViewMode === 'focus' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                    >
+                      Enfoque 🔍
+                    </button>
+                    <button
+                      onClick={() => setDashboardViewMode('birds-eye')}
+                      style={{ border: 'none', background: dashboardViewMode === 'birds-eye' ? 'white' : 'transparent', color: dashboardViewMode === 'birds-eye' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: dashboardViewMode === 'birds-eye' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                    >
+                      Vista de Pájaro 🦅
+                    </button>
+                  </div>
+                </div>
+
                 {user?.role !== 'guest' && (
                   <button
                     className="btn btn-primary"
@@ -2158,6 +2210,64 @@ const handleDeleteMember = async (id) => {
                 )}
               </div>
 
+              {/* Mi Momento Card */}
+              {(() => {
+                const myMember = teamMembers.find(m => m.email?.toLowerCase() === user?.email?.toLowerCase());
+                const myMomentSteps = [];
+                if (myMember) {
+                  instances.forEach(inst => {
+                    const nextStepIdx = inst.steps.findIndex(s => !s.isCompleted);
+                    if (nextStepIdx !== -1) {
+                      const activeStep = inst.steps[nextStepIdx];
+                      if (String(activeStep.assignedTo) === String(myMember.id)) {
+                        myMomentSteps.push({
+                          instance: inst,
+                          step: activeStep,
+                          index: nextStepIdx
+                        });
+                      }
+                    }
+                  });
+                }
+
+                if (dashboardViewMode === 'focus' && myMomentSteps.length > 0) {
+                  return (
+                    <div className="my-moment-container" style={{ background: 'linear-gradient(135deg, #fdfbf7 0%, #FAF8F5 100%)', border: '1px solid #ebd8c0', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
+                        <span style={{ fontSize: '1.5rem' }}>🎯</span>
+                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#664d2d' }}>Mi Momento (Tus Pendientes de Hoy)</h3>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {myMomentSteps.map(item => (
+                          <div key={item.step.id} onClick={() => setSelectedInstanceId(item.instance.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', border: '1px solid #ebd8c0', borderRadius: '12px', padding: '1rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} className="hover-lift-subtle">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary-hover)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                {item.instance.instanceName}
+                              </span>
+                              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                                {item.step.title}
+                              </span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                {item.step.description}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>
+                                Vence: {new Date(item.step.dueDate).toLocaleDateString()}
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: '#b58b53', fontWeight: 600 }}>
+                                Toca tu turno ➡️
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {selectedClientFilter && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(var(--color-primary-rgb), 0.1)', padding: '0.5rem 1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
                   <span style={{ fontSize: '0.9rem', color: 'var(--color-primary-hover)', fontWeight: 'bold' }}>
@@ -2172,116 +2282,129 @@ const handleDeleteMember = async (id) => {
                   </button>
                 </div>
               )}
-              {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst, clients) === selectedClientFilter).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', color: 'var(--color-primary)' }}><Rocket size={64} /></div>
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
-                <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Selecciona una plantilla e iníciala para comenzar a seguir un proceso en tiempo real.</p>
-                {user?.role !== 'guest' && (
-                  <button
-                    className="btn btn-primary"
-                    style={{ fontSize: '1rem', padding: '0.75rem 2rem' }}
-                    onClick={() => {
-                      setLaunchInstanceName('');
-                      setLaunchStartDate(new Date().toISOString().split('T')[0]);
-                      setLaunchTemplateId(templates[0]?.id || '');
-                      setShowLaunchModal(true);
-                    }}
-                  >
-                    <Rocket size={18} style={{marginRight:'4px'}} /> Iniciar Primera Ejecución
-                  </button>
-                )}
-              </div>
-              ) : (
-                <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-                  {instances.filter(inst => !selectedClientFilter || getClientForInstance(inst, clients) === selectedClientFilter).map(inst => {
-                    const total = inst.steps.length;
-                    const completed = inst.steps.filter(s => s.isCompleted).length;
-                    const percentage = Math.round((completed / total) * 100) || 0;
-                    const isOverdue = checkOverdueSteps(inst);
 
-                    return (
-                      <div 
-                        key={inst.id}
-                        className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
-                        onClick={() => setSelectedInstanceId(inst.id)}
-                        style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: 'pointer' }}
-                      >
-                        <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {(() => {
+                const myMember = teamMembers.find(m => m.email?.toLowerCase() === user?.email?.toLowerCase());
+                const filteredInstances = instances.filter(inst => {
+                  if (selectedClientFilter && getClientForInstance(inst, clients) !== selectedClientFilter) return false;
+                  if (dashboardViewMode === 'birds-eye') return true;
+                  if (user?.role === 'admin') return true;
+                  if (!myMember) return false;
+                  return inst.steps.some(s => String(s.assignedTo) === String(myMember.id));
+                });
+
+                if (filteredInstances.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', color: 'var(--color-primary)' }}><Rocket size={64} /></div>
+                      <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
+                      <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Selecciona una plantilla e iníciala para comenzar a seguir un proceso en tiempo real.</p>
+                      {user?.role !== 'guest' && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: '1rem', padding: '0.75rem 2rem' }}
+                          onClick={() => {
+                            setLaunchInstanceName('');
+                            setLaunchStartDate(new Date().toISOString().split('T')[0]);
+                            setLaunchTemplateId(templates[0]?.id || '');
+                            setShowLaunchModal(true);
+                          }}
+                        >
+                          <Rocket size={18} style={{marginRight:'4px'}} /> Iniciar Primera Ejecución
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                    {filteredInstances.map(inst => {
+                      const total = inst.steps.length;
+                      const completed = inst.steps.filter(s => s.isCompleted).length;
+                      const percentage = Math.round((completed / total) * 100) || 0;
+                      const isOverdue = checkOverdueSteps(inst);
+
+                      return (
+                        <div 
+                          key={inst.id}
+                          className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
+                          onClick={() => setSelectedInstanceId(inst.id)}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: 'pointer' }}
+                        >
+                          <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
                               <h4 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>{inst.instanceName}</h4>
                               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{inst.category}</span>
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Plantilla: {inst.title}</span>
                             </div>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
-                            <button 
-                              onClick={(e) => deleteInstance(inst.id, e)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
+                              <button 
+                                onClick={(e) => deleteInstance(inst.id, e)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        
-                        
-                        {/* Start and End Dates */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          <span>Inicio: {inst.steps[0]?.dueDate ? new Date(inst.steps[0].dueDate).toLocaleDateString() : 'N/A'}</span>
-                          <span>Fin: {inst.steps[inst.steps.length - 1]?.dueDate ? new Date(inst.steps[inst.steps.length - 1].dueDate).toLocaleDateString() : 'N/A'}</span>
-                        </div>
-
-                        <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-
                           
-                          {/* Involved team members initials */}
-                          <div style={{ display: 'flex', marginLeft: 'auto' }}>
-                            {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).slice(0, 3).map((assigneeId, i) => {
-                              const member = teamMembers.find(m => String(m.id) === String(assigneeId));
-                              if (!member) return null;
-                              const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                              return (
-                                <div key={assigneeId} title={member.name} style={{
-                                  width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                          {/* Start and End Dates */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            <span>Inicio: {inst.steps[0]?.dueDate ? new Date(inst.steps[0].dueDate).toLocaleDateString() : 'N/A'}</span>
+                            <span>Fin: {inst.steps[inst.steps.length - 1]?.dueDate ? new Date(inst.steps[inst.steps.length - 1].dueDate).toLocaleDateString() : 'N/A'}</span>
+                          </div>
+
+                          <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {/* Involved team members initials */}
+                            <div style={{ display: 'flex', marginLeft: 'auto' }}>
+                              {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).slice(0, 3).map((assigneeId, i) => {
+                                const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+                                if (!member) return null;
+                                const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                return (
+                                  <div key={assigneeId} title={member.name} style={{
+                                    width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                    border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
+                                  }}>
+                                    {initials}
+                                  </div>
+                                );
+                              })}
+                              {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length > 3 && (
+                                <div style={{
+                                  width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
                                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                  border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
+                                  border: '2px solid white', marginLeft: '-8px', zIndex: 0
                                 }}>
-                                  {initials}
+                                  +{Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length - 3}
                                 </div>
-                              );
-                            })}
-                            {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length > 3 && (
-                              <div style={{
-                                width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                border: '2px solid white', marginLeft: '-8px', zIndex: 0
-                              }}>
-                                +{Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length - 3}
-                              </div>
+                              )}
+                            </div>
+
+                            <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                              {inst.category}
+                            </span>
+                            {isOverdue && (
+                              <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <AlertCircle size={12} /> Demorado
+                              </span>
                             )}
                           </div>
 
-                          <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                            {inst.category}
-                          </span>
-                          {isOverdue && (
-                            <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              <AlertCircle size={12} /> Demorado
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="process-progress-container">
-                          <div className="progress-bar-bg">
-                            <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                          <div className="process-progress-container">
+                            <div className="progress-bar-bg">
+                              <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                            </div>
+                            <span className="progress-percent">{percentage}%</span>
                           </div>
-                          <span className="progress-percent">{percentage}%</span>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           ) : activeTab === 'templates' ? (
             /* Templates View Grid & Popup details Modal */
@@ -3200,7 +3323,6 @@ const handleDeleteMember = async (id) => {
 
       </div>
 
-      {/* Active Execution Modal */}
       <ActiveExecutionModal
         isOpen={!!(selectedInstanceId && activeInstance)}
         onClose={() => setSelectedInstanceId(null)}
@@ -3209,6 +3331,8 @@ const handleDeleteMember = async (id) => {
         checkOverdueSteps={checkOverdueSteps}
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
+        handleUpdateStepComments={handleUpdateStepComments}
+        currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}
       />

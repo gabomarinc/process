@@ -21,6 +21,7 @@ export default function Notifications({
   initialNotifications = defaultNotifications,
   icon,
   onNavigate,
+  onCompleteStep,
   user,
   apiUrl
 }) {
@@ -59,7 +60,7 @@ export default function Notifications({
   };
 
   const markAsRead = async (e, id) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     // Optimistic update
     setNotifs(notifs.map(n => n.id === id ? { ...n, read: true } : n));
     if (apiUrl) {
@@ -72,6 +73,37 @@ export default function Notifications({
         });
       } catch (err) {
         console.error('Error marking notification read:', err);
+      }
+    }
+  };
+
+  const requestHelp = async (e, n) => {
+    e.stopPropagation();
+    const instId = n.instance_id || n.instanceId;
+    const sId = n.step_id || n.stepId;
+    const helpMsg = `${user?.name || 'Un compañero'} solicita una mano en: "${n.message || 'Paso'}"`;
+    if (apiUrl) {
+      try {
+        await fetch(`${apiUrl}/notifications`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user?.token || localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            id: `help-notif-${sId}-${Date.now()}`,
+            instanceId: instId,
+            stepId: sId,
+            instanceName: n.instance_name || 'Proceso',
+            stepTitle: n.step_title || 'Paso',
+            message: helpMsg,
+            type: 'alert'
+          })
+        });
+        markAsRead(e, n.id);
+        alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+      } catch (err) {
+        console.error('Error requesting help:', err);
       }
     }
   };
@@ -115,45 +147,74 @@ export default function Notifications({
             No tienes notificaciones
           </DropdownMenuItem>
         ) : (
-          notifs.map((n) => (
-            <DropdownMenuItem
-              key={n.id}
-              className={`radix-notif-item ${n.read ? "read" : "unread"}`}
-            >
-              <div 
-                style={{ display: 'flex', gap: '0.75rem', flexGrow: 1 }} 
-                onClick={() => onNavigate && onNavigate(n)}
+          notifs.map((n) => {
+            const instId = n.instance_id || n.instanceId;
+            const stepId = n.step_id || n.stepId;
+            return (
+              <DropdownMenuItem
+                key={n.id}
+                className={`radix-notif-item ${n.read ? "read" : "unread"}`}
+                style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}
               >
-                <div className="radix-notif-item-icon">{getIcon(n.type)}</div>
-                <div className="radix-notif-item-body">
-                  <span className="radix-notif-item-message">{n.message}</span>
-                  {n.timestamp && (
-                    <span className="radix-notif-item-time">{new Date(n.timestamp).toLocaleString()}</span>
-                  )}
-                </div>
-              </div>
-              
-              <div className="radix-notif-actions">
-                {!n.read && (
-                  <button 
-                    className="radix-notif-action-btn success" 
-                    onClick={(e) => markAsRead(e, n.id)}
-                    title="Marcar como leída"
+                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                  <div 
+                    style={{ display: 'flex', gap: '0.75rem', flexGrow: 1 }} 
+                    onClick={() => onNavigate && onNavigate(n)}
                   >
-                    <Check size={14} />
-                  </button>
-                )}
-                <button 
-                  className="radix-notif-action-btn" 
-                  onClick={(e) => deleteNotif(e, n.id)}
-                  title="Eliminar"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+                    <div className="radix-notif-item-icon">{getIcon(n.type)}</div>
+                    <div className="radix-notif-item-body">
+                      <span className="radix-notif-item-message">{n.message}</span>
+                      {n.timestamp && (
+                        <span className="radix-notif-item-time">{new Date(n.timestamp).toLocaleString()}</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="radix-notif-actions" style={{ flexShrink: 0 }}>
+                    {!n.read && (
+                      <button 
+                        className="radix-notif-action-btn success" 
+                        onClick={(e) => markAsRead(e, n.id)}
+                        title="Marcar como leída"
+                      >
+                        <Check size={14} />
+                      </button>
+                    )}
+                    <button 
+                      className="radix-notif-action-btn" 
+                      onClick={(e) => deleteNotif(e, n.id)}
+                      title="Eliminar"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
 
-            </DropdownMenuItem>
-          ))
+                {instId && stepId && !n.read && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px', marginLeft: '2.25rem' }} onClick={e => e.stopPropagation()}>
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (onCompleteStep) {
+                          await onCompleteStep(instId, stepId);
+                        }
+                        markAsRead(e, n.id);
+                      }}
+                      style={{ background: '#e8f7f5', color: '#27bea7', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Sí, listo
+                    </button>
+                    <button 
+                      onClick={(e) => requestHelp(e, n)}
+                      style={{ background: '#fdf3f2', color: '#b58b53', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      No, necesito ayuda
+                    </button>
+                  </div>
+                )}
+              </DropdownMenuItem>
+            );
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>
