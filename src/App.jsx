@@ -20,6 +20,7 @@ import {
   Sparkles, 
   Calendar, 
   Smile, 
+  MessageSquare,
   Check, 
   Clock,
   FileCheck,
