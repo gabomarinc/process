@@ -598,7 +598,10 @@ ${stepsContext}
 El usuario tiene la siguiente pregunta o duda sobre este proceso:
 "${userMsg}"
 
-Responde de forma concisa, profesional, clara y directa. Sin adornos exagerados, centrado en ayudarle a completar el proceso.`;
+REQUISITOS OBLIGATORIOS DE RESPUESTA:
+1. Responde de forma muy concisa, clara, directa y profesional. Sin introducciones, rodeos, ni textos largos de relleno. Ve directo al grano.
+2. Evita adjetivos exagerados o adornos.
+3. NO uses formato markdown bajo ninguna circunstancia. No utilices asteriscos (* o **) ni guiones para resaltar palabras. Usa texto plano limpio y saltos de línea estándar para separar las ideas.`;
 
     try {
       const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
@@ -612,7 +615,8 @@ Responde de forma concisa, profesional, clara y directa. Sin adornos exagerados,
 
       const data = await response.json();
       const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No pude obtener una respuesta de guía en este momento.';
-      setChatMessages(prev => [...prev, { sender: 'ai', text: aiText }]);
+      const cleanText = aiText.replace(/\*\*/g, '').replace(/\*/g, '');
+      setChatMessages(prev => [...prev, { sender: 'ai', text: cleanText }]);
     } catch (err) {
       console.error("Error querying chat assistant:", err);
       setChatMessages(prev => [...prev, { sender: 'ai', text: 'Lo siento, hubo un error de red al consultar al asistente.' }]);
