@@ -146,6 +146,23 @@ function App() {
     return () => { window.fetch = originalFetch; };
   }, []);
 
+  useEffect(() => {
+    // Automatically ask for permission if not set yet and user is logged in
+    if (user && "Notification" in window && Notification.permission === 'default' && localStorage.getItem('browser_notifications_enabled') === null) {
+      const timer = setTimeout(async () => {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setBrowserNotifications(true);
+          localStorage.setItem('browser_notifications_enabled', 'true');
+          new Notification("Kônsul", { body: "Notificaciones de Kônsul activadas.", icon: '/favicon.ico' });
+        } else {
+          localStorage.setItem('browser_notifications_enabled', 'false');
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -233,6 +250,18 @@ function App() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [browserNotifications, setBrowserNotifications] = useState(() => {
+    return localStorage.getItem('browser_notifications_enabled') === 'true';
+  });
+
+  const triggerBrowserNotification = (msg) => {
+    if (localStorage.getItem('browser_notifications_enabled') === 'true' && "Notification" in window && Notification.permission === 'granted') {
+      new Notification("Kônsul", {
+        body: msg,
+        icon: '/favicon.ico'
+      });
+    }
+  };
 
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -417,6 +446,7 @@ function App() {
                 { ...newLog, time: new Date().toISOString() },
                 ...prev
               ]);
+              triggerBrowserNotification(newLog.message);
 
               // Write to Neon DB
               try {
@@ -652,6 +682,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         };
 
         setNotificationLogs(prev => [newLog, ...prev]);
+        triggerBrowserNotification(message);
 
         try {
           await fetch('/api/notifications', {
@@ -3686,6 +3717,46 @@ const handleDeleteMember = async (id) => {
                       }
                     </select>
                   </div>
+                </div>
+              </div>
+
+              {/* Notificaciones del Navegador config */}
+              <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px dashed rgba(0,0,0,0.1)' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.95rem', display: 'block', marginBottom: '0.25rem', color: 'var(--color-primary)' }}>Notificaciones del Sistema</label>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>Activa las alertas del navegador para recibir avisos de tus tareas pendientes.</p>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    type="checkbox"
+                    id="browser-notifs-toggle"
+                    checked={browserNotifications}
+                    onChange={async (e) => {
+                      const checked = e.target.checked;
+                      if (checked) {
+                        if (!("Notification" in window)) {
+                          alert("Este navegador no soporta notificaciones de escritorio.");
+                          return;
+                        }
+                        const permission = await Notification.requestPermission();
+                        if (permission === 'granted') {
+                          setBrowserNotifications(true);
+                          localStorage.setItem('browser_notifications_enabled', 'true');
+                          new Notification("Kônsul", { body: "¡Notificaciones activadas con éxito!", icon: '/favicon.ico' });
+                        } else {
+                          alert("Permiso denegado por el navegador. Habilítalo en la configuración de la barra de direcciones.");
+                          setBrowserNotifications(false);
+                          localStorage.setItem('browser_notifications_enabled', 'false');
+                        }
+                      } else {
+                        setBrowserNotifications(false);
+                        localStorage.setItem('browser_notifications_enabled', 'false');
+                      }
+                    }}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="browser-notifs-toggle" style={{ fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                    Activar Notificaciones Push del Navegador
+                  </label>
                 </div>
               </div>
 
