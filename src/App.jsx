@@ -3327,15 +3327,20 @@ const handleDeleteMember = async (id) => {
             {/* List based on active tab */}
             <div className="card-section">
               {activeTab === 'instances' ? (
-                <div>
-                  <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '1rem', margin: '0 0 0.5rem 0' }}>
-                    <Sparkles size={16} className="text-primary" /> Asistente de Guía de Procesos
-                  </h3>
+                <div style={{ background: 'linear-gradient(135deg, #ffffff 0%, #FAF8F5 100%)', borderRadius: '12px', padding: '1rem', border: '1px solid rgba(181, 139, 83, 0.15)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '1px dashed rgba(181, 139, 83, 0.15)' }}>
+                    <div style={{ background: '#FFF7ED', color: 'var(--color-primary)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Sparkles size={16} />
+                    </div>
+                    <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', margin: 0, fontWeight: 'bold', color: 'var(--text-main)' }}>
+                      Asistente de Procesos
+                    </h3>
+                  </div>
                   
                   {!chatTemplateId ? (
                     <div>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                        Selecciona uno de tus procesos organizacionales para consultar detalles, plazos, guías de Gemini o resolver cualquier duda:
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
+                        ¿Tienes dudas sobre cómo ejecutar un paso o las pautas de un flujo? Selecciona el proceso para iniciar tu guía interactiva:
                       </p>
                       <select
                         value={chatTemplateId}
@@ -3349,7 +3354,7 @@ const handleDeleteMember = async (id) => {
                             ]);
                           }
                         }}
-                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #ebd8c0', fontSize: '0.85rem', outline: 'none' }}
+                        style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '8px', border: '1px solid #ebd8c0', fontSize: '0.85rem', outline: 'none', background: 'white', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit' }}
                       >
                         <option value="">-- Seleccionar Proceso --</option>
                         {templates.map(t => (
@@ -3359,30 +3364,31 @@ const handleDeleteMember = async (id) => {
                     </div>
                   ) : (
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary-hover)' }}>
-                          Consultando: {templates.find(t => t.id === chatTemplateId)?.title}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', background: '#FDFCFB', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(181, 139, 83, 0.08)' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary-hover)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }} title={templates.find(t => t.id === chatTemplateId)?.title}>
+                          📖 {templates.find(t => t.id === chatTemplateId)?.title}
                         </span>
                         <button
                           onClick={() => { setChatTemplateId(''); setChatMessages([]); }}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', padding: 0 }}
                         >
-                          Cambiar proceso
+                          Cambiar
                         </button>
                       </div>
 
-                      <div style={{ height: '180px', overflowY: 'auto', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: '#faf9f8', marginBottom: '0.5rem' }}>
+                      <div style={{ height: '180px', overflowY: 'auto', border: '1px solid rgba(181, 139, 83, 0.1)', borderRadius: '10px', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', background: 'rgba(255, 255, 255, 0.5)', marginBottom: '0.6rem', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.01)' }}>
                         {chatMessages.map((msg, idx) => (
                           <div key={idx} style={{
-                            padding: '6px 10px',
-                            borderRadius: '12px',
+                            padding: '8px 12px',
+                            borderRadius: msg.sender === 'user' ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
                             fontSize: '0.75rem',
                             maxWidth: '85%',
                             lineHeight: 1.4,
                             alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                            background: msg.sender === 'user' ? 'var(--color-primary)' : 'white',
+                            background: msg.sender === 'user' ? 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)' : 'white',
                             color: msg.sender === 'user' ? 'white' : 'var(--text-main)',
-                            border: msg.sender === 'user' ? 'none' : '1px solid rgba(0,0,0,0.05)',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                            border: msg.sender === 'user' ? 'none' : '1px solid rgba(181,139,83,0.08)',
                             whiteSpace: 'pre-wrap',
                             textAlign: 'left'
                           }}>
@@ -3390,30 +3396,30 @@ const handleDeleteMember = async (id) => {
                           </div>
                         ))}
                         {isChatLoading && (
-                          <div style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: '12px', background: 'white', border: '1px solid rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite' }} />
-                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.2s' }} />
-                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--text-muted)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.4s' }} />
+                          <div style={{ alignSelf: 'flex-start', padding: '8px 12px', borderRadius: '14px 14px 14px 2px', background: 'white', border: '1px solid rgba(181,139,83,0.08)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite' }} />
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.2s' }} />
+                            <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 1s infinite 0.4s' }} />
                           </div>
                         )}
                       </div>
 
-                      <form onSubmit={handleSendChatMessage} style={{ display: 'flex', gap: '4px' }}>
+                      <form onSubmit={handleSendChatMessage} style={{ display: 'flex', gap: '6px' }}>
                         <input
                           type="text"
-                          placeholder="Pregúntale a la IA sobre el proceso..."
+                          placeholder="Pregúntale a la IA..."
                           value={chatInput}
                           onChange={e => setChatInput(e.target.value)}
                           disabled={isChatLoading || !apiKey}
-                          style={{ flex: 1, padding: '6px 10px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #ebd8c0', outline: 'none' }}
+                          style={{ flex: 1, padding: '8px 12px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #ebd8c0', outline: 'none', background: 'white', transition: 'all 0.2s' }}
                         />
                         <button 
                           type="submit" 
                           className="btn btn-primary" 
                           disabled={isChatLoading || !apiKey}
-                          style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px' }}
+                          style={{ padding: '8px 14px', fontSize: '0.75rem', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', border: 'none', fontWeight: 600 }}
                         >
-                          Preguntar
+                          Enviar
                         </button>
                       </form>
                     </div>
