@@ -3945,6 +3945,46 @@ const handleDeleteMember = async (id) => {
         onClose={() => setPreviewTemplate(null)}
         onSave={handleSavePreview}
       />
+      {/* Toast Notification Container */}
+      <div style={{
+        position: 'fixed',
+        top: '24px',
+        right: '24px',
+        zIndex: 100000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        maxWidth: '350px',
+        pointerEvents: 'none'
+      }}>
+        {toasts.map(t => (
+          <div 
+            key={t.id} 
+            style={{
+              pointerEvents: 'auto',
+              background: 'white',
+              borderLeft: t.type === 'warning' ? '4px solid #f59e0b' : t.type === 'success' ? '4px solid #10b981' : '4px solid var(--color-primary)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+              animation: 'slideInRight 0.3s ease-out',
+              border: '1px solid rgba(0,0,0,0.04)'
+            }}
+          >
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 500, lineHeight: 1.4 }}>{t.message}</span>
+            <button 
+              onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
