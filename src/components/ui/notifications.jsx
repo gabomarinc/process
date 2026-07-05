@@ -23,7 +23,8 @@ export default function Notifications({
   onNavigate,
   onCompleteStep,
   user,
-  apiUrl
+  apiUrl,
+  addToast
 }) {
   const [notifs, setNotifs] = useState(initialNotifications);
 
@@ -101,7 +102,7 @@ export default function Notifications({
           })
         });
         markAsRead(e, n.id);
-        alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+        if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
       } catch (err) {
         console.error('Error requesting help:', err);
       }

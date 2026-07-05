@@ -250,11 +250,21 @@ function App() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
   const [browserNotifications, setBrowserNotifications] = useState(() => {
     return localStorage.getItem('browser_notifications_enabled') === 'true';
   });
 
   const triggerBrowserNotification = (msg) => {
+    addToast(msg, 'info');
     if (localStorage.getItem('browser_notifications_enabled') === 'true' && "Notification" in window && Notification.permission === 'granted') {
       new Notification("Kônsul", {
         body: msg,
@@ -2093,7 +2103,7 @@ const handleDeleteMember = async (id) => {
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
             <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Notifications user={user} apiUrl="/api" onNavigate={(n) => { const instId = n.instance_id || n.instanceId; if (instId) setSelectedInstanceId(instId); }} onCompleteStep={handleStepComplete} />
+              <Notifications user={user} apiUrl="/api" onNavigate={(n) => { const instId = n.instance_id || n.instanceId; if (instId) setSelectedInstanceId(instId); }} onCompleteStep={handleStepComplete} addToast={addToast} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
                   className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
@@ -3468,6 +3478,7 @@ const handleDeleteMember = async (id) => {
         currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}
+        addToast={addToast}
       />
 
 

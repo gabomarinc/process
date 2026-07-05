@@ -12,7 +12,8 @@ export const ActiveExecutionModal = ({
   handleUpdateStepComments,
   currentUser,
   fileStore = {},
-  setFileStore
+  setFileStore,
+  addToast
 }) => {
   const [isFocusMode, setIsFocusMode] = useState(true);
   const [commentingStepId, setCommentingStepId] = useState(null);
@@ -492,7 +493,7 @@ export const ActiveExecutionModal = ({
                                               type: 'alert'
                                             })
                                           });
-                                          alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                          if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                         } catch (err) {
                                           console.error("Error al pedir ayuda:", err);
                                         }
@@ -570,7 +571,7 @@ export const ActiveExecutionModal = ({
                                               type: 'alert'
                                             })
                                           });
-                                          alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                          if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                         } catch (err) {
                                           console.error("Error al pedir ayuda:", err);
                                         }
@@ -827,7 +828,7 @@ export const ActiveExecutionModal = ({
                                                  type: 'alert'
                                                })
                                              });
-                                             alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                             if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                            } catch (err) {
                                              console.error("Error al pedir ayuda:", err);
                                            }
@@ -901,7 +902,7 @@ export const ActiveExecutionModal = ({
                                                  type: 'alert'
                                                })
                                              });
-                                             alert("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.");
+                                             if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                            } catch (err) {
                                              console.error("Error al pedir ayuda:", err);
                                            }
