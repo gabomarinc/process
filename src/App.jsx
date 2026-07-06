@@ -6,6 +6,7 @@ import { MemberModal } from "./components/ui/MemberModal";
 import { AddUserModal } from "./components/ui/AddUserModal";
 import { TemplateDetailsModal } from "./components/ui/TemplateDetailsModal";
 import { ActiveExecutionModal } from "./components/ui/ActiveExecutionModal";
+import { OnDemandModal } from "./components/ui/OnDemandModal";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
@@ -246,6 +247,7 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = React.useRef(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showOnDemandModal, setShowOnDemandModal] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
@@ -3274,8 +3276,8 @@ const handleDeleteMember = async (id) => {
                   <p style={{ color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto 1.5rem auto', fontSize: '0.95rem', lineHeight: '1.6' }}>
                     ¿Necesitas conectar una herramienta específica a Kônsul? Desarrollamos integraciones a la medida de los flujos y procesos de tu negocio.
                   </p>
-                  <a
-                    href="mailto:soporte@konsul.digital?subject=Solicitud de Integracion On Demand"
+                  <button
+                    onClick={() => setShowOnDemandModal(true)}
                     className="btn btn-primary"
                     style={{
                       borderRadius: '30px',
@@ -3284,11 +3286,12 @@ const handleDeleteMember = async (id) => {
                       alignItems: 'center',
                       gap: '8px',
                       fontWeight: '600',
-                      textDecoration: 'none'
+                      border: 'none',
+                      cursor: 'pointer'
                     }}
                   >
                     Solicitar Integración
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
@@ -4804,6 +4807,11 @@ const handleDeleteMember = async (id) => {
           </div>
         ))}
       </div>
+
+      <OnDemandModal
+        isOpen={showOnDemandModal}
+        onClose={() => setShowOnDemandModal(false)}
+      />
     </div>
   );
 }

@@ -1375,6 +1375,43 @@ app.put('/api/organization/clickup', authenticateToken, async (req, res) => {
   }
 });
 
+// Submit On Demand Integration Request
+app.post('/api/ondemand-request', authenticateToken, async (req, res) => {
+  const { toolName, useCase } = req.body;
+  
+  if (!toolName || !useCase) {
+    return res.status(400).json({ error: 'Faltan campos requeridos.' });
+  }
+
+  try {
+    const userEmail = req.user.email;
+    
+    // Optional: fetch user name from db
+    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+    const userName = userRes.rows.length > 0 ? userRes.rows[0].name : 'Usuario';
+    
+    const htmlContent = `
+      <div style="font-family: sans-serif; padding: 20px;">
+        <h2 style="color: #27bea7;">Nueva Solicitud de Integración On Demand</h2>
+        <p><strong>Usuario:</strong> ${userName} (${userEmail})</p>
+        <p><strong>Herramienta a conectar:</strong> ${toolName}</p>
+        <p><strong>Caso de uso:</strong> ${useCase}</p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: 'somos@konsul.digital',
+      subject: 'Solicitud de Integración On Demand - Kônsul',
+      html: htmlContent
+    });
+
+    res.json({ message: 'Solicitud enviada con éxito. Nos pondremos en contacto pronto.' });
+  } catch (err) {
+    console.error('Error al enviar solicitud on demand:', err);
+    res.status(500).json({ error: 'Error al enviar la solicitud.' });
+  }
+});
+
 // Get ClickUp Workspaces/Teams
 app.get('/api/integrations/clickup/teams', authenticateToken, async (req, res) => {
   try {
