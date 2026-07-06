@@ -4487,6 +4487,7 @@ const handleDeleteMember = async (id) => {
                         style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
+                        <option value="">-- Seleccionar Carpeta --</option>
                         <option value="folderless">-- Listas sin Carpeta --</option>
                         {clickupFolders.map(f => (
                           <option key={f.id} value={f.id}>{f.name}</option>
