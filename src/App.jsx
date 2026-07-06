@@ -4134,7 +4134,7 @@ const handleDeleteMember = async (id) => {
       />
 
       <Dialog open={showClickupModal} onOpenChange={setShowClickupModal}>
-        <DialogContent style={{ padding: '0', display: 'flex', flexDirection: 'column', gap: 0, width: '100%', maxWidth: '42rem', maxHeight: '90vh' }}>
+        <DialogContent style={{ padding: '0', display: 'flex', flexDirection: 'column', gap: 0, width: '100%', maxWidth: '48rem', maxHeight: '90vh' }}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <DialogTitle style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4142,7 +4142,7 @@ const handleDeleteMember = async (id) => {
                 Configuración de ClickUp
               </DialogTitle>
               <DialogDescription style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Sigue la guía para conectar ClickUp a Kônsul y automatizar tus procesos.
+                Conecta ClickUp y configura las reglas de automatización para tus procesos.
               </DialogDescription>
             </div>
             <DialogClose asChild>
@@ -4155,145 +4155,192 @@ const handleDeleteMember = async (id) => {
           <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             
             {/* Guide Step-by-Step */}
-            <div style={{ backgroundColor: 'rgba(123, 104, 238, 0.05)', border: '1px solid rgba(123, 104, 238, 0.15)', borderRadius: '12px', padding: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.5rem 0', color: '#6050dc', fontSize: '0.9rem', fontWeight: 700 }}>Guía de Conexión</h4>
-              <ol style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.8rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ backgroundColor: 'rgba(123, 104, 238, 0.05)', border: '1px solid rgba(123, 104, 238, 0.15)', borderRadius: '12px', padding: '1.25rem' }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#6050dc', fontSize: '0.9rem', fontWeight: 700 }}>Guía de Conexión rápida</h4>
+              <ol style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.85rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <li>Inicia sesión en tu cuenta de ClickUp.</li>
                 <li>Ve a <strong>Configuración &gt; Apps</strong> y localiza la sección <strong>API Token</strong>.</li>
-                <li>Haz clic en <strong>Generate</strong>, copia el token pk_... y pégalo abajo.</li>
-                <li>Prueba la conexión y guarda el token para activar las automatizaciones.</li>
+                <li>Haz clic en <strong>Generate</strong>, copia el token `pk_...` y pégalo abajo para validar la conexión.</li>
               </ol>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-              {/* Form de Conexión */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <h4 style={{ margin: '0', fontSize: '0.95rem', fontWeight: 700 }}>1. Conexión de API</h4>
-                <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Personal API Token</label>
-                    <input 
-                      type="password" 
-                      className="form-input" 
-                      placeholder="pk_..." 
-                      value={clickupToken} 
-                      onChange={(e) => setClickupToken(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ flex: 1 }} disabled={isTestingClickup}>
-                      {isTestingClickup ? 'Probando...' : 'Probar'}
-                    </button>
-                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                      Guardar
-                    </button>
-                  </div>
-                </form>
+            {/* API Connection Section (Full width, cleaner) */}
+            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', backgroundColor: 'white' }}>
+              <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Key size={18} style={{ color: 'var(--color-primary)' }} />
+                1. Conexión de API con ClickUp
+              </h4>
+              <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ flex: 1, minWidth: '250px', margin: 0 }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Personal API Token</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    placeholder="pk_..." 
+                    value={clickupToken} 
+                    onChange={(e) => setClickupToken(e.target.value)} 
+                    required 
+                    style={{ margin: 0, height: '42px' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', width: 'auto' }}>
+                  <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }} disabled={isTestingClickup}>
+                    {isTestingClickup ? 'Probando...' : 'Probar Conexión'}
+                  </button>
+                  <button type="submit" className="btn btn-primary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                    Guardar Token
+                  </button>
+                </div>
+              </form>
 
-                {clickupConnectionStatus && (
-                  <div style={{ 
-                    backgroundColor: clickupConnectionStatus.success ? '#e8f5e9' : '#ffebee',
-                    color: clickupConnectionStatus.success ? '#2e7d32' : '#c62828',
-                    padding: '10px',
-                    borderRadius: '8px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600
-                  }}>
-                    {clickupConnectionStatus.message}
-                  </div>
-                )}
-              </div>
+              {clickupConnectionStatus && (
+                <div style={{ 
+                  backgroundColor: clickupConnectionStatus.success ? '#e8f5e9' : '#ffebee',
+                  color: clickupConnectionStatus.success ? '#2e7d32' : '#c62828',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  marginTop: '1rem'
+                }}>
+                  {clickupConnectionStatus.message}
+                </div>
+              )}
+            </div>
 
-              {/* Crear Regla */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '1px solid rgba(0,0,0,0.06)', paddingLeft: '1.5rem' }}>
-                <h4 style={{ margin: '0', fontSize: '0.95rem', fontWeight: 700 }}>2. Crear Regla</h4>
-                <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div className="form-group">
-                    <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Nombre de la Regla</label>
+            {/* Rule Builder Section (Sentence format, well structured) */}
+            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', backgroundColor: 'white' }}>
+              <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Zap size={18} style={{ color: 'var(--color-primary)' }} />
+                2. Configurar Reglas de Automatización
+              </h4>
+              <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Nombre de la Regla</label>
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="Ej. Iniciar Onboarding" 
+                      placeholder="Ej. Iniciar Flujo Onboarding" 
                       value={newClickupRule.ruleName} 
                       onChange={(e) => setNewClickupRule({ ...newClickupRule, ruleName: e.target.value })} 
                       required 
+                      style={{ height: '38px' }}
                     />
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>ClickUp List ID</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        placeholder="Ej. 9012015024" 
-                        value={newClickupRule.clickupListId} 
-                        onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListId: e.target.value })} 
-                        required 
-                      />
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Nombre Lista</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        placeholder="Ej. Ventas" 
-                        value={newClickupRule.clickupListName} 
-                        onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListName: e.target.value })} 
-                        required 
-                      />
-                    </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Nombre de la Lista (Referencia)</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Ej. Ventas Cerradas" 
+                      value={newClickupRule.clickupListName} 
+                      onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListName: e.target.value })} 
+                      required 
+                      style={{ height: '38px' }}
+                    />
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Estado</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        placeholder="Ej. closed" 
-                        value={newClickupRule.clickupStatus} 
-                        onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })} 
-                        required 
-                      />
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Plantilla</label>
-                      <select 
-                        className="form-input" 
-                        value={newClickupRule.templateId} 
-                        onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })} 
-                        required
-                      >
-                        <option value="">-- Elegir --</option>
-                        {templates.map(t => (
-                          <option key={t.id} value={t.id}>{t.title}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', width: '100%' }}>
-                    Agregar Regla
-                  </button>
-                </form>
-              </div>
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  backgroundColor: 'white',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(0,0,0,0.04)',
+                  fontSize: '0.85rem',
+                  color: 'var(--text-main)',
+                  lineHeight: '2.2rem'
+                }}>
+                  <span>Cuando una tarea cambie al estado</span>
+                  <select 
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontWeight: 600,
+                      outline: 'none',
+                      backgroundColor: '#f3f4f6',
+                      height: '34px',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                    value={newClickupRule.clickupStatus} 
+                    onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })}
+                  >
+                    <option value="closed">cerrado (closed)</option>
+                    <option value="done">listo (done)</option>
+                    <option value="in progress">en progreso (in progress)</option>
+                    <option value="to do">por hacer (to do)</option>
+                  </select>
+                  <span>dentro de la lista ClickUp con ID</span>
+                  <input 
+                    type="text"
+                    placeholder="Ej. 9012015024"
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      width: '140px',
+                      fontWeight: 600,
+                      textAlign: 'center',
+                      outline: 'none',
+                      height: '34px',
+                      fontSize: '0.85rem'
+                    }}
+                    value={newClickupRule.clickupListId} 
+                    onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListId: e.target.value })}
+                    required 
+                  />
+                  <span>disparar la plantilla de Kônsul</span>
+                  <select 
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontWeight: 600,
+                      outline: 'none',
+                      backgroundColor: '#f3f4f6',
+                      height: '34px',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                    value={newClickupRule.templateId} 
+                    onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })}
+                    required
+                  >
+                    <option value="">-- Seleccionar Plantilla --</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', padding: '0.65rem 2rem', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                  Agregar Regla
+                </button>
+              </form>
             </div>
 
             {/* Listado de Reglas Activas */}
-            <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '1rem' }}>
-              <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: 700 }}>Reglas Activas</h4>
+            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', backgroundColor: 'white' }}>
+              <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 700 }}>Reglas de Automatización Activas</h4>
               {clickupRules.length === 0 ? (
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No hay reglas de automatización configuradas.</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No hay reglas de automatización configuradas.</p>
               ) : (
-                <div style={{ overflowX: 'auto', maxHeight: '180px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                <div style={{ overflowX: 'auto', maxHeight: '250px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)' }}>
-                        <th style={{ padding: '6px' }}>Nombre</th>
-                        <th style={{ padding: '6px' }}>Lista</th>
-                        <th style={{ padding: '6px' }}>Activador</th>
-                        <th style={{ padding: '6px' }}>Plantilla</th>
-                        <th style={{ padding: '6px' }}>Aprobación</th>
-                        <th style={{ padding: '6px', textAlign: 'right' }}>Acción</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600 }}>Nombre</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600 }}>Lista ClickUp</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600 }}>Activador</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600 }}>Plantilla</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600 }}>Aprobación</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4301,41 +4348,41 @@ const handleDeleteMember = async (id) => {
                         const associatedTemplate = templates.find(t => t.id === rule.templateId);
                         return (
                           <tr key={rule.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                            <td style={{ padding: '6px', fontWeight: 600 }}>{rule.ruleName}</td>
-                            <td style={{ padding: '6px' }}>{rule.clickupListName}</td>
-                            <td style={{ padding: '6px' }}><span className="badge badge-secondary">{rule.clickupStatus}</span></td>
-                            <td style={{ padding: '6px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
-                            <td style={{ padding: '6px' }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 600 }}>{rule.ruleName}</td>
+                            <td style={{ padding: '10px 12px' }}>{rule.clickupListName} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({rule.clickupListId})</span></td>
+                            <td style={{ padding: '10px 12px' }}><span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: '0.75rem' }}>{rule.clickupStatus}</span></td>
+                            <td style={{ padding: '10px 12px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
+                            <td style={{ padding: '10px 12px' }}>
                               <span 
                                 className={`badge ${(!rule.status || rule.status === 'approved') ? 'success' : rule.status === 'rejected' ? 'danger' : 'warning'}`}
-                                style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem' }}
+                                style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}
                               >
                                 {(!rule.status || rule.status === 'approved') ? 'Aprobada' : rule.status === 'rejected' ? 'Rechazada' : 'Pendiente'}
                               </span>
                             </td>
-                            <td style={{ padding: '6px', textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', gap: '4px' }}>
+                            <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
                                 {user?.role === 'admin' && rule.status === 'pending_approval' && (
                                   <>
                                     <button 
                                       className="btn btn-secondary" 
-                                      style={{ padding: '2px 6px', fontSize: '0.7rem', backgroundColor: 'rgba(76,175,80,0.1)', color: '#2e7d32', border: 'none', fontWeight: 600, borderRadius: '4px' }} 
+                                      style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(76,175,80,0.1)', color: '#2e7d32', border: 'none', fontWeight: 600, borderRadius: '4px' }} 
                                       onClick={() => handleUpdateClickupRuleStatus(rule.id, 'approved')}
                                     >
-                                      ✓
+                                      Aprobar
                                     </button>
                                     <button 
                                       className="btn btn-secondary" 
-                                      style={{ padding: '2px 6px', fontSize: '0.7rem', backgroundColor: 'rgba(244,67,54,0.1)', color: '#c62828', border: 'none', fontWeight: 600, borderRadius: '4px' }} 
+                                      style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(244,67,54,0.1)', color: '#c62828', border: 'none', fontWeight: 600, borderRadius: '4px' }} 
                                       onClick={() => handleUpdateClickupRuleStatus(rule.id, 'rejected')}
                                     >
-                                      ✗
+                                      Rechazar
                                     </button>
                                   </>
                                 )}
                                 <button 
                                   className="btn btn-danger" 
-                                  style={{ padding: '2px 6px', fontSize: '0.7rem' }} 
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
                                   onClick={() => handleDeleteClickupRule(rule.id)}
                                 >
                                   Eliminar
