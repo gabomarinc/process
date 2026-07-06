@@ -130,6 +130,7 @@ export const AddUserModal = ({
                     className="custom-wizard-input"
                   >
                     <option value="agent">Agente (Miembro de equipo)</option>
+                    <option value="gerente">Gerente (Aprobación de plantillas requerida)</option>
                     <option value="guest">Invitado (Cliente o Proveedor)</option>
                   </select>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', marginBlockEnd: 0 }}>

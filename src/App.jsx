@@ -168,6 +168,12 @@ function App() {
     }
   }, [user, showAlert]);
 
+  useEffect(() => {
+    if (user && user.role !== 'admin' && user.role !== 'gerente') {
+      setDashboardViewMode('focus');
+    }
+  }, [user]);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -865,6 +871,26 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     }
   };
 
+  const handleUpdateClickupRuleStatus = async (ruleId, newStatus) => {
+    setSettingsSuccessMsg('');
+    setSettingsErrorMsg('');
+    try {
+      const res = await fetch(`/api/integrations/clickup/rules/${ruleId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'No se pudo cambiar el estado de la regla.');
+      }
+      setClickupRules(prev => prev.map(r => r.id === ruleId ? { ...r, status: newStatus } : r));
+      setSettingsSuccessMsg(`Estado de regla ClickUp cambiado a ${newStatus === 'approved' ? 'aprobada' : 'rechazada'}.`);
+    } catch (err) {
+      setSettingsErrorMsg(err.message);
+    }
+  };
+
   const handleAddOrgUser = async (e) => {
     e.preventDefault();
     setAddUserError('');
@@ -1172,6 +1198,26 @@ const handleDeleteMember = async (id) => {
       });
     } catch (err) {
       console.error("Error al eliminar la plantilla en Neon:", err);
+    }
+  };
+
+  const handleUpdateTemplateStatus = async (id, newStatus) => {
+    try {
+      const res = await fetch(`/api/templates/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        setTemplates(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+        showAlert(`Plantilla ${newStatus === 'approved' ? 'aprobada' : 'rechazada'} con éxito.`, 'success');
+      } else {
+        const errData = await res.json();
+        showAlert(errData.error || 'Error al actualizar el estado de la plantilla.', 'error');
+      }
+    } catch (err) {
+      console.error("Error al actualizar estado de plantilla:", err);
+      showAlert('Error al conectar con el servidor.', 'error');
     }
   };
 
@@ -2539,8 +2585,8 @@ const handleDeleteMember = async (id) => {
                           <div className="template-card-meta-left">
                             <span>⏱️ {temp.durationDays} {temp.durationDays === 1 ? 'día' : 'días'}</span>
                             <span>•</span>
-                            <span className="status-dot"></span>
-                            <span>Activo</span>
+                            <span className="status-dot" style={{ backgroundColor: temp.status === 'approved' ? '#4caf50' : temp.status === 'rejected' ? '#f44336' : '#ff9800' }}></span>
+                            <span>{temp.status === 'approved' ? 'Activo' : temp.status === 'rejected' ? 'Rechazado' : 'Pendiente'}</span>
                           </div>
                           <button className="dots-menu-btn" onClick={(e) => { e.stopPropagation(); setSelectedTemplateId(temp.id); }}>
                             <MoreHorizontal size={16} />
@@ -2594,21 +2640,47 @@ const handleDeleteMember = async (id) => {
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin asignar</span>
                             )}
                           </div>
-                          <div className="action-circles" style={{ display: 'flex', gap: '8px' }}>
-                            <button 
-                              className="circle-btn blue" 
-                              title="Iniciar Ejecución" 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setSelectedTemplateId(temp.id); 
-                                setLaunchTemplateId(temp.id);
-                                setLaunchModalStep(1);
-                                setShowLaunchModal(true); 
-                              }}
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(39,190,167,0.1)', color: 'var(--color-primary)' }}
-                            >
-                              <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>+</span>
-                            </button>
+                          <div className="action-circles" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {user?.role === 'admin' && temp.status === 'pending_approval' && (
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  title="Aprobar Plantilla"
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    handleUpdateTemplateStatus(temp.id, 'approved'); 
+                                  }}
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(76,175,80,0.1)', color: '#2e7d32', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                                >
+                                  Aprobar
+                                </button>
+                                <button
+                                  title="Rechazar Plantilla"
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    handleUpdateTemplateStatus(temp.id, 'rejected'); 
+                                  }}
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(244,67,54,0.1)', color: '#c62828', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                                >
+                                  Rechazar
+                                </button>
+                              </div>
+                            )}
+                            {(!temp.status || temp.status === 'approved') && (
+                              <button 
+                                className="circle-btn blue" 
+                                title="Iniciar Ejecución" 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  setSelectedTemplateId(temp.id); 
+                                  setLaunchTemplateId(temp.id);
+                                  setLaunchModalStep(1);
+                                  setShowLaunchModal(true); 
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(39,190,167,0.1)', color: 'var(--color-primary)' }}
+                              >
+                                <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>+</span>
+                              </button>
+                            )}
                             <button 
                               className="circle-btn red" 
                               title="Eliminar Plantilla" 
@@ -3196,6 +3268,7 @@ const handleDeleteMember = async (id) => {
                               <th style={{ padding: '8px' }}>Estado Activador</th>
                               <th style={{ padding: '8px' }}>Plantilla Asociada</th>
                               <th style={{ padding: '8px' }}>Estado</th>
+                              <th style={{ padding: '8px' }}>Aprobación</th>
                               <th style={{ padding: '8px', textAlign: 'right' }}>Acciones</th>
                             </tr>
                           </thead>
@@ -3213,14 +3286,42 @@ const handleDeleteMember = async (id) => {
                                       {rule.active ? 'Activa' : 'Inactiva'}
                                     </span>
                                   </td>
-                                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                                    <button 
-                                      className="btn btn-danger" 
-                                      style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
-                                      onClick={() => handleDeleteClickupRule(rule.id)}
+                                  <td style={{ padding: '8px' }}>
+                                    <span 
+                                      className={`badge ${(!rule.status || rule.status === 'approved') ? 'success' : rule.status === 'rejected' ? 'danger' : 'warning'}`}
+                                      style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
                                     >
-                                      Eliminar
-                                    </button>
+                                      {(!rule.status || rule.status === 'approved') ? 'Aprobada' : rule.status === 'rejected' ? 'Rechazada' : 'Pendiente'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                                    <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                                      {user?.role === 'admin' && rule.status === 'pending_approval' && (
+                                        <>
+                                          <button 
+                                            className="btn btn-secondary" 
+                                            style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(76,175,80,0.1)', color: '#2e7d32', border: 'none', cursor: 'pointer', fontWeight: 600, borderRadius: '4px' }} 
+                                            onClick={() => handleUpdateClickupRuleStatus(rule.id, 'approved')}
+                                          >
+                                            Aprobar
+                                          </button>
+                                          <button 
+                                            className="btn btn-secondary" 
+                                            style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(244,67,54,0.1)', color: '#c62828', border: 'none', cursor: 'pointer', fontWeight: 600, borderRadius: '4px' }} 
+                                            onClick={() => handleUpdateClickupRuleStatus(rule.id, 'rejected')}
+                                          >
+                                            Rechazar
+                                          </button>
+                                        </>
+                                      )}
+                                      <button 
+                                        className="btn btn-danger" 
+                                        style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
+                                        onClick={() => handleDeleteClickupRule(rule.id)}
+                                      >
+                                        Eliminar
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );

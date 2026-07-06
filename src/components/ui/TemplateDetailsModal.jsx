@@ -88,9 +88,11 @@ export const TemplateDetailsModal = ({
             </div>
             
             <div className="tdm-header-actions">
-              <button onClick={onLaunch} className="tdm-btn-launch">
-                <Rocket size={16} /> Iniciar Ejecución
-              </button>
+              {(!activeTemplate.status || activeTemplate.status === 'approved') && (
+                <button onClick={onLaunch} className="tdm-btn-launch">
+                  <Rocket size={16} /> Iniciar Ejecución
+                </button>
+              )}
               <button onClick={() => onDelete(activeTemplate.id)} className="tdm-btn-delete">
                 <Trash2 size={16} /> Eliminar Plantilla
               </button>

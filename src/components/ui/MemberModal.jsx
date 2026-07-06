@@ -156,7 +156,7 @@ export const MemberModal = ({
                     {orgUsers
                       .filter(u => !teamMembers.some(m => m.email === u.email))
                       .map(u => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.role === 'admin' ? 'Administrador' : 'Agente'})</option>
+                        <option key={u.id} value={u.id}>{u.name} ({u.role === 'admin' ? 'Administrador' : u.role === 'gerente' ? 'Gerente' : 'Agente'})</option>
                       ))
                     }
                   </select>

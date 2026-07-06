@@ -49,10 +49,14 @@ pool.query(`
     clickup_status VARCHAR(100) NOT NULL,
     template_id VARCHAR(100) NOT NULL,
     active BOOLEAN DEFAULT TRUE,
+    status VARCHAR(50) DEFAULT 'approved',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
+
+  ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
+  ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id" y tablas "clients" y "clickup_rules" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status" y tablas "clients" y "clickup_rules" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -272,7 +276,12 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // 1. Get all templates
 app.get('/api/templates', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM templates WHERE organization_id = $1', [req.user.organizationId]);
+    let query = 'SELECT * FROM templates WHERE organization_id = $1';
+    const params = [req.user.organizationId];
+    if (req.user.role !== 'admin' && req.user.role !== 'gerente') {
+      query += " AND status = 'approved'";
+    }
+    const result = await pool.query(query, params);
     const mapped = result.rows.map(row => ({
       id: row.id,
       title: row.title,
@@ -282,7 +291,8 @@ app.get('/api/templates', authenticateToken, async (req, res) => {
       companionAvatar: row.companion_avatar,
       companionGreeting: row.companion_greeting,
       category: row.category,
-      steps: row.steps
+      steps: row.steps,
+      status: row.status || 'approved'
     }));
     res.json(mapped);
   } catch (err) {
@@ -294,13 +304,14 @@ app.get('/api/templates', authenticateToken, async (req, res) => {
 // 2. Create a new template
 app.post('/api/templates', authenticateToken, async (req, res) => {
   const { id, title, description, durationDays, companionName, companionAvatar, companionGreeting, category, steps } = req.body;
+  const status = req.user.role === 'gerente' ? 'pending_approval' : 'approved';
   try {
     await pool.query(
-      `INSERT INTO templates (id, organization_id, title, description, duration_days, companion_name, companion_avatar, companion_greeting, category, steps)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, req.user.organizationId, title, description, durationDays, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps)]
+      `INSERT INTO templates (id, organization_id, title, description, duration_days, companion_name, companion_avatar, companion_greeting, category, steps, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, req.user.organizationId, title, description, durationDays, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status]
     );
-    res.status(201).json({ message: 'Plantilla creada con éxito' });
+    res.status(201).json({ message: 'Plantilla creada con éxito', status });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al guardar la plantilla en la base de datos' });
@@ -311,17 +322,43 @@ app.post('/api/templates', authenticateToken, async (req, res) => {
 app.put('/api/templates/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { title, description, durationDays, companionName, companionAvatar, companionGreeting, category, steps } = req.body;
+  const status = req.user.role === 'gerente' ? 'pending_approval' : 'approved';
   try {
     await pool.query(
       `UPDATE templates 
-       SET title = $1, description = $2, duration_days = $3, companion_name = $4, companion_avatar = $5, companion_greeting = $6, category = $7, steps = $8 
-       WHERE id = $9 AND organization_id = $10`,
-      [title, description, durationDays, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), id, req.user.organizationId]
+       SET title = $1, description = $2, duration_days = $3, companion_name = $4, companion_avatar = $5, companion_greeting = $6, category = $7, steps = $8, status = $9
+       WHERE id = $10 AND organization_id = $11`,
+      [title, description, durationDays, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status, id, req.user.organizationId]
     );
-    res.json({ message: 'Plantilla actualizada con éxito' });
+    res.json({ message: 'Plantilla actualizada con éxito', status });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la plantilla en la base de datos' });
+  }
+});
+
+// Approve/Reject Template
+app.put('/api/templates/:id/status', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Solo administradores pueden cambiar el estado de aprobación.' });
+  }
+  const { id } = req.params;
+  const { status } = req.body; // 'approved' or 'rejected'
+  if (!['approved', 'rejected', 'pending_approval'].includes(status)) {
+    return res.status(400).json({ error: 'Estado inválido' });
+  }
+  try {
+    const result = await pool.query(
+      'UPDATE templates SET status = $1 WHERE id = $2 AND organization_id = $3 RETURNING *',
+      [status, id, req.user.organizationId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Plantilla no encontrada' });
+    }
+    res.json({ message: `Plantilla actualizada a ${status}`, template: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cambiar estado de la plantilla' });
   }
 });
 
@@ -1306,7 +1343,7 @@ app.put('/api/organization/clickup', authenticateToken, async (req, res) => {
 app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
       [req.user.organizationId]
     );
     res.json(result.rows);
@@ -1319,17 +1356,43 @@ app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) =
 // Create Rule
 app.post('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
   const { ruleName, clickupListId, clickupListName, clickupStatus, templateId } = req.body;
+  const status = req.user.role === 'gerente' ? 'pending_approval' : 'approved';
   try {
     const result = await pool.query(
-      `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_status, template_id)
-       VALUES ($1, $2, $3, $4, $5, $6) 
-       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active`,
-      [req.user.organizationId, ruleName, clickupListId, clickupListName, clickupStatus, templateId]
+      `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_status, template_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status`,
+      [req.user.organizationId, ruleName, clickupListId, clickupListName, clickupStatus, templateId, status]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al guardar regla de ClickUp' });
+  }
+});
+
+// Approve/Reject Clickup Rule
+app.put('/api/integrations/clickup/rules/:id/status', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Solo administradores pueden cambiar el estado de aprobación.' });
+  }
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!['approved', 'rejected', 'pending_approval'].includes(status)) {
+    return res.status(400).json({ error: 'Estado inválido' });
+  }
+  try {
+    const result = await pool.query(
+      'UPDATE clickup_rules SET status = $1 WHERE id = $2 AND organization_id = $3 RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status',
+      [status, id, req.user.organizationId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Regla no encontrada' });
+    }
+    res.json({ message: `Regla de ClickUp actualizada a ${status}`, rule: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cambiar estado de la regla' });
   }
 });
 
@@ -1362,7 +1425,7 @@ app.post('/api/webhooks/clickup', async (req, res) => {
       `SELECT DISTINCT o.id, o.clickup_token 
        FROM organizations o
        JOIN clickup_rules r ON o.id = r.organization_id
-       WHERE o.clickup_token IS NOT NULL AND r.active = TRUE`
+       WHERE o.clickup_token IS NOT NULL AND r.active = TRUE AND (r.status = 'approved' OR r.status IS NULL)`
     );
 
     if (activeOrgsRes.rows.length === 0) {
@@ -1397,7 +1460,7 @@ app.post('/api/webhooks/clickup', async (req, res) => {
     // Find rules for this specific listId and status
     const rulesRes = await pool.query(
       `SELECT * FROM clickup_rules 
-       WHERE clickup_list_id = $1 AND LOWER(clickup_status) = LOWER($2) AND active = TRUE`,
+       WHERE clickup_list_id = $1 AND LOWER(clickup_status) = LOWER($2) AND active = TRUE AND (status = 'approved' OR status IS NULL)`,
       [listId, taskStatus]
     );
 
@@ -1408,7 +1471,7 @@ app.post('/api/webhooks/clickup', async (req, res) => {
     for (const rule of rulesRes.rows) {
       // Create a process execution based on the rule's template
       const templateRes = await pool.query(
-        'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
+        "SELECT * FROM templates WHERE id = $1 AND organization_id = $2 AND (status = 'approved' OR status IS NULL)",
         [rule.template_id, rule.organization_id]
       );
 
