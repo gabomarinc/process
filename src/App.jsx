@@ -977,7 +977,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         }
         
         // Update System Role if modified
-        const sysUser = orgUsers.find(u => u.email === newMember.email);
+        const sysUser = orgUsers.find(u => u.email?.toLowerCase() === newMember.email?.toLowerCase());
         if (sysUser && memberFormData.systemRole && memberFormData.systemRole !== sysUser.role) {
           if (user?.role === 'admin' && user?.id !== sysUser.id) {
             try {
@@ -987,8 +987,8 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
                 body: JSON.stringify({ role: memberFormData.systemRole })
               });
               if (roleRes.ok) {
-                 const updatedUser = await roleRes.json();
-                 setOrgUsers(prev => prev.map(u => u.id === sysUser.id ? updatedUser : u));
+                 const data = await roleRes.json();
+                 setOrgUsers(prev => prev.map(u => u.id === sysUser.id ? data.user : u));
               }
             } catch (err) {
               console.error("Error updating system role:", err);
@@ -2926,7 +2926,7 @@ const handleDeleteMember = async (id) => {
                           <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
                             modifiedTemplateIds = new Set();
                             setEditingMember(member);
-                            const sysUser = orgUsers.find(u => u.email === member.email);
+                            const sysUser = orgUsers.find(u => u.email?.toLowerCase() === member.email?.toLowerCase());
                             setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '', systemRole: sysUser ? sysUser.role : '' });
                             setMemberModalStep(1);
                             setShowEditProfileModal(true);
@@ -3921,15 +3921,15 @@ const handleDeleteMember = async (id) => {
                 </div>
 
                 {/* System Role Dropdown (Only visible to admins when a valid system user exists for this email) */}
-                {user?.role === 'admin' && orgUsers.find(u => u.email === memberFormData.email) && (
+                {user?.role === 'admin' && orgUsers.find(u => u.email?.toLowerCase() === memberFormData.email?.toLowerCase()) && (
                   <div className="form-group">
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)' }}>Nivel de Acceso (Sistema)</label>
                     <select
                       className="form-input"
                       value={memberFormData.systemRole || ''}
                       onChange={(e) => setMemberFormData({ ...memberFormData, systemRole: e.target.value })}
-                      disabled={orgUsers.find(u => u.email === memberFormData.email)?.id === user.id}
-                      title={orgUsers.find(u => u.email === memberFormData.email)?.id === user.id ? "No puedes cambiar tu propio rol" : ""}
+                      disabled={orgUsers.find(u => u.email?.toLowerCase() === memberFormData.email?.toLowerCase())?.id === user.id}
+                      title={orgUsers.find(u => u.email?.toLowerCase() === memberFormData.email?.toLowerCase())?.id === user.id ? "No puedes cambiar tu propio rol" : ""}
                     >
                       <option value="admin">Administrador Total</option>
                       <option value="gerente">Gerente (Requiere Aprobación)</option>
