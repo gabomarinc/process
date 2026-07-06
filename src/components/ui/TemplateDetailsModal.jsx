@@ -33,7 +33,7 @@ export const TemplateDetailsModal = ({
       teamMembers.forEach(m => {
         initial[m.id] = (activeTemplate.steps || [])
           .map((s, i) => ({ s, i }))
-          .filter(({ s }) => s && String(s.assignedTo) === String(m.id))
+          .filter(({ s }) => s && (Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(m.id)) : String(s.assignedTo) === String(m.id)))
           .map(({ i }) => i);
       });
       setDraftAssignment(initial);
@@ -112,13 +112,13 @@ export const TemplateDetailsModal = ({
               onClick={() => {
                 setDetailModalTab('team');
                 const initial = {};
-                teamMembers.forEach(m => {
-                  initial[m.id] = activeTemplate.steps
-                    .map((s, i) => ({ s, i }))
-                    .filter(({ s }) => String(s.assignedTo) === String(m.id))
-                    .map(({ i }) => i);
-                });
-                setDraftAssignment(initial);
+                 teamMembers.forEach(m => {
+                   initial[m.id] = activeTemplate.steps
+                     .map((s, i) => ({ s, i }))
+                     .filter(({ s }) => Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(m.id)) : String(s.assignedTo) === String(m.id))
+                     .map(({ i }) => i);
+                 });
+                 setDraftAssignment(initial);
               }}
             >
               <Users size={18} /> Asignación del Equipo
@@ -192,18 +192,37 @@ export const TemplateDetailsModal = ({
                             </div>
 
                             <div className="tdm-form-group">
-                              <label>Responsable Asignado</label>
-                              <select
-                                value={editingStepData.assignedTo || 'none'}
-                                onChange={(e) => setEditingStepData({ ...editingStepData, assignedTo: e.target.value === 'none' ? '' : e.target.value })}
-                              >
-                                <option value="none">-- Sin asignar (Nadie) --</option>
-                                {teamMembers.map(m => (
-                                  <option key={m.id} value={String(m.id)}>
-                                    {m.name} ({m.role})
-                                  </option>
-                                ))}
-                              </select>
+                              <label>Responsables Asignados</label>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid rgba(0,0,0,0.1)', padding: '10px', borderRadius: '8px', maxHeight: '150px', overflowY: 'auto', background: '#fafafa' }}>
+                                {teamMembers.map(m => {
+                                  const currentAssigned = Array.isArray(editingStepData.assignedTo)
+                                    ? editingStepData.assignedTo.map(String)
+                                    : editingStepData.assignedTo ? [String(editingStepData.assignedTo)] : [];
+                                  const isChecked = currentAssigned.includes(String(m.id));
+                                  return (
+                                    <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', margin: 0, padding: '2px 0' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          let updatedList;
+                                          if (e.target.checked) {
+                                            updatedList = [...currentAssigned, String(m.id)];
+                                          } else {
+                                            updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                          }
+                                          setEditingStepData({ ...editingStepData, assignedTo: updatedList });
+                                        }}
+                                        style={{ cursor: 'pointer', margin: 0 }}
+                                      />
+                                      <span style={{ color: 'var(--text-main)' }}>{m.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({m.role})</span></span>
+                                    </label>
+                                  );
+                                })}
+                                {teamMembers.length === 0 && (
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No hay colaboradores registrados.</span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="tdm-form-actions">
@@ -256,17 +275,34 @@ export const TemplateDetailsModal = ({
                                 <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
                               </div>
                               {step.assignedTo && (
-                                <div className="tdm-assignee-tag">
+                                <div className="tdm-assignee-tag" style={{ flexWrap: 'wrap', gap: '6px' }}>
                                   {(() => {
-                                    const member = teamMembers.find(m => String(m.id) === String(step.assignedTo));
-                                    return member ? (
+                                    const assignedList = Array.isArray(step.assignedTo)
+                                      ? step.assignedTo.map(String)
+                                      : [String(step.assignedTo)];
+                                    
+                                    const members = teamMembers.filter(m => assignedList.includes(String(m.id)));
+                                    
+                                    if (members.length === 0) return <span>Asignado</span>;
+                                    
+                                    return (
                                       <>
-                                        <div className="tdm-assignee-avatar">
-                                          {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
+                                        <div style={{ display: 'flex', gap: '-4px', alignItems: 'center' }}>
+                                          {members.map(member => (
+                                            <div key={member.id} className="tdm-assignee-avatar" style={{ marginRight: '-4px', border: '1.5px solid white' }} title={`${member.name} (${member.role})`}>
+                                              {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
+                                            </div>
+                                          ))}
                                         </div>
-                                        <span>Asignado a: <strong>{member.name}</strong> ({member.role})</span>
+                                        <span>
+                                          Asignados: {members.map((m, idx) => (
+                                            <strong key={m.id}>
+                                              {m.name}{idx < members.length - 1 ? ', ' : ''}
+                                            </strong>
+                                          ))}
+                                        </span>
                                       </>
-                                    ) : <span>Asignado</span>;
+                                    );
                                   })()}
                                 </div>
                               )}
@@ -399,13 +435,25 @@ export const TemplateDetailsModal = ({
                               className="tdm-save-btn"
                               onClick={async () => {
                                 const newSteps = stepsList.map((s, sIdx) => {
-                                  if (String(s.assignedTo) === String(member.id)) {
-                                    return { ...s, assignedTo: draftSteps.includes(sIdx) ? member.id : '' };
+                                  const currentAssigned = Array.isArray(s.assignedTo)
+                                    ? s.assignedTo.map(String)
+                                    : s.assignedTo ? [String(s.assignedTo)] : [];
+                                  
+                                  const isCurrentlyAssigned = currentAssigned.includes(String(member.id));
+                                  const shouldBeAssigned = draftSteps.includes(sIdx);
+                                  
+                                  let updatedAssigned;
+                                  if (isCurrentlyAssigned && !shouldBeAssigned) {
+                                    // Remove member from assignment
+                                    updatedAssigned = currentAssigned.filter(id => id !== String(member.id));
+                                  } else if (!isCurrentlyAssigned && shouldBeAssigned) {
+                                    // Add member to assignment
+                                    updatedAssigned = [...currentAssigned, String(member.id)];
+                                  } else {
+                                    updatedAssigned = currentAssigned;
                                   }
-                                  if (draftSteps.includes(sIdx) && !s.assignedTo) {
-                                    return { ...s, assignedTo: member.id };
-                                  }
-                                  return s;
+                                  
+                                  return { ...s, assignedTo: updatedAssigned };
                                 });
                                 await saveTemplate({ ...activeTemplate, steps: newSteps });
                                 onClose();

@@ -502,12 +502,12 @@ function App() {
 
   // Mark step complete in instance
 
-  const handleAssignStepMember = async (instanceId, stepId, memberId) => {
+  const handleAssignStepMember = async (instanceId, stepId, assignedTo) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
     const updatedSteps = inst.steps.map(s => {
       if (s.id !== stepId) return s;
-      return { ...s, assignedTo: memberId };
+      return { ...s, assignedTo: assignedTo };
     });
     setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
     try {
@@ -929,6 +929,22 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       setOrgUsers(prev => prev.filter(u => u.id !== userId));
     } catch (err) {
       showAlert(err.message);
+    }
+  };
+
+  const handleUpdateUserRole = async (userId, newRole) => {
+    try {
+      const res = await fetch(`/api/users/${userId}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al actualizar el rol.');
+      setOrgUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      showAlert('Rol de usuario actualizado con éxito.', 'success');
+    } catch (err) {
+      showAlert(err.message, 'error');
     }
   };
 
@@ -2364,7 +2380,10 @@ const handleDeleteMember = async (id) => {
                     const nextStepIdx = inst.steps.findIndex(s => !s.isCompleted);
                     if (nextStepIdx !== -1) {
                       const activeStep = inst.steps[nextStepIdx];
-                      if (String(activeStep.assignedTo) === String(myMember.id)) {
+                      const isAssigned = Array.isArray(activeStep.assignedTo)
+                        ? activeStep.assignedTo.map(String).includes(String(myMember.id))
+                        : String(activeStep.assignedTo) === String(myMember.id);
+                      if (isAssigned) {
                         myMomentSteps.push({
                           instance: inst,
                           step: activeStep,
@@ -2434,7 +2453,7 @@ const handleDeleteMember = async (id) => {
                   if (selectedClientFilter && getClientForInstance(inst, clients) !== selectedClientFilter) return false;
                   if (dashboardViewMode === 'birds-eye') return true;
                   if (!myMember) return false;
-                  return inst.steps.some(s => String(s.assignedTo) === String(myMember.id));
+                  return inst.steps.some(s => Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(myMember.id)) : String(s.assignedTo) === String(myMember.id));
                 });
 
                 if (filteredInstances.length === 0) {
@@ -2502,29 +2521,41 @@ const handleDeleteMember = async (id) => {
                           <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                             {/* Involved team members initials */}
                             <div style={{ display: 'flex', marginLeft: 'auto' }}>
-                              {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).slice(0, 3).map((assigneeId, i) => {
-                                const member = teamMembers.find(m => String(m.id) === String(assigneeId));
-                                if (!member) return null;
-                                const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                              {(() => {
+                                const allAssignees = (inst.steps || [])
+                                  .filter(Boolean)
+                                  .filter(s => s.assignedTo)
+                                  .flatMap(s => Array.isArray(s.assignedTo) ? s.assignedTo : [s.assignedTo])
+                                  .map(String);
+                                const uniqueAssignees = Array.from(new Set(allAssignees));
                                 return (
-                                  <div key={assigneeId} title={member.name} style={{
-                                    width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                    border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
-                                  }}>
-                                    {initials}
-                                  </div>
+                                  <>
+                                    {uniqueAssignees.slice(0, 3).map((assigneeId, i) => {
+                                      const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+                                      if (!member) return null;
+                                      const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                      return (
+                                        <div key={assigneeId} title={member.name} style={{
+                                          width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                          border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
+                                        }}>
+                                          {initials}
+                                        </div>
+                                      );
+                                    })}
+                                    {uniqueAssignees.length > 3 && (
+                                      <div style={{
+                                        width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                        border: '2px solid white', marginLeft: '-8px', zIndex: 0
+                                      }}>
+                                        +{uniqueAssignees.length - 3}
+                                      </div>
+                                    )}
+                                  </>
                                 );
-                              })}
-                              {Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length > 3 && (
-                                <div style={{
-                                  width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                  border: '2px solid white', marginLeft: '-8px', zIndex: 0
-                                }}>
-                                  +{Array.from(new Set(inst.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length - 3}
-                                </div>
-                              )}
+                              })()}
                             </div>
 
                             <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
@@ -2612,33 +2643,42 @@ const handleDeleteMember = async (id) => {
                           <div className="avatar-group" style={{ display: 'flex', gap: '4px' }}>
                             {(() => {
                               // Get unique members involved in this template
-                              const assignedIds = new Set((temp.steps || []).filter(Boolean).map(s => s.assignedTo).filter(Boolean));
-                              const uniqueMembers = teamMembers.filter(m => assignedIds.has(m.id));
-                              return uniqueMembers.slice(0, 4).map(member => (
-                                <div 
-                                  key={member.id} 
-                                  title={`${member.name} (${member.role})`}
-                                  style={{ 
-                                    width: '28px', 
-                                    height: '28px', 
-                                    borderRadius: '50%', 
-                                    backgroundColor: 'var(--color-primary)', 
-                                    color: 'white', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center', 
-                                    fontWeight: 'bold', 
-                                    fontSize: '0.75rem',
-                                    border: '2px solid white'
-                                  }}
-                                >
-                                  {member.name ? member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
-                                </div>
-                              ));
+                              const allAssignees = (temp.steps || [])
+                                .filter(Boolean)
+                                .filter(s => s.assignedTo)
+                                .flatMap(s => Array.isArray(s.assignedTo) ? s.assignedTo : [s.assignedTo])
+                                .map(String);
+                              const assignedIds = new Set(allAssignees);
+                              const uniqueMembers = teamMembers.filter(m => assignedIds.has(String(m.id)));
+                              return (
+                                <>
+                                  {uniqueMembers.slice(0, 4).map(member => (
+                                    <div 
+                                      key={member.id} 
+                                      title={`${member.name} (${member.role})`}
+                                      style={{ 
+                                        width: '28px', 
+                                        height: '28px', 
+                                        borderRadius: '50%', 
+                                        backgroundColor: 'var(--color-primary)', 
+                                        color: 'white', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        fontWeight: 'bold', 
+                                        fontSize: '0.75rem',
+                                        border: '2px solid white'
+                                      }}
+                                    >
+                                      {member.name ? member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
+                                    </div>
+                                  ))}
+                                  {uniqueMembers.length === 0 && (
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin asignar</span>
+                                  )}
+                                </>
+                              );
                             })()}
-                            {((temp.steps || []).filter(Boolean).map(s => s.assignedTo).filter(Boolean).length === 0) && (
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin asignar</span>
-                            )}
                           </div>
                           <div className="action-circles" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {user?.role === 'admin' && temp.status === 'pending_approval' && (
@@ -3372,12 +3412,34 @@ const handleDeleteMember = async (id) => {
                             <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
                             <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
                             <td style={{ padding: '1rem' }}>
-                              <span 
-                                className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'agent' ? 'info' : 'success'}`} 
-                                style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
-                              >
-                                {u.role === 'admin' ? 'Administrador' : u.role === 'agent' ? 'Agente' : 'Invitado'}
-                              </span>
+                              {u.id === user?.id ? (
+                                <span 
+                                  className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'gerente' ? 'warning' : u.role === 'agent' ? 'info' : 'success'}`} 
+                                  style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                                >
+                                  {u.role === 'admin' ? 'Administrador' : u.role === 'gerente' ? 'Gerente' : u.role === 'agent' ? 'Agente' : 'Invitado'}
+                                </span>
+                              ) : (
+                                <select
+                                  value={u.role}
+                                  onChange={(e) => handleUpdateUserRole(u.id, e.target.value)}
+                                  style={{
+                                    fontSize: '0.8rem',
+                                    padding: '0.2rem 0.5rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(0,0,0,0.1)',
+                                    backgroundColor: 'white',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    outline: 'none'
+                                  }}
+                                >
+                                  <option value="admin">Administrador</option>
+                                  <option value="gerente">Gerente</option>
+                                  <option value="agent">Agente</option>
+                                  <option value="guest">Invitado</option>
+                                </select>
+                              )}
                             </td>
                             <td style={{ padding: '1rem', textAlign: 'right' }}>
                               {u.id === user?.id ? (
@@ -3897,7 +3959,9 @@ const handleDeleteMember = async (id) => {
                       {isExpanded && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '0.5rem' }}>
                           {temp.steps.map((step, sIdx) => {
-                          const isStepAssigned = String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
+                          const isStepAssigned = Array.isArray(step.assignedTo)
+                            ? step.assignedTo.map(String).includes(String(editingMember?.id || 'temp_new_member'))
+                            : String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
                           
                           return (
                             <div key={sIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', backgroundColor: 'white', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.04)' }}>
@@ -3913,7 +3977,12 @@ const handleDeleteMember = async (id) => {
                                     setTemplates(prev => prev.map(t => {
                                       if (t.id !== temp.id) return t;
                                       const updatedSteps = [...t.steps];
-                                      updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: editingMember?.id || 'temp_new_member' };
+                                      const currentAssigned = Array.isArray(updatedSteps[sIdx].assignedTo)
+                                        ? updatedSteps[sIdx].assignedTo.map(String)
+                                        : updatedSteps[sIdx].assignedTo ? [String(updatedSteps[sIdx].assignedTo)] : [];
+                                      const memberId = String(editingMember?.id || 'temp_new_member');
+                                      const newAssigned = currentAssigned.includes(memberId) ? currentAssigned : [...currentAssigned, memberId];
+                                      updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: newAssigned };
                                       return { ...t, steps: updatedSteps };
                                     }));
                                   }}
@@ -3937,8 +4006,13 @@ const handleDeleteMember = async (id) => {
                                     setTemplates(prev => prev.map(t => {
                                       if (t.id !== temp.id) return t;
                                       const updatedSteps = [...t.steps];
-                                      if (String(updatedSteps[sIdx].assignedTo) === String(editingMember?.id || 'temp_new_member')) {
-                                        updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: '' };
+                                      if (updatedSteps[sIdx]) {
+                                        const currentAssigned = Array.isArray(updatedSteps[sIdx].assignedTo)
+                                          ? updatedSteps[sIdx].assignedTo.map(String)
+                                          : updatedSteps[sIdx].assignedTo ? [String(updatedSteps[sIdx].assignedTo)] : [];
+                                        const memberId = String(editingMember?.id || 'temp_new_member');
+                                        const newAssigned = currentAssigned.filter(id => id !== memberId);
+                                        updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: newAssigned };
                                       }
                                       return { ...t, steps: updatedSteps };
                                     }));

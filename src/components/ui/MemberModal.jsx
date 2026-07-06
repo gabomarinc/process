@@ -183,7 +183,9 @@ export const MemberModal = ({
                         {isExpanded && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '0.5rem' }}>
                             {(temp.steps || []).filter(Boolean).map((step, sIdx) => {
-                              const isStepAssigned = String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
+                              const isStepAssigned = Array.isArray(step.assignedTo)
+                                ? step.assignedTo.map(String).includes(String(editingMember?.id || 'temp_new_member'))
+                                : String(step.assignedTo) === String(editingMember?.id || 'temp_new_member');
                               return (
                                 <div key={sIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                                   <span style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }}>
@@ -199,7 +201,12 @@ export const MemberModal = ({
                                           if (t.id !== temp.id) return t;
                                           const updatedSteps = [...(t.steps || [])].filter(Boolean);
                                           if (updatedSteps[sIdx]) {
-                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: editingMember?.id || 'temp_new_member' };
+                                            const currentAssigned = Array.isArray(updatedSteps[sIdx].assignedTo)
+                                              ? updatedSteps[sIdx].assignedTo.map(String)
+                                              : updatedSteps[sIdx].assignedTo ? [String(updatedSteps[sIdx].assignedTo)] : [];
+                                            const memberId = String(editingMember?.id || 'temp_new_member');
+                                            const newAssigned = currentAssigned.includes(memberId) ? currentAssigned : [...currentAssigned, memberId];
+                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: newAssigned };
                                           }
                                           return { ...t, steps: updatedSteps };
                                         }));
@@ -227,8 +234,13 @@ export const MemberModal = ({
                                         setTemplates(prev => prev.map(t => {
                                           if (t.id !== temp.id) return t;
                                           const updatedSteps = [...(t.steps || [])].filter(Boolean);
-                                          if (updatedSteps[sIdx] && String(updatedSteps[sIdx].assignedTo) === String(editingMember?.id || 'temp_new_member')) {
-                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: '' };
+                                          if (updatedSteps[sIdx]) {
+                                            const currentAssigned = Array.isArray(updatedSteps[sIdx].assignedTo)
+                                              ? updatedSteps[sIdx].assignedTo.map(String)
+                                              : updatedSteps[sIdx].assignedTo ? [String(updatedSteps[sIdx].assignedTo)] : [];
+                                            const memberId = String(editingMember?.id || 'temp_new_member');
+                                            const newAssigned = currentAssigned.filter(id => id !== memberId);
+                                            updatedSteps[sIdx] = { ...updatedSteps[sIdx], assignedTo: newAssigned };
                                           }
                                           return { ...t, steps: updatedSteps };
                                         }));

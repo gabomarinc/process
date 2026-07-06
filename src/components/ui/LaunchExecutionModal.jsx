@@ -50,7 +50,11 @@ export const LaunchExecutionModal = ({
     const assignedIds = new Set();
     template.steps.forEach(step => {
       if (step.assignedTo) {
-        assignedIds.add(String(step.assignedTo));
+        if (Array.isArray(step.assignedTo)) {
+          step.assignedTo.forEach(id => assignedIds.add(String(id)));
+        } else {
+          assignedIds.add(String(step.assignedTo));
+        }
       }
     });
 

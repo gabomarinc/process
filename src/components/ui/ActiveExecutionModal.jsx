@@ -246,23 +246,34 @@ export const ActiveExecutionModal = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Involucrados:</span>
                   <div style={{ display: 'flex' }}>
-                    {Array.from(new Set(activeInstance.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).map((assigneeId, i) => {
-                      const member = teamMembers.find(m => String(m.id) === String(assigneeId));
-                      if (!member) return null;
-                      const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    {(() => {
+                      const allAssignees = activeInstance.steps
+                        .filter(s => s && s.assignedTo)
+                        .flatMap(s => Array.isArray(s.assignedTo) ? s.assignedTo : [s.assignedTo])
+                        .map(String);
+                      const uniqueAssignees = Array.from(new Set(allAssignees));
                       return (
-                        <div key={assigneeId} title={member.name} style={{
-                          width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 'bold',
-                          border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
-                        }}>
-                          {initials}
-                        </div>
+                        <>
+                          {uniqueAssignees.map((assigneeId, i) => {
+                            const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+                            if (!member) return null;
+                            const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                            return (
+                              <div key={assigneeId} title={member.name} style={{
+                                width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 'bold',
+                                border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
+                              }}>
+                                {initials}
+                              </div>
+                            );
+                          })}
+                          {uniqueAssignees.length === 0 && (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Ninguno asignado aún</span>
+                          )}
+                        </>
                       );
-                    })}
-                    {Array.from(new Set(activeInstance.steps.filter(s => s.assignedTo).map(s => s.assignedTo))).length === 0 && (
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Ninguno asignado aún</span>
-                    )}
+                    })()}
                   </div>
                 </div>
               </div>
@@ -591,20 +602,38 @@ export const ActiveExecutionModal = ({
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', background: '#f5f3f0', padding: '0.15rem 0.5rem', borderRadius: '20px', marginTop: '0.5rem', width: 'fit-content' }} onClick={e => e.stopPropagation()}>
-                            <select
-                              value={step.assignedTo ? String(step.assignedTo) : ''}
-                              onChange={(e) => handleAssignStepMember(activeInstance.id, step.id, e.target.value)}
-                              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 0' }}
-                            >
-                              <option value="">Sin Asignar</option>
-                              {teamMembers.map(m => (
-                                <option key={m.id} value={String(m.id)}>{m.name}</option>
-                              ))}
-                            </select>
-                            {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo)) && (
-                              <div style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 'bold' }}>{teamMembers.find(m => String(m.id) === String(step.assignedTo)).name.charAt(0).toUpperCase()}</div>
-                            )}
+                          <div style={{ marginTop: '0.5rem', width: '100%' }} onClick={e => e.stopPropagation()}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Asignados:</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '100px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.06)', padding: '6px 10px', borderRadius: '8px', background: 'white' }}>
+                              {teamMembers.map(m => {
+                                const currentAssigned = Array.isArray(step.assignedTo)
+                                  ? step.assignedTo.map(String)
+                                  : step.assignedTo ? [String(step.assignedTo)] : [];
+                                const isChecked = currentAssigned.includes(String(m.id));
+                                return (
+                                  <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', cursor: 'pointer', margin: 0, padding: '2px 6px', border: '1px solid rgba(0,0,0,0.04)', borderRadius: '4px', background: isChecked ? 'rgba(39, 190, 167, 0.08)' : '#f9f9f9', userSelect: 'none' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        let updatedList;
+                                        if (e.target.checked) {
+                                          updatedList = [...currentAssigned, String(m.id)];
+                                        } else {
+                                          updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                        }
+                                        handleAssignStepMember(activeInstance.id, step.id, updatedList);
+                                      }}
+                                      style={{ cursor: 'pointer', margin: 0 }}
+                                    />
+                                    <span>{m.name}</span>
+                                  </label>
+                                );
+                              })}
+                              {teamMembers.length === 0 && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin colaboradores</span>
+                              )}
+                            </div>
                           </div>
                         </>
                       )}
@@ -769,20 +798,38 @@ export const ActiveExecutionModal = ({
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', background: '#f5f3f0', padding: '0.2rem 0.6rem', borderRadius: '20px', marginTop: '0.75rem', marginBottom: '0.75rem', width: 'fit-content' }}>
-                            <select
-                              value={step.assignedTo ? String(step.assignedTo) : ''}
-                              onChange={(e) => handleAssignStepMember(activeInstance.id, step.id, e.target.value)}
-                              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', cursor: 'pointer', padding: '2px 0' }}
-                            >
-                              <option value="">Sin Asignar</option>
-                              {teamMembers.map(m => (
-                                <option key={m.id} value={String(m.id)}>{m.name}</option>
-                              ))}
-                            </select>
-                            {step.assignedTo && teamMembers.find(m => String(m.id) === String(step.assignedTo)) && (
-                              <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--color-primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold' }}>{teamMembers.find(m => String(m.id) === String(step.assignedTo)).name.charAt(0).toUpperCase()}</div>
-                            )}
+                          <div style={{ marginTop: '0.5rem', width: '100%' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Asignados:</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '100px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.06)', padding: '6px 10px', borderRadius: '8px', background: 'white' }}>
+                              {teamMembers.map(m => {
+                                const currentAssigned = Array.isArray(step.assignedTo)
+                                  ? step.assignedTo.map(String)
+                                  : step.assignedTo ? [String(step.assignedTo)] : [];
+                                const isChecked = currentAssigned.includes(String(m.id));
+                                return (
+                                  <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', cursor: 'pointer', margin: 0, padding: '2px 6px', border: '1px solid rgba(0,0,0,0.04)', borderRadius: '4px', background: isChecked ? 'rgba(39, 190, 167, 0.08)' : '#f9f9f9', userSelect: 'none' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        let updatedList;
+                                        if (e.target.checked) {
+                                          updatedList = [...currentAssigned, String(m.id)];
+                                        } else {
+                                          updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                        }
+                                        handleAssignStepMember(activeInstance.id, step.id, updatedList);
+                                      }}
+                                      style={{ cursor: 'pointer', margin: 0 }}
+                                    />
+                                    <span>{m.name}</span>
+                                  </label>
+                                );
+                              })}
+                              {teamMembers.length === 0 && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin colaboradores</span>
+                              )}
+                            </div>
                           </div>
 
                           {!isLocked && (

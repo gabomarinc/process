@@ -1043,6 +1043,39 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Update user role
+app.put('/api/users/:id/role', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { id } = req.params;
+  const { role } = req.body;
+
+  if (!['admin', 'gerente', 'agent', 'guest'].includes(role)) {
+    return res.status(400).json({ error: 'Rol inválido.' });
+  }
+
+  if (parseInt(id, 10) === req.user.id) {
+    return res.status(400).json({ error: 'No puedes cambiar tu propio rol.' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE users SET role = $1 WHERE id = $2 AND organization_id = $3 RETURNING id, name, email, role',
+      [role, id, req.user.organizationId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    res.json({ message: 'Rol de usuario actualizado con éxito.', user: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar el rol del usuario.' });
+  }
+});
+
 // Update self profile
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   const { name, email, password, companionName, companionAvatar } = req.body;
