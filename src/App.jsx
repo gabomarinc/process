@@ -252,11 +252,24 @@ function App() {
   const [fileStore, setFileStore] = useState({});
   const [clickupToken, setClickupToken] = useState('');
   const [clickupRules, setClickupRules] = useState([]);
-  const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
+  const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: '', templateId: '' });
   const [isTestingClickup, setIsTestingClickup] = useState(false);
   const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
   const [ecosystemSubTab, setEcosystemSubTab] = useState('oficiales'); // 'oficiales' or 'ondemand'
   const [showClickupModal, setShowClickupModal] = useState(false);
+  
+  // ClickUp Integration Dynamic Selectors
+  const [clickupTeams, setClickupTeams] = useState([]);
+  const [selectedClickupTeamId, setSelectedClickupTeamId] = useState('');
+  const [clickupSpaces, setClickupSpaces] = useState([]);
+  const [selectedClickupSpaceId, setSelectedClickupSpaceId] = useState('');
+  const [clickupFolders, setClickupFolders] = useState([]);
+  const [clickupFolderlessLists, setClickupFolderlessLists] = useState([]);
+  const [selectedClickupFolderId, setSelectedClickupFolderId] = useState(''); // can be 'folderless'
+  const [clickupLists, setClickupLists] = useState([]);
+  const [selectedClickupListId, setSelectedClickupListId] = useState('');
+  const [clickupStatuses, setClickupStatuses] = useState([]);
+  const [isLoadingClickupData, setIsLoadingClickupData] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
@@ -807,6 +820,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo guardar la configuración de ClickUp.');
       showAlert('Configuración de ClickUp guardada con éxito.', 'success');
+      loadClickupTeams();
     } catch (err) {
       showAlert(err.message, 'error');
     }
@@ -846,7 +860,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo crear la regla.');
       setClickupRules([data, ...clickupRules]);
-      setNewClickupRule({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
+      setNewClickupRule({ ruleName: '', clickupListId: selectedClickupListId, clickupListName: newClickupRule.clickupListName, clickupStatus: clickupStatuses.length > 0 ? clickupStatuses[0].status : '', templateId: '' });
       showAlert('Regla de automatización de ClickUp creada.', 'success');
     } catch (err) {
       showAlert(err.message, 'error');
@@ -868,6 +882,131 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       showAlert(err.message, 'error');
     }
   };
+
+  // Load ClickUp teams/workspaces
+  const loadClickupTeams = async () => {
+    setIsLoadingClickupData(true);
+    try {
+      const res = await fetch('/api/integrations/clickup/teams');
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const teams = data.teams || [];
+      setClickupTeams(teams);
+      if (teams.length > 0) {
+        setSelectedClickupTeamId(teams[0].id);
+      }
+    } catch (err) {
+      console.error("Error al cargar equipos de ClickUp", err);
+    } finally {
+      setIsLoadingClickupData(false);
+    }
+  };
+
+  // Load Spaces when Team changes
+  useEffect(() => {
+    if (!selectedClickupTeamId) {
+      setClickupSpaces([]);
+      return;
+    }
+    const loadSpaces = async () => {
+      setIsLoadingClickupData(true);
+      try {
+        const res = await fetch(`/api/integrations/clickup/spaces?team_id=${selectedClickupTeamId}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setClickupSpaces(data.spaces || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingClickupData(false);
+      }
+    };
+    loadSpaces();
+  }, [selectedClickupTeamId]);
+
+  // Load Folders & Folderless Lists when Space changes
+  useEffect(() => {
+    if (!selectedClickupSpaceId) {
+      setClickupFolders([]);
+      setClickupFolderlessLists([]);
+      return;
+    }
+    const loadFoldersAndLists = async () => {
+      setIsLoadingClickupData(true);
+      try {
+        const res = await fetch(`/api/integrations/clickup/folders-and-lists?space_id=${selectedClickupSpaceId}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setClickupFolders(data.folders || []);
+        setClickupFolderlessLists(data.folderlessLists || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingClickupData(false);
+      }
+    };
+    loadFoldersAndLists();
+  }, [selectedClickupSpaceId]);
+
+  // Load Lists when Folder changes
+  useEffect(() => {
+    if (!selectedClickupFolderId || selectedClickupFolderId === 'folderless') {
+      setClickupLists([]);
+      return;
+    }
+    const loadLists = async () => {
+      setIsLoadingClickupData(true);
+      try {
+        const res = await fetch(`/api/integrations/clickup/lists?folder_id=${selectedClickupFolderId}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setClickupLists(data.lists || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingClickupData(false);
+      }
+    };
+    loadLists();
+  }, [selectedClickupFolderId]);
+
+  // Handle selected list change (load details / statuses)
+  useEffect(() => {
+    if (!selectedClickupListId) {
+      setClickupStatuses([]);
+      return;
+    }
+    const loadListDetails = async () => {
+      setIsLoadingClickupData(true);
+      try {
+        const res = await fetch(`/api/integrations/clickup/list-details?list_id=${selectedClickupListId}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const listStatuses = data.statuses || [];
+        setClickupStatuses(listStatuses);
+        
+        // Update newClickupRule rule list name and ID
+        setNewClickupRule(prev => ({
+          ...prev,
+          clickupListId: selectedClickupListId,
+          clickupListName: data.name || '',
+          clickupStatus: listStatuses.length > 0 ? listStatuses[0].status : ''
+        }));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingClickupData(false);
+      }
+    };
+    loadListDetails();
+  }, [selectedClickupListId]);
+
+  // Load teams when modal is shown and clickupToken is active
+  useEffect(() => {
+    if (showClickupModal && clickupToken) {
+      loadClickupTeams();
+    }
+  }, [showClickupModal]);
 
   const handleUpdateClickupRuleStatus = async (ruleId, newStatus) => {
     try {
@@ -4214,115 +4353,184 @@ const handleDeleteMember = async (id) => {
                 <Zap size={18} style={{ color: 'var(--color-primary)' }} />
                 2. Configurar Reglas de Automatización
               </h4>
-              <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              
+              {!clickupToken ? (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>Debes conectar tu API Token primero para configurar reglas de automatización.</p>
+              ) : (
+                <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                  {/* Name of Rule */}
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Nombre de la Regla</label>
+                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Nombre descriptivo de la regla</label>
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="Ej. Iniciar Flujo Onboarding" 
+                      placeholder="Ej. Iniciar Flujo Onboarding al cerrar negocio" 
                       value={newClickupRule.ruleName} 
                       onChange={(e) => setNewClickupRule({ ...newClickupRule, ruleName: e.target.value })} 
                       required 
                       style={{ height: '38px' }}
                     />
                   </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Nombre de la Lista (Referencia)</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="Ej. Ventas Cerradas" 
-                      value={newClickupRule.clickupListName} 
-                      onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListName: e.target.value })} 
-                      required 
-                      style={{ height: '38px' }}
-                    />
+
+                  {/* Hierarchical selectors */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Workspace / Entorno</label>
+                      <select
+                        className="form-input"
+                        value={selectedClickupTeamId}
+                        onChange={(e) => {
+                          setSelectedClickupTeamId(e.target.value);
+                          setSelectedClickupSpaceId('');
+                          setSelectedClickupFolderId('');
+                          setSelectedClickupListId('');
+                        }}
+                        required
+                        style={{ height: '38px', cursor: 'pointer' }}
+                        disabled={isLoadingClickupData}
+                      >
+                        <option value="">-- Seleccionar --</option>
+                        {clickupTeams.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Espacio (Space)</label>
+                      <select
+                        className="form-input"
+                        value={selectedClickupSpaceId}
+                        onChange={(e) => {
+                          setSelectedClickupSpaceId(e.target.value);
+                          setSelectedClickupFolderId('');
+                          setSelectedClickupListId('');
+                        }}
+                        required
+                        style={{ height: '38px', cursor: 'pointer' }}
+                        disabled={!selectedClickupTeamId || isLoadingClickupData}
+                      >
+                        <option value="">-- Seleccionar --</option>
+                        {clickupSpaces.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Carpeta (Folder)</label>
+                      <select
+                        className="form-input"
+                        value={selectedClickupFolderId}
+                        onChange={(e) => {
+                          setSelectedClickupFolderId(e.target.value);
+                          setSelectedClickupListId('');
+                        }}
+                        style={{ height: '38px', cursor: 'pointer' }}
+                        disabled={!selectedClickupSpaceId || isLoadingClickupData}
+                      >
+                        <option value="folderless">-- Listas sin Carpeta --</option>
+                        {clickupFolders.map(f => (
+                          <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Lista (List)</label>
+                      <select
+                        className="form-input"
+                        value={selectedClickupListId}
+                        onChange={(e) => setSelectedClickupListId(e.target.value)}
+                        required
+                        style={{ height: '38px', cursor: 'pointer' }}
+                        disabled={!selectedClickupSpaceId || isLoadingClickupData}
+                      >
+                        <option value="">-- Seleccionar Lista --</option>
+                        {(!selectedClickupFolderId || selectedClickupFolderId === 'folderless' || selectedClickupFolderId === '') ? (
+                          clickupFolderlessLists.map(l => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))
+                        ) : (
+                          clickupLists.map(l => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
                   </div>
-                </div>
 
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '8px',
-                  backgroundColor: 'white',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(0,0,0,0.04)',
-                  fontSize: '0.85rem',
-                  color: 'var(--text-main)',
-                  lineHeight: '2.2rem'
-                }}>
-                  <span>Cuando una tarea cambie al estado</span>
-                  <select 
-                    style={{
-                      padding: '6px 12px',
+                  {/* Sentence builder */}
+                  {selectedClickupListId && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                      backgroundColor: 'white',
+                      padding: '1rem',
                       borderRadius: '8px',
-                      border: '1px solid #d1d5db',
-                      fontWeight: 600,
-                      outline: 'none',
-                      backgroundColor: '#f3f4f6',
-                      height: '34px',
+                      border: '1px solid rgba(0,0,0,0.04)',
                       fontSize: '0.85rem',
-                      cursor: 'pointer'
-                    }}
-                    value={newClickupRule.clickupStatus} 
-                    onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })}
-                  >
-                    <option value="closed">cerrado (closed)</option>
-                    <option value="done">listo (done)</option>
-                    <option value="in progress">en progreso (in progress)</option>
-                    <option value="to do">por hacer (to do)</option>
-                  </select>
-                  <span>dentro de la lista ClickUp con ID</span>
-                  <input 
-                    type="text"
-                    placeholder="Ej. 9012015024"
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #d1d5db',
-                      width: '140px',
-                      fontWeight: 600,
-                      textAlign: 'center',
-                      outline: 'none',
-                      height: '34px',
-                      fontSize: '0.85rem'
-                    }}
-                    value={newClickupRule.clickupListId} 
-                    onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListId: e.target.value })}
-                    required 
-                  />
-                  <span>disparar la plantilla de Kônsul</span>
-                  <select 
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #d1d5db',
-                      fontWeight: 600,
-                      outline: 'none',
-                      backgroundColor: '#f3f4f6',
-                      height: '34px',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer'
-                    }}
-                    value={newClickupRule.templateId} 
-                    onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })}
-                    required
-                  >
-                    <option value="">-- Seleccionar Plantilla --</option>
-                    {templates.map(t => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
-                    ))}
-                  </select>
-                </div>
+                      color: 'var(--text-main)',
+                      lineHeight: '2.2rem'
+                    }}>
+                      <span>Cuando una tarea en la lista cambia al estado</span>
+                      <select 
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #d1d5db',
+                          fontWeight: 600,
+                          outline: 'none',
+                          backgroundColor: '#f3f4f6',
+                          height: '34px',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                        value={newClickupRule.clickupStatus} 
+                        onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })}
+                        required
+                      >
+                        {clickupStatuses.map(st => (
+                          <option key={st.id || st.status} value={st.status}>{st.status.toUpperCase()}</option>
+                        ))}
+                      </select>
+                      <span>disparar la plantilla de Kônsul</span>
+                      <select 
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #d1d5db',
+                          fontWeight: 600,
+                          outline: 'none',
+                          backgroundColor: '#f3f4f6',
+                          height: '34px',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                        value={newClickupRule.templateId} 
+                        onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })}
+                        required
+                      >
+                        <option value="">-- Seleccionar Plantilla --</option>
+                        {templates.map(t => (
+                          <option key={t.id} value={t.id}>{t.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
-                <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', padding: '0.65rem 2rem', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
-                  Agregar Regla
-                </button>
-              </form>
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary" 
+                    style={{ alignSelf: 'flex-end', padding: '0.65rem 2rem', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}
+                    disabled={!selectedClickupListId || isLoadingClickupData}
+                  >
+                    {isLoadingClickupData ? 'Cargando...' : 'Agregar Regla'}
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Listado de Reglas Activas */}

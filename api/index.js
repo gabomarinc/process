@@ -1374,6 +1374,136 @@ app.put('/api/organization/clickup', authenticateToken, async (req, res) => {
   }
 });
 
+// Get ClickUp Workspaces/Teams
+app.get('/api/integrations/clickup/teams', authenticateToken, async (req, res) => {
+  try {
+    const orgRes = await pool.query("SELECT clickup_token FROM organizations WHERE id = $1", [req.user.organizationId]);
+    const token = orgRes.rows[0]?.clickup_token;
+    if (!token) return res.status(400).json({ error: 'ClickUp no está conectado (falta token)' });
+
+    const response = await fetch('https://api.clickup.com/api/v2/team', {
+      headers: { 'Authorization': token }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ClickUp API Error: ${errText}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener equipos de ClickUp' });
+  }
+});
+
+// Get ClickUp Spaces for a Team/Workspace
+app.get('/api/integrations/clickup/spaces', authenticateToken, async (req, res) => {
+  const { team_id } = req.query;
+  if (!team_id) return res.status(400).json({ error: 'team_id es requerido' });
+  try {
+    const orgRes = await pool.query("SELECT clickup_token FROM organizations WHERE id = $1", [req.user.organizationId]);
+    const token = orgRes.rows[0]?.clickup_token;
+    if (!token) return res.status(400).json({ error: 'ClickUp no está conectado' });
+
+    const response = await fetch(`https://api.clickup.com/api/v2/team/${team_id}/space`, {
+      headers: { 'Authorization': token }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ClickUp API Error: ${errText}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener espacios de ClickUp' });
+  }
+});
+
+// Get ClickUp Folders & Folderless Lists for a Space
+app.get('/api/integrations/clickup/folders-and-lists', authenticateToken, async (req, res) => {
+  const { space_id } = req.query;
+  if (!space_id) return res.status(400).json({ error: 'space_id es requerido' });
+  try {
+    const orgRes = await pool.query("SELECT clickup_token FROM organizations WHERE id = $1", [req.user.organizationId]);
+    const token = orgRes.rows[0]?.clickup_token;
+    if (!token) return res.status(400).json({ error: 'ClickUp no está conectado' });
+
+    // Fetch folders
+    const foldersRes = await fetch(`https://api.clickup.com/api/v2/space/${space_id}/folder`, {
+      headers: { 'Authorization': token }
+    });
+    let folders = [];
+    if (foldersRes.ok) {
+      const foldersData = await foldersRes.json();
+      folders = foldersData.folders || [];
+    }
+
+    // Fetch folderless lists
+    const listsRes = await fetch(`https://api.clickup.com/api/v2/space/${space_id}/list`, {
+      headers: { 'Authorization': token }
+    });
+    let folderlessLists = [];
+    if (listsRes.ok) {
+      const listsData = await listsRes.json();
+      folderlessLists = listsData.lists || [];
+    }
+
+    res.json({ folders, folderlessLists });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener carpetas y listas de ClickUp' });
+  }
+});
+
+// Get ClickUp Lists in a Folder
+app.get('/api/integrations/clickup/lists', authenticateToken, async (req, res) => {
+  const { folder_id } = req.query;
+  if (!folder_id) return res.status(400).json({ error: 'folder_id es requerido' });
+  try {
+    const orgRes = await pool.query("SELECT clickup_token FROM organizations WHERE id = $1", [req.user.organizationId]);
+    const token = orgRes.rows[0]?.clickup_token;
+    if (!token) return res.status(400).json({ error: 'ClickUp no está conectado' });
+
+    const response = await fetch(`https://api.clickup.com/api/v2/folder/${folder_id}/list`, {
+      headers: { 'Authorization': token }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ClickUp API Error: ${errText}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener listas de ClickUp' });
+  }
+});
+
+// Get ClickUp List details (including statuses)
+app.get('/api/integrations/clickup/list-details', authenticateToken, async (req, res) => {
+  const { list_id } = req.query;
+  if (!list_id) return res.status(400).json({ error: 'list_id es requerido' });
+  try {
+    const orgRes = await pool.query("SELECT clickup_token FROM organizations WHERE id = $1", [req.user.organizationId]);
+    const token = orgRes.rows[0]?.clickup_token;
+    if (!token) return res.status(400).json({ error: 'ClickUp no está conectado' });
+
+    const response = await fetch(`https://api.clickup.com/api/v2/list/${list_id}`, {
+      headers: { 'Authorization': token }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ClickUp API Error: ${errText}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener detalles de la lista de ClickUp' });
+  }
+});
+
 // Get Rules
 app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
   try {
