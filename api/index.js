@@ -55,8 +55,9 @@ pool.query(`
 
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
+  ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status" y tablas "clients" y "clickup_rules" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status", "title_pattern" y tablas "clients" y "clickup_rules" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -1508,7 +1509,7 @@ app.get('/api/integrations/clickup/list-details', authenticateToken, async (req,
 app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern" FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
       [req.user.organizationId]
     );
     res.json(result.rows);
@@ -1526,13 +1527,35 @@ app.post('/api/integrations/clickup/rules', authenticateToken, async (req, res) 
     const result = await pool.query(
       `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_status, template_id, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status`,
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern"`,
       [req.user.organizationId, ruleName, clickupListId, clickupListName, clickupStatus, templateId, status]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al guardar regla de ClickUp' });
+  }
+});
+
+// Update Rule Configuration (e.g. titlePattern)
+app.put('/api/integrations/clickup/rules/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { titlePattern } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE clickup_rules 
+       SET title_pattern = $1 
+       WHERE id = $2 AND organization_id = $3
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern"`,
+      [titlePattern, id, req.user.organizationId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Regla no encontrada' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar configuración de la regla' });
   }
 });
 
@@ -1659,6 +1682,14 @@ app.post('/api/webhooks/clickup', async (req, res) => {
           };
         });
 
+        // Construct instance name using title_pattern
+        let instanceName = rule.title_pattern || '{template_title} - {task_name}';
+        instanceName = instanceName
+          .replace(/{task_name}/g, taskName || '')
+          .replace(/{template_title}/g, template.title || '')
+          .replace(/{list_name}/g, rule.clickup_list_name || '')
+          .replace(/{task_id}/g, task_id || '');
+
         // Insert new instance
         await pool.query(
           `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
@@ -1668,7 +1699,7 @@ app.post('/api/webhooks/clickup', async (req, res) => {
             rule.organization_id,
             template.id,
             template.title,
-            `${template.title} - ${taskName}`,
+            instanceName,
             startedAt,
             template.companion_name || 'Lumi',
             template.companion_avatar || '✨',

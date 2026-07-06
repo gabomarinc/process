@@ -270,6 +270,8 @@ function App() {
   const [selectedClickupListId, setSelectedClickupListId] = useState('');
   const [clickupStatuses, setClickupStatuses] = useState([]);
   const [isLoadingClickupData, setIsLoadingClickupData] = useState(false);
+  const [configuringRule, setConfiguringRule] = useState(null);
+  const [showConfigureRuleModal, setShowConfigureRuleModal] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
@@ -866,6 +868,29 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       setSelectedClickupListId('');
       setNewClickupRule({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: '', templateId: '' });
       showAlert('Regla de automatización de ClickUp creada.', 'success');
+      setShowClickupModal(false);
+      setConfiguringRule({ ...data, titlePattern: data.titlePattern || '{template_title} - {task_name}' });
+      setShowConfigureRuleModal(true);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  const handleUpdateClickupRuleConfig = async (e) => {
+    e.preventDefault();
+    if (!configuringRule) return;
+    try {
+      const res = await fetch(`/api/integrations/clickup/rules/${configuringRule.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titlePattern: configuringRule.titlePattern })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo actualizar la regla.');
+      setClickupRules(clickupRules.map(r => r.id === data.id ? data : r));
+      setShowConfigureRuleModal(false);
+      setConfiguringRule(null);
+      showAlert('Configuración de la regla de automatización guardada correctamente.', 'success');
     } catch (err) {
       showAlert(err.message, 'error');
     }
@@ -2087,6 +2112,17 @@ const handleDeleteMember = async (id) => {
       onClick: handleLogout
     }
   ];
+  
+  const getPreviewTitle = () => {
+    if (!configuringRule) return '';
+    const associatedTemplate = templates.find(t => t.id === configuringRule.templateId);
+    const templateTitle = associatedTemplate ? associatedTemplate.title : 'Plantilla';
+    return (configuringRule.titlePattern || '{template_title} - {task_name}')
+      .replace(/{task_name}/g, 'Tarea de ClickUp (Ejemplo)')
+      .replace(/{template_title}/g, templateTitle)
+      .replace(/{list_name}/g, configuringRule.clickupListName || 'Lista ClickUp')
+      .replace(/{task_id}/g, '#12345');
+  };
 
   return (
     <div className="app-container">
@@ -4590,6 +4626,16 @@ const handleDeleteMember = async (id) => {
                                   </>
                                 )}
                                 <button 
+                                  className="btn btn-secondary" 
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem', color: 'var(--color-primary)', borderColor: 'var(--color-primary)', marginRight: '4px' }} 
+                                  onClick={() => {
+                                    setConfiguringRule({ ...rule, titlePattern: rule.titlePattern || '{template_title} - {task_name}' });
+                                    setShowConfigureRuleModal(true);
+                                  }}
+                                >
+                                  Configurar
+                                </button>
+                                <button 
                                   className="btn btn-danger" 
                                   style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
                                   onClick={() => handleDeleteClickupRule(rule.id)}
@@ -4607,6 +4653,115 @@ const handleDeleteMember = async (id) => {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showConfigureRuleModal} onOpenChange={setShowConfigureRuleModal}>
+        <DialogContent style={{ maxWidth: '42rem', borderRadius: '24px', padding: '2rem' }}>
+          <DialogHeader>
+            <DialogTitle style={{ fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Zap size={20} style={{ color: 'var(--color-primary)' }} />
+              Configurar Ejecución de Automatización
+            </DialogTitle>
+            <DialogDescription style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Establece las reglas de inicio y estructura de datos para la ejecución del proceso automatizado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {configuringRule && (
+            <form onSubmit={handleUpdateClickupRuleConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
+              {/* Rule Summary Info */}
+              <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.05)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div><strong>Regla:</strong> {configuringRule.ruleName}</div>
+                <div><strong>Lista ClickUp:</strong> {configuringRule.clickupListName} (ID: {configuringRule.clickupListId})</div>
+                <div><strong>Evento disparador:</strong> Al cambiar tarea al estado <span className="badge badge-secondary" style={{ fontSize: '0.75rem', textTransform: 'uppercase' }}>{configuringRule.clickupStatus}</span></div>
+                <div><strong>Plantilla a iniciar:</strong> {templates.find(t => t.id === configuringRule.templateId)?.title || 'No encontrada'}</div>
+              </div>
+
+              {/* Title Pattern Input */}
+              <div className="form-group" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '8px', display: 'block' }}>Estructura del Título de la Ejecución</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={configuringRule.titlePattern || ''} 
+                    onChange={(e) => setConfiguringRule({ ...configuringRule, titlePattern: e.target.value })} 
+                    placeholder="Ej. {template_title} - {task_name}"
+                    required
+                  />
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginRight: '4px' }}>Insertar variable:</span>
+                    {[
+                      { tag: '{task_name}', label: 'Nombre Tarea ClickUp' },
+                      { tag: '{template_title}', label: 'Título Plantilla Kônsul' },
+                      { tag: '{list_name}', label: 'Nombre Lista ClickUp' },
+                      { tag: '{task_id}', label: 'ID Tarea' }
+                    ].map(item => (
+                      <button
+                        key={item.tag}
+                        type="button"
+                        style={{
+                          fontSize: '0.7rem',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(0,0,0,0.08)',
+                          backgroundColor: '#f3f4f6',
+                          color: '#374151',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => {
+                          const currentVal = configuringRule.titlePattern || '';
+                          setConfiguringRule({ ...configuringRule, titlePattern: currentVal + item.tag });
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview */}
+              <div style={{ backgroundColor: '#eff6ff', padding: '1rem', borderRadius: '12px', border: '1px solid #bfdbfe', fontSize: '0.85rem' }}>
+                <span style={{ fontWeight: 700, color: '#1e40af', display: 'block', marginBottom: '4px' }}>Vista previa del título generado:</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#1e3a8a' }}>
+                  {getPreviewTitle()}
+                </span>
+              </div>
+
+              {/* Date Notice Info (UX/UI Best Practice) */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', backgroundColor: '#f0fdf4', padding: '1rem', borderRadius: '12px', border: '1px solid #bbf7d0', fontSize: '0.8rem', color: '#166534' }}>
+                <div style={{ fontSize: '1.2rem', marginTop: '-2px' }}>ℹ️</div>
+                <div>
+                  <strong>No se requiere programar fechas:</strong> El inicio de esta ejecución se programará dinámicamente en tiempo real en la fecha y hora exacta en que se registre el cambio de estado en ClickUp. Los plazos relativos de las tareas hijas se calcularán a partir de ese instante.
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ borderRadius: '30px', padding: '0.65rem 1.5rem', fontWeight: 600, fontSize: '0.85rem' }}
+                  onClick={() => {
+                    setShowConfigureRuleModal(false);
+                    setConfiguringRule(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ borderRadius: '30px', padding: '0.65rem 2rem', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  Guardar Configuración
+                </button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
       {/* Toast Notification Container */}
