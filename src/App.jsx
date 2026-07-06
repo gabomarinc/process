@@ -860,7 +860,11 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo crear la regla.');
       setClickupRules([data, ...clickupRules]);
-      setNewClickupRule({ ruleName: '', clickupListId: selectedClickupListId, clickupListName: newClickupRule.clickupListName, clickupStatus: clickupStatuses.length > 0 ? clickupStatuses[0].status : '', templateId: '' });
+      setSelectedClickupTeamId('');
+      setSelectedClickupSpaceId('');
+      setSelectedClickupFolderId('');
+      setSelectedClickupListId('');
+      setNewClickupRule({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: '', templateId: '' });
       showAlert('Regla de automatización de ClickUp creada.', 'success');
     } catch (err) {
       showAlert(err.message, 'error');
@@ -4368,7 +4372,6 @@ const handleDeleteMember = async (id) => {
                       value={newClickupRule.ruleName} 
                       onChange={(e) => setNewClickupRule({ ...newClickupRule, ruleName: e.target.value })} 
                       required 
-                      style={{ height: '38px' }}
                     />
                   </div>
 
@@ -4386,7 +4389,7 @@ const handleDeleteMember = async (id) => {
                           setSelectedClickupListId('');
                         }}
                         required
-                        style={{ height: '38px', cursor: 'pointer' }}
+                        style={{ cursor: 'pointer' }}
                         disabled={isLoadingClickupData}
                       >
                         <option value="">-- Seleccionar --</option>
@@ -4407,7 +4410,7 @@ const handleDeleteMember = async (id) => {
                           setSelectedClickupListId('');
                         }}
                         required
-                        style={{ height: '38px', cursor: 'pointer' }}
+                        style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupTeamId || isLoadingClickupData}
                       >
                         <option value="">-- Seleccionar --</option>
@@ -4426,7 +4429,7 @@ const handleDeleteMember = async (id) => {
                           setSelectedClickupFolderId(e.target.value);
                           setSelectedClickupListId('');
                         }}
-                        style={{ height: '38px', cursor: 'pointer' }}
+                        style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
                         <option value="folderless">-- Listas sin Carpeta --</option>
@@ -4443,7 +4446,7 @@ const handleDeleteMember = async (id) => {
                         value={selectedClickupListId}
                         onChange={(e) => setSelectedClickupListId(e.target.value)}
                         required
-                        style={{ height: '38px', cursor: 'pointer' }}
+                        style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
                         <option value="">-- Seleccionar Lista --</option>
@@ -4478,13 +4481,12 @@ const handleDeleteMember = async (id) => {
                       <span>Cuando una tarea en la lista cambia al estado</span>
                       <select 
                         style={{
-                          padding: '6px 12px',
+                          padding: '8px 12px',
                           borderRadius: '8px',
                           border: '1px solid #d1d5db',
                           fontWeight: 600,
                           outline: 'none',
                           backgroundColor: '#f3f4f6',
-                          height: '34px',
                           fontSize: '0.85rem',
                           cursor: 'pointer'
                         }}
@@ -4499,13 +4501,12 @@ const handleDeleteMember = async (id) => {
                       <span>disparar la plantilla de Kônsul</span>
                       <select 
                         style={{
-                          padding: '6px 12px',
+                          padding: '8px 12px',
                           borderRadius: '8px',
                           border: '1px solid #d1d5db',
                           fontWeight: 600,
                           outline: 'none',
                           backgroundColor: '#f3f4f6',
-                          height: '34px',
                           fontSize: '0.85rem',
                           cursor: 'pointer'
                         }}
