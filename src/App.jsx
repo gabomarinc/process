@@ -804,9 +804,9 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo guardar la configuración de ClickUp.');
-      setSettingsSuccessMsg('Configuración de ClickUp guardada con éxito.');
+      showAlert('Configuración de ClickUp guardada con éxito.', 'success');
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
@@ -835,8 +835,6 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
 
   const handleCreateClickupRule = async (e) => {
     e.preventDefault();
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch('/api/integrations/clickup/rules', {
         method: 'POST',
@@ -847,15 +845,13 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       if (!res.ok) throw new Error(data.error || 'No se pudo crear la regla.');
       setClickupRules([data, ...clickupRules]);
       setNewClickupRule({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
-      setSettingsSuccessMsg('Regla de automatización de ClickUp creada.');
+      showAlert('Regla de automatización de ClickUp creada.', 'success');
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
   const handleDeleteClickupRule = async (ruleId) => {
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch(`/api/integrations/clickup/rules/${ruleId}`, {
         method: 'DELETE'
@@ -865,15 +861,13 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         throw new Error(data.error || 'No se pudo eliminar la regla.');
       }
       setClickupRules(clickupRules.filter(r => r.id !== ruleId));
-      setSettingsSuccessMsg('Regla eliminada correctamente.');
+      showAlert('Regla eliminada correctamente.', 'success');
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
   const handleUpdateClickupRuleStatus = async (ruleId, newStatus) => {
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch(`/api/integrations/clickup/rules/${ruleId}/status`, {
         method: 'PUT',
@@ -885,9 +879,9 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         throw new Error(data.error || 'No se pudo cambiar el estado de la regla.');
       }
       setClickupRules(prev => prev.map(r => r.id === ruleId ? { ...r, status: newStatus } : r));
-      setSettingsSuccessMsg(`Estado de regla ClickUp cambiado a ${newStatus === 'approved' ? 'aprobada' : 'rechazada'}.`);
+      showAlert(`Estado de regla ClickUp cambiado a ${newStatus === 'approved' ? 'aprobada' : 'rechazada'}.`, 'success');
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
