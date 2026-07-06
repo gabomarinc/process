@@ -9,18 +9,18 @@ let alertIdCounter = 0;
 export const AlertProvider = ({ children }) => {
   const [alerts, setAlerts] = useState([]);
 
-  const showAlert = useCallback((message, variant = 'information', title = '') => {
+  const showAlert = useCallback((message, variant = 'information', title = '', action = null) => {
     const id = `alert_${++alertIdCounter}`;
     
     // Auto capitalize title based on variant if not provided
     const displayTitle = title || (variant.charAt(0).toUpperCase() + variant.slice(1));
     
-    setAlerts(prev => [...prev, { id, variant, title: displayTitle, description: message }]);
+    setAlerts(prev => [...prev, { id, variant, title: displayTitle, description: message, action }]);
     
-    // Auto dismiss after 5 seconds
+    // Auto dismiss after 5 seconds (or 10 seconds if it has an action)
     setTimeout(() => {
       setAlerts(prev => prev.filter(a => a.id !== id));
-    }, 5000);
+    }, action ? 10000 : 5000);
   }, []);
 
   const removeAlert = useCallback((id) => {
@@ -32,12 +32,13 @@ export const AlertProvider = ({ children }) => {
       {children}
       <div className="gradient-alert-container">
         <AnimatePresence>
-          {alerts.map(({ id, variant, title, description }) => (
+          {alerts.map(({ id, variant, title, description, action }) => (
             <GradientAlert
               key={id}
               variant={variant}
               title={title}
               description={description}
+              action={action}
               onClose={() => removeAlert(id)}
             />
           ))}

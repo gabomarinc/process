@@ -122,3 +122,19 @@
   color: #333333;
   background-color: rgba(0, 0, 0, 0.05);
 }
+
+.gradient-alert-action-btn {
+  margin-top: 8px;
+  background: var(--glass-border);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.gradient-alert-action-btn:hover {
+  background: rgba(255,255,255,0.2);
+}

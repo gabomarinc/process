@@ -149,19 +149,24 @@ function App() {
   useEffect(() => {
     // Automatically ask for permission if not set yet and user is logged in
     if (user && "Notification" in window && Notification.permission === 'default' && localStorage.getItem('browser_notifications_enabled') === null) {
-      const timer = setTimeout(async () => {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          setBrowserNotifications(true);
-          localStorage.setItem('browser_notifications_enabled', 'true');
-          new Notification("Kônsul", { body: "Notificaciones de Kônsul activadas.", icon: '/favicon.ico' });
-        } else {
-          localStorage.setItem('browser_notifications_enabled', 'false');
-        }
+      const timer = setTimeout(() => {
+        showAlert('Habilita las notificaciones para recibir actualizaciones en tiempo real sobre tus procesos.', 'information', 'Activar Notificaciones', {
+          label: 'Permitir',
+          onClick: async () => {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              setBrowserNotifications(true);
+              localStorage.setItem('browser_notifications_enabled', 'true');
+              showAlert("Notificaciones de Kônsul activadas con éxito.", 'success', 'Kônsul');
+            } else {
+              localStorage.setItem('browser_notifications_enabled', 'false');
+            }
+          }
+        });
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [user]);
+  }, [user, showAlert]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -264,7 +269,7 @@ function App() {
   });
 
   const triggerBrowserNotification = (msg) => {
-    addToast(msg, 'info');
+    showAlert(msg, 'information', 'Notificación Kônsul');
     if (localStorage.getItem('browser_notifications_enabled') === 'true' && "Notification" in window && Notification.permission === 'granted') {
       new Notification("Kônsul", {
         body: msg,
@@ -3745,16 +3750,16 @@ const handleDeleteMember = async (id) => {
                       const checked = e.target.checked;
                       if (checked) {
                         if (!("Notification" in window)) {
-                          alert("Este navegador no soporta notificaciones de escritorio.");
+                          showAlert("Este navegador no soporta notificaciones de escritorio.", "error");
                           return;
                         }
                         const permission = await Notification.requestPermission();
                         if (permission === 'granted') {
                           setBrowserNotifications(true);
                           localStorage.setItem('browser_notifications_enabled', 'true');
-                          new Notification("Kônsul", { body: "¡Notificaciones activadas con éxito!", icon: '/favicon.ico' });
+                          showAlert("¡Notificaciones activadas con éxito!", "success", "Kônsul");
                         } else {
-                          alert("Permiso denegado por el navegador. Habilítalo en la configuración de la barra de direcciones.");
+                          showAlert("Permiso denegado por el navegador. Habilítalo en la configuración de la barra de direcciones.", "warning");
                           setBrowserNotifications(false);
                           localStorage.setItem('browser_notifications_enabled', 'false');
                         }

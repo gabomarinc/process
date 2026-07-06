@@ -44,6 +44,14 @@ const GradientAlert = forwardRef(
         <div className="gradient-alert-content">
           {title && <h5 className="gradient-alert-title">{title}</h5>}
           <p className="gradient-alert-desc">{description}</p>
+          {props.action && (
+            <button
+              className="gradient-alert-action-btn"
+              onClick={props.action.onClick}
+            >
+              {props.action.label}
+            </button>
+          )}
         </div>
 
         {/* Close Button */}
