@@ -248,7 +248,7 @@ function App() {
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
-  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+  const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
   const [fileStore, setFileStore] = useState({});
   const [clickupToken, setClickupToken] = useState('');
   const [clickupRules, setClickupRules] = useState([]);
@@ -976,6 +976,27 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           setTeamMembers(prev => [...prev, newMember]);
         }
         
+        // Update System Role if modified
+        const sysUser = orgUsers.find(u => u.email === newMember.email);
+        if (sysUser && memberFormData.systemRole && memberFormData.systemRole !== sysUser.role) {
+          if (user?.role === 'admin' && user?.id !== sysUser.id) {
+            try {
+              const roleRes = await fetch(`/api/users/${sysUser.id}/role`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: memberFormData.systemRole })
+              });
+              if (roleRes.ok) {
+                 const updatedUser = await roleRes.json();
+                 setOrgUsers(prev => prev.map(u => u.id === sysUser.id ? updatedUser : u));
+              }
+            } catch (err) {
+              console.error("Error updating system role:", err);
+            }
+          } else if (user?.id === sysUser.id) {
+             showAlert("No puedes modificar tu propio rol del sistema.");
+          }
+        }
         // Sync modified templates and database with the new memberId assignment
         for (const temp of templates) {
           let updatedSteps = temp.steps;
@@ -999,7 +1020,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         setShowMemberModal(false);
         setShowEditProfileModal(false);
         setEditingMember(null);
-        setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+        setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
         setTicketModal({
           isOpen: true,
           title: "¡Perfil Guardado!",
@@ -2151,7 +2172,7 @@ const handleDeleteMember = async (id) => {
                             setActiveTab('team');
                             setOpenDropdown(null);
                             setEditingMember(null);
-                            setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+                            setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
                             setMemberModalStep(1);
                             setShowMemberModal(true);
                           }}
@@ -2818,7 +2839,7 @@ const handleDeleteMember = async (id) => {
                 <button className="btn btn-primary" onClick={() => {
                   modifiedTemplateIds = new Set();
                   setEditingMember(null);
-                  setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '' });
+                  setMemberFormData({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
                   setMemberModalStep(1);
                   setShowMemberModal(true);
                 }}>
@@ -2905,7 +2926,8 @@ const handleDeleteMember = async (id) => {
                           <button className="btn btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
                             modifiedTemplateIds = new Set();
                             setEditingMember(member);
-                            setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '' });
+                            const sysUser = orgUsers.find(u => u.email === member.email);
+                            setMemberFormData({ name: member.name, role: member.role, email: member.email, assignedProcesses: member.assignedProcesses || [], department: member.department || '', managerId: member.managerId || '', systemRole: sysUser ? sysUser.role : '' });
                             setMemberModalStep(1);
                             setShowEditProfileModal(true);
                           }}>
@@ -3897,6 +3919,28 @@ const handleDeleteMember = async (id) => {
                     </select>
                   </div>
                 </div>
+
+                {/* System Role Dropdown (Only visible to admins when a valid system user exists for this email) */}
+                {user?.role === 'admin' && orgUsers.find(u => u.email === memberFormData.email) && (
+                  <div className="form-group">
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)' }}>Nivel de Acceso (Sistema)</label>
+                    <select
+                      className="form-input"
+                      value={memberFormData.systemRole || ''}
+                      onChange={(e) => setMemberFormData({ ...memberFormData, systemRole: e.target.value })}
+                      disabled={orgUsers.find(u => u.email === memberFormData.email)?.id === user.id}
+                      title={orgUsers.find(u => u.email === memberFormData.email)?.id === user.id ? "No puedes cambiar tu propio rol" : ""}
+                    >
+                      <option value="admin">Administrador Total</option>
+                      <option value="gerente">Gerente (Requiere Aprobación)</option>
+                      <option value="agent">Agente (Operador)</option>
+                      <option value="guest">Invitado (Solo Lectura)</option>
+                    </select>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      Controla los permisos de este usuario dentro de la plataforma Konsul.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Notificaciones del Navegador config */}
