@@ -671,7 +671,9 @@ app.get('/api/team', authenticateToken, async (req, res) => {
       isSystem: false
     }));
 
-    const adminUsers = usersResult.rows.map(row => ({
+    const adminUsers = usersResult.rows
+      .filter(row => !mapped.some(m => m.email?.toLowerCase() === row.email?.toLowerCase()))
+      .map(row => ({
       id: 'admin_' + row.id,
       name: row.name + " (" + row.role + ")",
       role: row.role,
