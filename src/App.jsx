@@ -855,22 +855,20 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     e.preventDefault();
     try {
       const folderObj = clickupFolders.find(f => f.id === selectedClickupFolderId);
-      let listName = '';
-      if (selectedClickupListId) {
-        const listObj = (!selectedClickupFolderId || selectedClickupFolderId === 'folderless')
-          ? clickupFolderlessLists.find(l => l.id === selectedClickupListId)
-          : clickupLists.find(l => l.id === selectedClickupListId);
-        listName = listObj ? listObj.name : '';
-      }
+      const folderName = folderObj ? folderObj.name : null;
+      
+      const listObj = (!selectedClickupFolderId || selectedClickupFolderId === 'folderless' || selectedClickupFolderId === '')
+        ? clickupFolderlessLists.find(l => l.id === selectedClickupListId)
+        : clickupLists.find(l => l.id === selectedClickupListId);
+      const listName = listObj ? listObj.name : null;
 
       const payload = {
-        ruleName: newClickupRule.ruleName,
-        clickupFolderId: selectedClickupFolderId !== 'folderless' ? selectedClickupFolderId : null,
-        clickupFolderName: folderObj ? folderObj.name : null,
+        ...newClickupRule,
         clickupListId: selectedClickupListId || null,
         clickupListName: listName || null,
-        clickupStatus: newClickupRule.clickupStatus || 'closed',
-        templateId: newClickupRule.templateId
+        clickupFolderId: (selectedClickupFolderId && selectedClickupFolderId !== 'folderless') ? selectedClickupFolderId : null,
+        clickupFolderName: folderName,
+        clickupStatus: newClickupRule.clickupStatus || 'closed'
       };
 
       const res = await fetch('/api/integrations/clickup/rules', {
@@ -4487,7 +4485,6 @@ const handleDeleteMember = async (id) => {
                         style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
-                        <option value="">-- Seleccionar Carpeta --</option>
                         <option value="folderless">-- Listas sin Carpeta --</option>
                         {clickupFolders.map(f => (
                           <option key={f.id} value={f.id}>{f.name}</option>
@@ -4496,7 +4493,7 @@ const handleDeleteMember = async (id) => {
                     </div>
 
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Lista (List)</label>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Lista (List) <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontStyle: 'italic' }}>— opcional</span></label>
                       <select
                         className="form-input"
                         value={selectedClickupListId}
@@ -4504,7 +4501,7 @@ const handleDeleteMember = async (id) => {
                         style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
-                        <option value="">-- Seleccionar Lista --</option>
+                        <option value="">-- Cualquier lista de la carpeta --</option>
                         {(!selectedClickupFolderId || selectedClickupFolderId === 'folderless' || selectedClickupFolderId === '') ? (
                           clickupFolderlessLists.map(l => (
                             <option key={l.id} value={l.id}>{l.name}</option>
@@ -4518,8 +4515,8 @@ const handleDeleteMember = async (id) => {
                     </div>
                   </div>
 
-                  {/* Sentence builder */}
-                  {(selectedClickupListId || (selectedClickupFolderId && selectedClickupFolderId !== 'folderless')) && (
+                  {/* Sentence builder — shows when at least a folder is selected */}
+                  {(selectedClickupFolderId && selectedClickupFolderId !== 'folderless') && (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -4533,7 +4530,7 @@ const handleDeleteMember = async (id) => {
                       color: 'var(--text-main)',
                       lineHeight: '2.2rem'
                     }}>
-                      <span>Cuando una tarea cambia al estado</span>
+                      <span>Cuando una tarea en {selectedClickupListId ? 'la lista seleccionada' : 'cualquier lista de la carpeta'} cambia al estado</span>
                       <select 
                         style={{
                           padding: '8px 12px',
@@ -4549,8 +4546,7 @@ const handleDeleteMember = async (id) => {
                         onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })}
                         required
                       >
-                        <option value="">-- Seleccionar Estado --</option>
-                        {(clickupStatuses.length > 0 ? clickupStatuses : [{status: 'closed'}, {status: 'done'}, {status: 'in progress'}, {status: 'to do'}]).map(st => (
+                        {clickupStatuses.map(st => (
                           <option key={st.id || st.status} value={st.status}>{st.status.toUpperCase()}</option>
                         ))}
                       </select>
@@ -4582,7 +4578,7 @@ const handleDeleteMember = async (id) => {
                     type="submit" 
                     className="btn btn-primary" 
                     style={{ alignSelf: 'flex-end', padding: '0.65rem 2rem', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}
-                    disabled={(!selectedClickupListId && (!selectedClickupFolderId || selectedClickupFolderId === 'folderless')) || isLoadingClickupData}
+                    disabled={!(selectedClickupFolderId && selectedClickupFolderId !== 'folderless') || isLoadingClickupData}
                   >
                     {isLoadingClickupData ? 'Cargando...' : 'Agregar Regla'}
                   </button>
@@ -4614,10 +4610,7 @@ const handleDeleteMember = async (id) => {
                         return (
                           <tr key={rule.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{rule.ruleName}</td>
-                            <td style={{ padding: '10px 12px' }}>
-                               {rule.clickupListName ? rule.clickupListName : rule.clickupFolderName ? `${rule.clickupFolderName} (Toda la Carpeta)` : 'N/A'} 
-                               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> ({rule.clickupListId || rule.clickupFolderId || 'N/A'})</span>
-                            </td>
+                            <td style={{ padding: '10px 12px' }}>{rule.clickupListName} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({rule.clickupListId})</span></td>
                             <td style={{ padding: '10px 12px' }}><span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: '0.75rem' }}>{rule.clickupStatus}</span></td>
                             <td style={{ padding: '10px 12px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
                             <td style={{ padding: '10px 12px' }}>
@@ -4680,7 +4673,7 @@ const handleDeleteMember = async (id) => {
       </Dialog>
 
       <Dialog open={showConfigureRuleModal} onOpenChange={setShowConfigureRuleModal}>
-        <DialogContent style={{ maxWidth: '42rem', borderRadius: '24px', padding: '2rem', maxHeight: '85vh', overflowY: 'auto' }}>
+        <DialogContent style={{ maxWidth: '42rem', borderRadius: '24px', padding: '2rem', maxHeight: '90vh', overflowY: 'auto' }}>
           <DialogHeader>
             <DialogTitle style={{ fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={20} style={{ color: 'var(--color-primary)' }} />

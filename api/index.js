@@ -56,11 +56,12 @@ pool.query(`
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
-  ALTER TABLE clickup_rules ALTER COLUMN clickup_list_id DROP NOT NULL;
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS clickup_folder_id VARCHAR(100);
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS clickup_folder_name VARCHAR(255);
+  ALTER TABLE clickup_rules ALTER COLUMN clickup_list_id DROP NOT NULL;
+  ALTER TABLE clickup_rules ALTER COLUMN clickup_list_name DROP NOT NULL;
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status", "title_pattern" y tablas "clients" y "clickup_rules" aseguradas.');
+  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status", "title_pattern", "clickup_folder_id", "clickup_folder_name" y tablas "clients" y "clickup_rules" aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -1512,7 +1513,7 @@ app.get('/api/integrations/clickup/list-details', authenticateToken, async (req,
 app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern" FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName" FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
       [req.user.organizationId]
     );
     res.json(result.rows);
@@ -1524,14 +1525,14 @@ app.get('/api/integrations/clickup/rules', authenticateToken, async (req, res) =
 
 // Create Rule
 app.post('/api/integrations/clickup/rules', authenticateToken, async (req, res) => {
-  const { ruleName, clickupListId, clickupListName, clickupFolderId, clickupFolderName, clickupStatus, templateId } = req.body;
+  const { ruleName, clickupListId, clickupListName, clickupStatus, templateId, clickupFolderId, clickupFolderName } = req.body;
   const status = req.user.role === 'gerente' ? 'pending_approval' : 'approved';
   try {
     const result = await pool.query(
-      `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_folder_id, clickup_folder_name, clickup_status, template_id, status)
+      `INSERT INTO clickup_rules (organization_id, rule_name, clickup_list_id, clickup_list_name, clickup_status, template_id, status, clickup_folder_id, clickup_folder_name)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern"`,
-      [req.user.organizationId, ruleName, clickupListId || null, clickupListName || null, clickupFolderId || null, clickupFolderName || null, clickupStatus, templateId, status]
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName"`,
+      [req.user.organizationId, ruleName, clickupListId || null, clickupListName || null, clickupStatus, templateId, status, clickupFolderId || null, clickupFolderName || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1549,7 +1550,7 @@ app.put('/api/integrations/clickup/rules/:id', authenticateToken, async (req, re
       `UPDATE clickup_rules 
        SET title_pattern = $1 
        WHERE id = $2 AND organization_id = $3
-       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern"`,
+       RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName"`,
       [titlePattern, id, req.user.organizationId]
     );
     if (result.rows.length === 0) {
@@ -1574,7 +1575,7 @@ app.put('/api/integrations/clickup/rules/:id/status', authenticateToken, async (
   }
   try {
     const result = await pool.query(
-      'UPDATE clickup_rules SET status = $1 WHERE id = $2 AND organization_id = $3 RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_folder_id as "clickupFolderId", clickup_folder_name as "clickupFolderName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern"',
+      'UPDATE clickup_rules SET status = $1 WHERE id = $2 AND organization_id = $3 RETURNING id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status',
       [status, id, req.user.organizationId]
     );
     if (result.rows.length === 0) {
@@ -1644,21 +1645,21 @@ app.post('/api/webhooks/clickup', async (req, res) => {
       return res.status(200).json({ message: 'No se pudo obtener detalles de la tarea desde ClickUp' });
     }
 
-    const listId = taskData.list?.id;
-    const folderId = taskData.folder?.id;
+    const listId = taskData.list.id;
     const taskStatus = taskData.status?.status;
     const taskName = taskData.name;
+    const folderId = taskData.folder?.id;
 
-    // Find rules for this specific listId OR folderId and status
+    // Find rules for this specific listId OR for the folderId if no specific listId is specified
     const rulesRes = await pool.query(
       `SELECT * FROM clickup_rules 
-       WHERE (clickup_list_id = $1 OR (COALESCE(clickup_list_id, '') = '' AND clickup_folder_id = $2))
+       WHERE ((clickup_list_id = $1) OR (clickup_list_id IS NULL AND clickup_folder_id = $2))
          AND LOWER(clickup_status) = LOWER($3) AND active = TRUE AND (status = 'approved' OR status IS NULL)`,
-      [listId, folderId, taskStatus]
+      [listId, folderId || null, taskStatus]
     );
 
     if (rulesRes.rows.length === 0) {
-      return res.status(200).json({ message: 'Ninguna regla coincide con el estado, lista o carpeta de la tarea' });
+      return res.status(200).json({ message: 'Ninguna regla coincide con el estado, la lista o la carpeta de la tarea' });
     }
 
     for (const rule of rulesRes.rows) {
