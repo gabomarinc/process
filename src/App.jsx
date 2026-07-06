@@ -4500,11 +4500,10 @@ const handleDeleteMember = async (id) => {
                         className="form-input"
                         value={selectedClickupListId}
                         onChange={(e) => setSelectedClickupListId(e.target.value)}
-                        required={!selectedClickupFolderId || selectedClickupFolderId === 'folderless'}
                         style={{ cursor: 'pointer' }}
                         disabled={!selectedClickupSpaceId || isLoadingClickupData}
                       >
-                        <option value="">-- Seleccionar Lista (Opcional) --</option>
+                        <option value="">-- Seleccionar Lista --</option>
                         {(!selectedClickupFolderId || selectedClickupFolderId === 'folderless' || selectedClickupFolderId === '') ? (
                           clickupFolderlessLists.map(l => (
                             <option key={l.id} value={l.id}>{l.name}</option>
@@ -4614,7 +4613,10 @@ const handleDeleteMember = async (id) => {
                         return (
                           <tr key={rule.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{rule.ruleName}</td>
-                            <td style={{ padding: '10px 12px' }}>{rule.clickupListName} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({rule.clickupListId})</span></td>
+                            <td style={{ padding: '10px 12px' }}>
+                               {rule.clickupListName ? rule.clickupListName : rule.clickupFolderName ? `${rule.clickupFolderName} (Toda la Carpeta)` : 'N/A'} 
+                               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> ({rule.clickupListId || rule.clickupFolderId || 'N/A'})</span>
+                            </td>
                             <td style={{ padding: '10px 12px' }}><span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: '0.75rem' }}>{rule.clickupStatus}</span></td>
                             <td style={{ padding: '10px 12px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
                             <td style={{ padding: '10px 12px' }}>
