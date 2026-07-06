@@ -49,7 +49,7 @@ import {
   Save,
   Mic,
   Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
-  Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings
+  Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -255,6 +255,8 @@ function App() {
   const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: 'closed', templateId: '' });
   const [isTestingClickup, setIsTestingClickup] = useState(false);
   const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
+  const [ecosystemSubTab, setEcosystemSubTab] = useState('oficiales'); // 'oficiales' or 'ondemand'
+  const [showClickupModal, setShowClickupModal] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
@@ -1911,6 +1913,13 @@ const handleDeleteMember = async (id) => {
         icon: <Users size={20} />,
         type: 'tab',
         onClick: () => setActiveTab('team')
+      },
+      {
+        id: 'ecosystem',
+        label: 'Ecosistema',
+        icon: <LayoutGrid size={20} />,
+        type: 'tab',
+        onClick: () => setActiveTab('ecosystem')
       }
     ] : []),
     {
@@ -2178,6 +2187,17 @@ const handleDeleteMember = async (id) => {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+            {user?.role !== 'guest' && (
+              <div className="nav-menu-item-unified">
+                <button 
+                  className={`nav-trigger-btn ${activeTab === 'ecosystem' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('ecosystem'); setOpenDropdown(null); }}
+                >
+                  <LayoutGrid size={15} className="icon-blue" />
+                  <span>Ecosistema</span>
+                </button>
               </div>
             )}
           </nav>
@@ -2937,6 +2957,324 @@ const handleDeleteMember = async (id) => {
                 </div>
               )}
             </div>
+          ) : activeTab === 'ecosystem' ? (
+            <div>
+              <div className="section-title">
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                  Ecosistema de Aplicaciones
+                </h2>
+              </div>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
+                Conecta tu agente con las herramientas que ya utilizas
+              </p>
+
+              {/* Capsule Subtabs */}
+              <div style={{
+                background: 'white',
+                border: '1px solid rgba(0,0,0,0.06)',
+                borderRadius: '30px',
+                padding: '0.5rem',
+                display: 'inline-flex',
+                gap: '8px',
+                marginBottom: '2rem',
+                boxShadow: 'var(--shadow-sm)'
+              }}>
+                <button
+                  onClick={() => setEcosystemSubTab('oficiales')}
+                  style={{
+                    border: 'none',
+                    background: ecosystemSubTab === 'oficiales' ? 'rgba(39, 190, 167, 0.1)' : 'transparent',
+                    color: ecosystemSubTab === 'oficiales' ? 'var(--color-primary)' : 'var(--text-muted)',
+                    padding: '0.5rem 1.5rem',
+                    borderRadius: '20px',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <LayoutGrid size={16} /> Oficiales
+                </button>
+                <button
+                  onClick={() => setEcosystemSubTab('ondemand')}
+                  style={{
+                    border: 'none',
+                    background: ecosystemSubTab === 'ondemand' ? 'rgba(39, 190, 167, 0.1)' : 'transparent',
+                    color: ecosystemSubTab === 'ondemand' ? 'var(--color-primary)' : 'var(--text-muted)',
+                    padding: '0.5rem 1.5rem',
+                    borderRadius: '20px',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Sparkles size={16} /> On Demand
+                </button>
+              </div>
+
+              {ecosystemSubTab === 'oficiales' ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                  gap: '1.5rem'
+                }}>
+                  {/* ClickUp Integration Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #7b68ee, #6050dc)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        CU
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ClickUp</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Conecta tus listas de ClickUp para automatizar la creación y el inicio de procesos y tareas operativas.
+                      </p>
+                      {clickupToken && (
+                        <span className="badge success" style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
+                          Conectado
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setShowClickupModal(true)}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
+                    </button>
+                  </div>
+
+                  {/* Zoho CRM Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    opacity: 0.85
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: '#e0e0e0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#666',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        ZC
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Zoho CRM</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Crea leads y contactos automáticamente desde el chat.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => showAlert('La integración con Zoho CRM estará disponible próximamente.', 'information')}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        color: 'var(--color-primary)',
+                        backgroundColor: 'rgba(39, 190, 167, 0.05)',
+                        border: '1px solid rgba(39, 190, 167, 0.15)'
+                      }}
+                    >
+                      ACTIVAR
+                    </button>
+                  </div>
+
+                  {/* Zoho Desk Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    opacity: 0.85
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: '#e0e0e0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#666',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        ZD
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Zoho Desk</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Gestiona tickets de soporte e incidencias directamente.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => showAlert('La integración con Zoho Desk estará disponible próximamente.', 'information')}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        color: 'var(--color-primary)',
+                        backgroundColor: 'rgba(39, 190, 167, 0.05)',
+                        border: '1px solid rgba(39, 190, 167, 0.15)'
+                      }}
+                    >
+                      ACTIVAR
+                    </button>
+                  </div>
+
+                  {/* Odoo CRM Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    opacity: 0.85
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: '#e0e0e0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#666',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        OD
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Odoo CRM</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Conecta tu instancia de Odoo para sincronizar leads y notas.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => showAlert('La integración con Odoo CRM estará disponible próximamente.', 'information')}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        color: 'var(--color-primary)',
+                        backgroundColor: 'rgba(39, 190, 167, 0.05)',
+                        border: '1px solid rgba(39, 190, 167, 0.15)'
+                      }}
+                    >
+                      ACTIVAR
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  background: 'white',
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  borderRadius: '24px',
+                  padding: '3rem',
+                  textAlign: 'center',
+                  boxShadow: 'var(--shadow-sm)'
+                }}>
+                  <Sparkles size={48} style={{ color: 'var(--color-primary)', marginBottom: '1.25rem' }} />
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>Integraciones On Demand</h3>
+                  <p style={{ color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto 1.5rem auto', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                    ¿Necesitas conectar una herramienta específica a Kônsul? Desarrollamos integraciones a la medida de los flujos y procesos de tu negocio.
+                  </p>
+                  <a
+                    href="mailto:soporte@konsul.digital?subject=Solicitud de Integracion On Demand"
+                    className="btn btn-primary"
+                    style={{
+                      borderRadius: '30px',
+                      padding: '0.65rem 2rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontWeight: '600',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    Solicitar Integración
+                  </a>
+                </div>
+              )}
+            </div>
           ) : (
             /* Settings Tab View (activeTab === 'settings') */
             <div>
@@ -3182,213 +3520,6 @@ const handleDeleteMember = async (id) => {
 
               </div>
 
-              {/* ClickUp Integration Section */}
-              {user?.role === 'admin' && (
-                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem', borderBottom: '1px solid #eef', paddingBottom: '8px' }}>
-                    <Settings size={22} style={{ color: 'var(--color-primary)' }} />
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Integración con ClickUp</h3>
-                  </div>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-                    Conecta ClickUp a Kônsul para disparar flujos automáticos. Configura webhooks en ClickUp apuntando a <code>{window.location.origin}/api/webhooks/clickup</code>.
-                  </p>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
-                    {/* Connection Form */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>1. Conectar ClickUp</h4>
-                      <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <div className="form-group">
-                          <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Personal API Token</label>
-                          <input 
-                            type="password" 
-                            className="form-input" 
-                            placeholder="pk_..." 
-                            value={clickupToken} 
-                            onChange={(e) => setClickupToken(e.target.value)} 
-                            required 
-                          />
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                            Obtenlo en ClickUp: Configuración &gt; Apps &gt; API Token.
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ flex: 1 }} disabled={isTestingClickup}>
-                            {isTestingClickup ? 'Probando...' : 'Probar Conexión'}
-                          </button>
-                          <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                            Guardar Token
-                          </button>
-                        </div>
-                      </form>
-
-                      {clickupConnectionStatus && (
-                        <div style={{ 
-                          backgroundColor: clickupConnectionStatus.success ? '#e8f5e9' : '#ffebee',
-                          color: clickupConnectionStatus.success ? '#2e7d32' : '#c62828',
-                          padding: '10px',
-                          borderRadius: '8px',
-                          fontSize: '0.85rem',
-                          fontWeight: 600
-                        }}>
-                          {clickupConnectionStatus.message}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Rule Builder Form */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '1px solid #eef', paddingLeft: '1.5rem' }}>
-                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 600 }}>2. Crear Regla de Automatización</h4>
-                      <form onSubmit={handleCreateClickupRule} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <div className="form-group">
-                          <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Nombre de la Regla</label>
-                          <input 
-                            type="text" 
-                            className="form-input" 
-                            placeholder="Ej. Iniciar Onboarding" 
-                            value={newClickupRule.ruleName} 
-                            onChange={(e) => setNewClickupRule({ ...newClickupRule, ruleName: e.target.value })} 
-                            required 
-                          />
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <div className="form-group" style={{ flex: 1 }}>
-                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>ClickUp List ID</label>
-                            <input 
-                              type="text" 
-                              className="form-input" 
-                              placeholder="Ej. 9012015024" 
-                              value={newClickupRule.clickupListId} 
-                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListId: e.target.value })} 
-                              required 
-                            />
-                          </div>
-                          <div className="form-group" style={{ flex: 1 }}>
-                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Nombre de la Lista (Ref.)</label>
-                            <input 
-                              type="text" 
-                              className="form-input" 
-                              placeholder="Ej. Ventas Cerradas" 
-                              value={newClickupRule.clickupListName} 
-                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupListName: e.target.value })} 
-                              required 
-                            />
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <div className="form-group" style={{ flex: 1 }}>
-                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Estado Activador</label>
-                            <input 
-                              type="text" 
-                              className="form-input" 
-                              placeholder="Ej. closed" 
-                              value={newClickupRule.clickupStatus} 
-                              onChange={(e) => setNewClickupRule({ ...newClickupRule, clickupStatus: e.target.value })} 
-                              required 
-                            />
-                          </div>
-                          <div className="form-group" style={{ flex: 1 }}>
-                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Plantilla a Iniciar</label>
-                            <select 
-                              className="form-input" 
-                              value={newClickupRule.templateId} 
-                              onChange={(e) => setNewClickupRule({ ...newClickupRule, templateId: e.target.value })} 
-                              required
-                            >
-                              <option value="">-- Seleccionar --</option>
-                              {templates.map(t => (
-                                <option key={t.id} value={t.id}>{t.title}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                          Agregar Regla
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-
-                  {/* List of active rules */}
-                  <div style={{ marginTop: '2rem', borderTop: '1px solid #eef', paddingTop: '1.5rem' }}>
-                    <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 600 }}>Reglas Activas</h4>
-                    {clickupRules.length === 0 ? (
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No has configurado ninguna regla de automatización todavía.</p>
-                    ) : (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '2px solid #eee' }}>
-                              <th style={{ padding: '8px' }}>Nombre</th>
-                              <th style={{ padding: '8px' }}>Lista ClickUp</th>
-                              <th style={{ padding: '8px' }}>Estado Activador</th>
-                              <th style={{ padding: '8px' }}>Plantilla Asociada</th>
-                              <th style={{ padding: '8px' }}>Estado</th>
-                              <th style={{ padding: '8px' }}>Aprobación</th>
-                              <th style={{ padding: '8px', textAlign: 'right' }}>Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {clickupRules.map(rule => {
-                              const associatedTemplate = templates.find(t => t.id === rule.templateId);
-                              return (
-                                <tr key={rule.id} style={{ borderBottom: '1px solid #eee' }}>
-                                  <td style={{ padding: '8px', fontWeight: 600 }}>{rule.ruleName}</td>
-                                  <td style={{ padding: '8px' }}>{rule.clickupListName} <span style={{ color: 'var(--text-muted)' }}>({rule.clickupListId})</span></td>
-                                  <td style={{ padding: '8px' }}><span className="badge badge-secondary">{rule.clickupStatus}</span></td>
-                                  <td style={{ padding: '8px' }}>{associatedTemplate ? associatedTemplate.title : 'No encontrada'}</td>
-                                  <td style={{ padding: '8px' }}>
-                                    <span style={{ color: rule.active ? '#2e7d32' : '#c62828', fontWeight: 600 }}>
-                                      {rule.active ? 'Activa' : 'Inactiva'}
-                                    </span>
-                                  </td>
-                                  <td style={{ padding: '8px' }}>
-                                    <span 
-                                      className={`badge ${(!rule.status || rule.status === 'approved') ? 'success' : rule.status === 'rejected' ? 'danger' : 'warning'}`}
-                                      style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
-                                    >
-                                      {(!rule.status || rule.status === 'approved') ? 'Aprobada' : rule.status === 'rejected' ? 'Rechazada' : 'Pendiente'}
-                                    </span>
-                                  </td>
-                                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                                    <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
-                                      {user?.role === 'admin' && rule.status === 'pending_approval' && (
-                                        <>
-                                          <button 
-                                            className="btn btn-secondary" 
-                                            style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(76,175,80,0.1)', color: '#2e7d32', border: 'none', cursor: 'pointer', fontWeight: 600, borderRadius: '4px' }} 
-                                            onClick={() => handleUpdateClickupRuleStatus(rule.id, 'approved')}
-                                          >
-                                            Aprobar
-                                          </button>
-                                          <button 
-                                            className="btn btn-secondary" 
-                                            style={{ padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(244,67,54,0.1)', color: '#c62828', border: 'none', cursor: 'pointer', fontWeight: 600, borderRadius: '4px' }} 
-                                            onClick={() => handleUpdateClickupRuleStatus(rule.id, 'rejected')}
-                                          >
-                                            Rechazar
-                                          </button>
-                                        </>
-                                      )}
-                                      <button 
-                                        className="btn btn-danger" 
-                                        style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
-                                        onClick={() => handleDeleteClickupRule(rule.id)}
-                                      >
-                                        Eliminar
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* User management list */}
               {user?.role === 'admin' && (
