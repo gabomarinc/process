@@ -3791,10 +3791,9 @@ const handleDeleteMember = async (id) => {
                 </div>
               )}
             </div>
-
-            </div>
           )}
         </div>
+
 
         {/* Right Side: Operations Panel */}
         {activeTab !== 'settings' && (
