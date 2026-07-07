@@ -7,6 +7,7 @@ import { AddUserModal } from "./components/ui/AddUserModal";
 import { TemplateDetailsModal } from "./components/ui/TemplateDetailsModal";
 import { ActiveExecutionModal } from "./components/ui/ActiveExecutionModal";
 import { OnDemandModal } from "./components/ui/OnDemandModal";
+import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
@@ -129,6 +130,7 @@ function App() {
     if (tokenParam) {
       setResetToken(tokenParam);
       setAuthView('reset');
+      setShowAuthScreen(true);
     }
     
     const savedUser = localStorage.getItem('user');
@@ -248,6 +250,7 @@ function App() {
   const recognitionRef = React.useRef(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showOnDemandModal, setShowOnDemandModal] = useState(false);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState({});
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
@@ -1942,6 +1945,19 @@ const handleDeleteMember = async (id) => {
   };
 
   if (!token) {
+    if (!showAuthScreen) {
+      return (
+        <LandingPage 
+          onLoginClick={() => { setAuthView('login'); setShowAuthScreen(true); }}
+          onStartFree={(email) => { 
+            setAuthForm({ ...authForm, email }); 
+            setAuthView('register'); 
+            setShowAuthScreen(true); 
+          }}
+        />
+      );
+    }
+
     let title = '';
     let subtitle = 'Bienvenido de nuevo';
     let btnText = 'Iniciar Sesión';
@@ -2057,6 +2073,12 @@ const handleDeleteMember = async (id) => {
               </span>
             </div>
           )}
+
+          <div className="auth-switch" style={{ marginTop: '1rem' }}>
+            <span onClick={() => { setShowAuthScreen(false); setAuthError(''); setAuthSuccessMsg(''); }}>
+              ← Volver al inicio
+            </span>
+          </div>
         </div>
       </div>
     );
