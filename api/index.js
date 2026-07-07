@@ -53,11 +53,20 @@ pool.query(`
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS api_tokens (
+    id SERIAL PRIMARY KEY,
+    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMPTZ
+  );
+
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
 `).then(() => {
-  console.log('Migración de base de datos completada: columnas "role", "companion_name", "companion_avatar", "gemini_api_key", "clickup_token", "clickup_workspace_id", "status", "title_pattern" y tablas "clients" y "clickup_rules" aseguradas.');
+  console.log('Migración de base de datos completada: columnas y tablas (incluyendo "api_tokens") aseguradas.');
 }).catch(err => {
   console.error('Error al migrar base de datos:', err);
 });
@@ -130,6 +139,42 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+const authenticateApiKey = async (req, res, next) => {
+  const apiKey = req.headers['x-api-key'] || (req.headers['authorization'] && req.headers['authorization'].startsWith('Bearer ') && req.headers['authorization'].split(' ')[1]);
+
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Acceso denegado. API key no proporcionada.' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM api_tokens WHERE token = $1',
+      [apiKey]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'API key inválida o revocada.' });
+    }
+
+    const apiToken = result.rows[0];
+
+    // Update last used timestamp
+    pool.query('UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1', [apiToken.id]).catch(console.error);
+
+    req.user = {
+      id: null,
+      organizationId: apiToken.organization_id,
+      role: 'admin',
+      email: 'api-caller@konsul.digital'
+    };
+
+    next();
+  } catch (err) {
+    console.error('Error al autenticar API key:', err);
+    res.status(500).json({ error: 'Error del servidor al autenticar API key.' });
+  }
 };
 
 // --- AUTH ROUTES ---
@@ -1798,6 +1843,184 @@ app.post('/api/integrations/clickup/test', authenticateToken, async (req, res) =
   } catch (err) {
     console.error('Error testing ClickUp connection:', err);
     res.status(500).json({ error: 'Error de red al conectar con ClickUp' });
+  }
+});
+
+// Developer Token Management API
+app.get('/api/developer/tokens', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden gestionar llaves de API.' });
+  try {
+    const result = await pool.query(
+      'SELECT id, name, token, created_at, last_used_at FROM api_tokens WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.user.organizationId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener llaves de API.' });
+  }
+});
+
+app.post('/api/developer/tokens', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden gestionar llaves de API.' });
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'El nombre de la llave es requerido.' });
+  
+  try {
+    const key = 'kp_' + crypto.randomBytes(24).toString('hex');
+    
+    const result = await pool.query(
+      'INSERT INTO api_tokens (organization_id, name, token) VALUES ($1, $2, $3) RETURNING id, name, token, created_at',
+      [req.user.organizationId, name, key]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear llave de API.' });
+  }
+});
+
+app.delete('/api/developer/tokens/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden gestionar llaves de API.' });
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'DELETE FROM api_tokens WHERE id = $1 AND organization_id = $2 RETURNING id',
+      [id, req.user.organizationId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Llave de API no encontrada.' });
+    res.json({ message: 'Llave de API revocada con éxito.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al revocar llave de API.' });
+  }
+});
+
+// --- PUBLIC DEVELOPER API V1 ---
+
+// Get all templates for the organization
+app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM templates WHERE organization_id = $1 AND status = 'approved'",
+      [req.user.organizationId]
+    );
+    const mapped = result.rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      durationDays: row.duration_days,
+      companionName: row.companion_name,
+      companionAvatar: row.companion_avatar,
+      companionGreeting: row.companion_greeting,
+      category: row.category,
+      steps: row.steps
+    }));
+    res.json(mapped);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al recuperar plantillas de la base de datos' });
+  }
+});
+
+// Create/trigger a new process execution (instance)
+app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
+  const { templateId, instanceName } = req.body;
+  if (!templateId || !instanceName) {
+    return res.status(400).json({ error: 'El templateId e instanceName son requeridos.' });
+  }
+
+  try {
+    const templateRes = await pool.query(
+      'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
+      [templateId, req.user.organizationId]
+    );
+
+    if (templateRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Plantilla no encontrada o no pertenece a tu organización.' });
+    }
+
+    const template = templateRes.rows[0];
+    const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
+    const startedAt = new Date().toISOString();
+    
+    // Map dates to template steps
+    const stepsWithDates = template.steps.map((step, idx) => {
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + (step.durationDays || 1));
+      return {
+        id: step.id || `step_${idx + 1}`,
+        label: step.label,
+        type: step.type || 'text',
+        assignedTo: step.assignedTo || 'Unassigned',
+        isCompleted: false,
+        completedAt: null,
+        completedBy: null,
+        dueDate: dueDate.toISOString(),
+        options: step.options || []
+      };
+    });
+
+    await pool.query(
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        instId,
+        req.user.organizationId,
+        templateId,
+        template.title,
+        instanceName,
+        startedAt,
+        template.companion_name,
+        template.companion_avatar,
+        template.companion_greeting,
+        template.category,
+        JSON.stringify(stepsWithDates)
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Ejecución iniciada con éxito programáticamente',
+      id: instId,
+      title: template.title,
+      instanceName,
+      startedAt,
+      steps: stepsWithDates
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al iniciar la ejecución programáticamente' });
+  }
+});
+
+// Get execution status/details
+app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM instances WHERE id = $1 AND organization_id = $2',
+      [id, req.user.organizationId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ejecución no encontrada.' });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      id: row.id,
+      templateId: row.template_id,
+      title: row.title,
+      instanceName: row.instance_name,
+      startedAt: row.started_at,
+      companionName: row.companion_name,
+      category: row.category,
+      steps: row.steps
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener detalles del proceso' });
   }
 });
 

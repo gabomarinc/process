@@ -251,7 +251,10 @@ function App() {
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showOnDemandModal, setShowOnDemandModal] = useState(false);
   const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [apiTokens, setApiTokens] = useState([]);
+  const [newTokenName, setNewTokenName] = useState('');
   const [expandedTemplates, setExpandedTemplates] = useState({});
+
   const [editingMember, setEditingMember] = useState(null);
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
   const [fileStore, setFileStore] = useState({});
@@ -448,6 +451,11 @@ function App() {
             if (usersRes.ok) {
               const usersData = await usersRes.json();
               setOrgUsers(usersData);
+            }
+            const tokensRes = await fetch('/api/developer/tokens');
+            if (tokensRes.ok) {
+              const tokensData = await tokensRes.json();
+              setApiTokens(tokensData);
             }
           }
         }
@@ -813,6 +821,51 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       setSettingsErrorMsg(err.message);
     }
   };
+
+  const fetchApiTokens = async () => {
+    try {
+      const res = await fetch('/api/developer/tokens');
+      if (res.ok) {
+        const data = await res.json();
+        setApiTokens(data);
+      }
+    } catch (err) {
+      console.error('Error fetching API tokens:', err);
+    }
+  };
+
+  const handleCreateApiToken = async (e) => {
+    e.preventDefault();
+    if (!newTokenName.trim()) return;
+    try {
+      const res = await fetch('/api/developer/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newTokenName })
+      });
+      if (res.ok) {
+        setNewTokenName('');
+        fetchApiTokens();
+      }
+    } catch (err) {
+      console.error('Error creating API token:', err);
+    }
+  };
+
+  const handleRevokeApiToken = async (tokenId) => {
+    if (!confirm('¿Estás seguro de que quieres revocar esta llave de API? Las aplicaciones que la usen perderán el acceso.')) return;
+    try {
+      const res = await fetch(`/api/developer/tokens/${tokenId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchApiTokens();
+      }
+    } catch (err) {
+      console.error('Error revoking API token:', err);
+    }
+  };
+
 
   const handleSaveClickupSettings = async (e) => {
     e.preventDefault();
@@ -3657,6 +3710,88 @@ const handleDeleteMember = async (id) => {
                   </div>
                 </div>
               )}
+
+              {/* Developer API Tokens Management */}
+              {user?.role === 'admin' && (
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Desarrollador / Integración de API</h3>
+                  <p style={{ margin: '0.25rem 0 1.5rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Crea y administra llaves de API para conectar Kônsul Process con otras aplicaciones de tu suite.
+                  </p>
+
+                  <form onSubmit={handleCreateApiToken} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Nombre de la aplicación (ej. LeadsHUB, Facturación)" 
+                      value={newTokenName}
+                      onChange={(e) => setNewTokenName(e.target.value)}
+                      required
+                      style={{ flex: 1 }}
+                    />
+                    <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 1.5rem' }}>
+                      Generar Llave
+                    </button>
+                  </form>
+
+                  {apiTokens.length === 0 ? (
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: '1rem 0' }}>
+                      No tienes llaves de API generadas.
+                    </p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="team-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #edf2f7', textAlign: 'left' }}>
+                            <th style={{ padding: '0.75rem 0.5rem' }}>Nombre</th>
+                            <th style={{ padding: '0.75rem 0.5rem' }}>Llave API (Token)</th>
+                            <th style={{ padding: '0.75rem 0.5rem' }}>Creado</th>
+                            <th style={{ padding: '0.75rem 0.5rem' }}>Último Uso</th>
+                            <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {apiTokens.map((t) => (
+                            <tr key={t.id} style={{ borderBottom: '1px solid #edf2f7' }}>
+                              <td style={{ padding: '0.75rem 0.5rem', fontWeight: 600 }}>{t.name}</td>
+                              <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'monospace', color: 'var(--color-primary)' }}>
+                                {t.token}
+                              </td>
+                              <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)' }}>
+                                {new Date(t.created_at).toLocaleDateString()}
+                              </td>
+                              <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)' }}>
+                                {t.last_used_at ? new Date(t.last_used_at).toLocaleString() : 'Nunca'}
+                              </td>
+                              <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
+                                <button 
+                                  className="btn btn-secondary" 
+                                  onClick={() => handleRevokeApiToken(t.id)}
+                                  style={{ padding: '2px 8px', fontSize: '0.75rem', borderColor: '#e53e3e', color: '#e53e3e' }}
+                                >
+                                  Revocar
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Guía rápida de integración:</h4>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                      Envía las peticiones HTTPS con la cabecera <code>x-api-key: [Tu Llave API]</code> o <code>Authorization: Bearer [Tu Llave API]</code>. <br />
+                      <strong>Listar Plantillas (GET):</strong> <code>/api/v1/templates</code> <br />
+                      <strong>Iniciar Proceso (POST):</strong> <code>/api/v1/executions</code> (body: <code>{`{ "templateId": "...", "instanceName": "..." }`}</code>) <br />
+                      <strong>Ver Estado (GET):</strong> <code>/api/v1/executions/[id]</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             </div>
           )}
         </div>
