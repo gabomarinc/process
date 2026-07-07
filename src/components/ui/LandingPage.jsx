@@ -39,9 +39,17 @@ export function LandingPage({ onLoginClick, onStartFree }) {
 
         {/* Content Wrapper (with floating cards and form) */}
         <div className="hero-content-wrapper">
+          {/* Green Curved Arrow pointing to the form */}
+          <svg className="hero-curved-arrow" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10,65 Q35,15 75,40" stroke="#27bea7" strokeWidth="3" strokeLinecap="round" fill="none" />
+            <path d="M63,38 L75,40 L70,49" stroke="#27bea7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+
           {/* Floating Card Left */}
           <div className="floating-card left">
-            <span className="card-badge">Prueba Gratuita</span>
+            <span className="card-badge">
+              <span className="dot-pulse" /> Prueba Gratuita
+            </span>
             <h3 className="card-title">Empieza con 10 procesos gratis</h3>
             <p className="card-body">
               Visualiza y controla al instante. Sin registros complejos ni tarjeta.
@@ -50,7 +58,19 @@ export function LandingPage({ onLoginClick, onStartFree }) {
           </div>
 
           {/* Center Form Card */}
-          <div className="hero-form-card">
+          <div className="hero-form-card" style={{ position: 'relative' }}>
+            {/* Rotating circular badge next to form */}
+            <div className="rotating-badge-container">
+              <svg className="rotating-sticker" viewBox="0 0 100 100">
+                <path id="circlePath" d="M 50, 50 m -35, 0 a 35,35 0 1,1 70,0 a 35,35 0 1,1 -70,0" fill="none" />
+                <text fill="#27bea7" fontSize="6.5" fontWeight="bold" letterSpacing="1.8">
+                  <textPath href="#circlePath">
+                    KÔNSUL PROCESS • GRATIS • PRUÉBALO • 
+                  </textPath>
+                </text>
+              </svg>
+            </div>
+
             <h2 className="form-card-title">PRUÉBALO GRATIS</h2>
             <p className="form-card-subtitle">Ingresa tu correo para probar la herramienta gratis.</p>
             
@@ -128,57 +148,71 @@ export function LandingPage({ onLoginClick, onStartFree }) {
           </button>
         </div>
 
-        {/* Detail/Feature Cards */}
-        <div className="features-grid">
-          {/* Card 1 */}
-          <div className="feature-card">
-            <div>
-              <span className="feature-num">01 • VELOCIDAD</span>
-              <h4 className="feature-title">DE 0 A 100 EN SEGUNDOS</h4>
-              <p className="feature-desc">
-                Crea plantillas de procesos a partir de tus flujos de trabajo y pon a correr tareas asignadas al instante de forma estructurada.
-              </p>
-            </div>
-            <div className="mini-graphic" style={{ fontSize: '0.7rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1e293b', padding: '4px 8px', borderRadius: '4px' }}>
-                <Check size={12} style={{ color: '#27bea7' }} />
-                <span>Plantilla.json</span>
+        {/* Detail/Feature Cards Wrapper with Connecting Arrows */}
+        <div className="features-grid-wrapper">
+          <div className="features-grid">
+            {/* Card 1 */}
+            <div className="feature-card">
+              <div>
+                <span className="feature-num">01 • VELOCIDAD</span>
+                <h4 className="feature-title">DE 0 A 100 EN SEGUNDOS</h4>
+                <p className="feature-desc">
+                  Crea plantillas de procesos a partir de tus flujos de trabajo y pon a correr tareas asignadas al instante de forma estructurada.
+                </p>
               </div>
-              <span style={{ color: '#27bea7', fontWeight: 700 }}>100 Tareas</span>
+              <div className="mini-graphic" style={{ fontSize: '0.7rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1e293b', padding: '4px 8px', borderRadius: '4px' }}>
+                  <Check size={12} style={{ color: '#27bea7' }} />
+                  <span>Plantilla.json</span>
+                </div>
+                <span style={{ color: '#27bea7', fontWeight: 700 }}>100 Tareas</span>
+              </div>
+            </div>
+
+            {/* Card 2 */}
+            <div className="feature-card">
+              <div>
+                <span className="feature-num">02 • PERSONALIZACIÓN</span>
+                <h4 className="feature-title">PASOS CON TEXTOS DINÁMICOS</h4>
+                <p className="feature-desc">
+                  Utiliza variables en la descripción de tus pasos para que cada tarea asignada sea única, contextual y relevante para tus agentes.
+                </p>
+              </div>
+              <div className="mini-graphic pill" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.7rem' }}>
+                <span style={{ color: '#94a3b8' }}>Paso:</span>
+                <span>[Nombre de Tarea]</span>
+                <span style={{ background: '#27bea7', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', padding: '2px', color: '#ffffff' }}>
+                  <ArrowRight size={10} />
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3 */}
+            <div className="feature-card">
+              <div>
+                <span className="feature-num">03 • SEGURIDAD</span>
+                <h4 className="feature-title">MÁXIMO CONTROL DE FLUJOS</h4>
+                <p className="feature-desc">
+                  Visualiza el estado de cada ejecución en tiempo real mediante nuestro panel inteligente para mitigar cuellos de botella.
+                </p>
+              </div>
+              <div className="mini-graphic badge" style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="dot-pulse" style={{ backgroundColor: '#ffffff' }} />
+                <span>Estado: Seguro & Activo</span>
+              </div>
             </div>
           </div>
 
-          {/* Card 2 */}
-          <div className="feature-card">
-            <div>
-              <span className="feature-num">02 • PERSONALIZACIÓN</span>
-              <h4 className="feature-title">PASOS CON TEXTOS DINÁMICOS</h4>
-              <p className="feature-desc">
-                Utiliza variables en la descripción de tus pasos para que cada tarea asignada sea única, contextual y relevante para tus agentes.
-              </p>
-            </div>
-            <div className="mini-graphic pill" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.7rem' }}>
-              <span style={{ color: '#94a3b8' }}>Paso:</span>
-              <span>[Nombre de Tarea]</span>
-              <span style={{ background: '#27bea7', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', padding: '2px', color: '#ffffff' }}>
-                <ArrowRight size={10} />
-              </span>
-            </div>
-          </div>
-
-          {/* Card 3 */}
-          <div className="feature-card">
-            <div>
-              <span className="feature-num">03 • SEGURIDAD</span>
-              <h4 className="feature-title">MÁXIMO CONTROL DE FLUJOS</h4>
-              <p className="feature-desc">
-                Visualiza el estado de cada ejecución en tiempo real mediante nuestro panel inteligente para mitigar cuellos de botella.
-              </p>
-            </div>
-            <div className="mini-graphic badge" style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              <span>Estado: Seguro & Activo</span>
-            </div>
-          </div>
+          {/* Connecting Arrow 1 */}
+          <svg className="connecting-arrow arrow-1" viewBox="0 0 60 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5,5 Q30,25 55,5" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" fill="none" />
+            <path d="M48,5 L55,5 L52,12" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+          {/* Connecting Arrow 2 */}
+          <svg className="connecting-arrow arrow-2" viewBox="0 0 60 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5,5 Q30,25 55,5" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" fill="none" />
+            <path d="M48,5 L55,5 L52,12" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
         </div>
       </section>
 
