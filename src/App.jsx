@@ -3336,8 +3336,230 @@ const handleDeleteMember = async (id) => {
                       {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
                     </button>
                   </div>
+
+                  {/* Bills by Kônsul Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        BI
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Bills</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Conecta Bills para facturar de forma automatizada al completar hitos en tus flujos de trabajo.
+                      </p>
+                    </div>
+                    <button
+                      className="btn"
+                      disabled
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        background: '#f1f5f9',
+                        color: '#94a3b8',
+                        border: 'none',
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      PRÓXIMAMENTE
+                    </button>
+                  </div>
+
+                  {/* ReactivaLeads Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        RL
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ReactivaLeads</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
+                      </p>
+                    </div>
+                    <button
+                      className="btn"
+                      disabled
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        background: '#f1f5f9',
+                        color: '#94a3b8',
+                        border: 'none',
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      PRÓXIMAMENTE
+                    </button>
+                  </div>
+
+                  {/* LeadsHUB Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        LH
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>LeadsHUB</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Sincroniza y gestiona la asignación de leads comerciales automáticamente en cada etapa del proceso.
+                      </p>
+                    </div>
+                    <button
+                      className="btn"
+                      disabled
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        background: '#f1f5f9',
+                        color: '#94a3b8',
+                        border: 'none',
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      PRÓXIMAMENTE
+                    </button>
+                  </div>
+
+                  {/* Krêdit Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #ec4899, #db2777)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        KR
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Krêdit</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Sincroniza y aprueba solicitudes de crédito y financiamiento ligadas a tus etapas operativas.
+                      </p>
+                    </div>
+                    <button
+                      className="btn"
+                      disabled
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px',
+                        background: '#f1f5f9',
+                        color: '#94a3b8',
+                        border: 'none',
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      PRÓXIMAMENTE
+                    </button>
+                  </div>
+
                 </div>
               ) : (
+
                 <div style={{
                   background: 'white',
                   border: '1px solid rgba(0,0,0,0.06)',
