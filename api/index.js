@@ -1956,11 +1956,13 @@ app.post('/api/integrations/reactivaleads/test', authenticateToken, async (req, 
     if (rlRes.ok) {
       res.json({ success: true });
     } else {
-      res.status(400).json({ error: 'Token de ReactivaLeads inválido.' });
+      const errText = await rlRes.text();
+      console.error('ReactivaLeads test failed:', rlRes.status, errText);
+      res.status(400).json({ error: `ReactivaLeads API respondió con estado ${rlRes.status}: ${errText.substring(0, 100)}` });
     }
   } catch (err) {
     console.error('Error testing ReactivaLeads connection:', err);
-    res.status(500).json({ error: 'Error de red al conectar con ReactivaLeads' });
+    res.status(500).json({ error: `Error de red al conectar con ReactivaLeads: ${err.message}` });
   }
 });
 
@@ -1992,11 +1994,13 @@ app.get('/api/integrations/reactivaleads/templates', authenticateToken, async (r
       const data = await rlRes.json();
       res.json(data);
     } else {
-      res.status(400).json({ error: 'Error al obtener plantillas' });
+      const errText = await rlRes.text();
+      console.error('ReactivaLeads templates fetch failed:', rlRes.status, errText);
+      res.status(400).json({ error: `Error de ReactivaLeads (estado ${rlRes.status}): ${errText.substring(0, 100)}` });
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+    res.status(500).json({ error: `Error interno al obtener plantillas: ${err.message}` });
   }
 });
 
