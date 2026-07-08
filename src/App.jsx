@@ -7,6 +7,7 @@ import { AddUserModal } from "./components/ui/AddUserModal";
 import { TemplateDetailsModal } from "./components/ui/TemplateDetailsModal";
 import { ActiveExecutionModal } from "./components/ui/ActiveExecutionModal";
 import { OnDemandModal } from "./components/ui/OnDemandModal";
+import { ReactivaLeadsModal } from "./components/ui/ReactivaLeadsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import "./App.css";
@@ -285,6 +286,8 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isOnDemandModalOpen, setIsOnDemandModalOpen] = useState(false);
+  const [isReactivaLeadsModalOpen, setIsReactivaLeadsModalOpen] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
@@ -3427,8 +3430,8 @@ const handleDeleteMember = async (id) => {
                       </p>
                     </div>
                     <button
-                      className="btn"
-                      disabled
+                      className="btn btn-primary"
+                      onClick={() => setIsReactivaLeadsModalOpen(true)}
                       style={{
                         width: '100%',
                         borderRadius: '30px',
@@ -3436,14 +3439,10 @@ const handleDeleteMember = async (id) => {
                         marginTop: '1.5rem',
                         fontWeight: '600',
                         fontSize: '0.85rem',
-                        letterSpacing: '0.5px',
-                        background: '#f1f5f9',
-                        color: '#94a3b8',
-                        border: 'none',
-                        cursor: 'not-allowed'
+                        letterSpacing: '0.5px'
                       }}
                     >
-                      PRÓXIMAMENTE
+                      Configurar Conexión
                     </button>
                   </div>
 
@@ -5118,6 +5117,14 @@ const handleDeleteMember = async (id) => {
           </div>
         ))}
       </div>
+
+      <ReactivaLeadsModal
+        isOpen={isReactivaLeadsModalOpen}
+        onClose={() => setIsReactivaLeadsModalOpen(false)}
+        user={user}
+        templates={templates}
+        fileStore={fileStore}
+      />
 
       <OnDemandModal
         isOpen={showOnDemandModal}
