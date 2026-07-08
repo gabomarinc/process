@@ -3258,6 +3258,25 @@ const handleDeleteMember = async (id) => {
                   <LayoutGrid size={16} /> Oficiales
                 </button>
                 <button
+                  onClick={() => setEcosystemSubTab('externas')}
+                  style={{
+                    border: 'none',
+                    background: ecosystemSubTab === 'externas' ? 'rgba(39, 190, 167, 0.1)' : 'transparent',
+                    color: ecosystemSubTab === 'externas' ? 'var(--color-primary)' : 'var(--text-muted)',
+                    padding: '0.5rem 1.5rem',
+                    borderRadius: '20px',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <LayoutGrid size={16} /> Externas
+                </button>
+                <button
                   onClick={() => setEcosystemSubTab('ondemand')}
                   style={{
                     border: 'none',
@@ -3284,62 +3303,6 @@ const handleDeleteMember = async (id) => {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                   gap: '1.5rem'
                 }}>
-                  {/* ClickUp Integration Card */}
-                  <div style={{
-                    background: 'white',
-                    border: '1px solid rgba(0,0,0,0.06)',
-                    borderRadius: '24px',
-                    padding: '2rem',
-                    boxShadow: 'var(--shadow-sm)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '260px',
-                    position: 'relative'
-                  }}>
-                    <div>
-                      <div style={{
-                        width: '50px',
-                        height: '50px',
-                        borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #7b68ee, #6050dc)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 'bold',
-                        fontSize: '1.2rem',
-                        marginBottom: '1.25rem'
-                      }}>
-                        CU
-                      </div>
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ClickUp</h3>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
-                        Conecta tus listas de ClickUp para automatizar la creación y el inicio de procesos y tareas operativas.
-                      </p>
-                      {clickupToken && (
-                        <span className="badge success" style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
-                          Conectado
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => setShowClickupModal(true)}
-                      style={{
-                        width: '100%',
-                        borderRadius: '30px',
-                        padding: '0.65rem',
-                        marginTop: '1.5rem',
-                        fontWeight: '600',
-                        fontSize: '0.85rem',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
-                    </button>
-                  </div>
-
                   {/* Bills by Kônsul Card */}
                   <div style={{
                     background: 'white',
@@ -3392,57 +3355,6 @@ const handleDeleteMember = async (id) => {
                       }}
                     >
                       PRÓXIMAMENTE
-                    </button>
-                  </div>
-
-                  {/* ReactivaLeads Card */}
-                  <div style={{
-                    background: 'white',
-                    border: '1px solid rgba(0,0,0,0.06)',
-                    borderRadius: '24px',
-                    padding: '2rem',
-                    boxShadow: 'var(--shadow-sm)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '260px',
-                    position: 'relative'
-                  }}>
-                    <div>
-                      <div style={{
-                        width: '50px',
-                        height: '50px',
-                        borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 'bold',
-                        fontSize: '1.2rem',
-                        marginBottom: '1.25rem'
-                      }}>
-                        RL
-                      </div>
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ReactivaLeads</h3>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
-                        Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
-                      </p>
-                    </div>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => setIsReactivaLeadsModalOpen(true)}
-                      style={{
-                        width: '100%',
-                        borderRadius: '30px',
-                        padding: '0.65rem',
-                        marginTop: '1.5rem',
-                        fontWeight: '600',
-                        fontSize: '0.85rem',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      Configurar Conexión
                     </button>
                   </div>
 
@@ -3556,6 +3468,120 @@ const handleDeleteMember = async (id) => {
                     </button>
                   </div>
 
+                  </div>
+                </div>
+              ) : ecosystemSubTab === 'externas' ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                  gap: '1.5rem'
+                }}>
+                  {/* ClickUp Integration Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #7b68ee, #6050dc)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        CU
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ClickUp</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Conecta tus listas de ClickUp para automatizar la creación y el inicio de procesos y tareas operativas.
+                      </p>
+                      {clickupToken && (
+                        <span className="badge success" style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
+                          Conectado
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setShowClickupModal(true)}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
+                    </button>
+                  </div>
+
+                  {/* ReactivaLeads Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        RL
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ReactivaLeads</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setIsReactivaLeadsModalOpen(true)}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      CONFIGURAR
+                    </button>
+                  </div>
                 </div>
               ) : (
 
