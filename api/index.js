@@ -62,6 +62,30 @@ pool.query(`
     last_used_at TIMESTAMPTZ
   );
 
+  CREATE TABLE IF NOT EXISTS notification_logs (
+    id VARCHAR(255) PRIMARY KEY,
+    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+    instance_id VARCHAR(100),
+    step_id VARCHAR(100),
+    instance_name VARCHAR(255),
+    step_title VARCHAR(255),
+    message TEXT,
+    logged_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) DEFAULT 'message',
+    message TEXT NOT NULL,
+    instance_id VARCHAR(100),
+    step_id VARCHAR(100),
+    read BOOLEAN DEFAULT FALSE,
+    timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+
+  ALTER TABLE notifications ADD COLUMN IF NOT EXISTS step_id VARCHAR(100);
+
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
@@ -677,9 +701,9 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
     // 3. Insert notification records for all identified recipients
     for (const userId of recipients) {
       await pool.query(
-        `INSERT INTO notifications (user_id, type, message, instance_id)
-         VALUES ($1, $2, $3, $4)`,
-        [userId, type, message, instanceId]
+        `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [userId, type, message, instanceId, stepId]
       );
     }
 
