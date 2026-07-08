@@ -3467,6 +3467,57 @@ const handleDeleteMember = async (id) => {
                       PRÓXIMAMENTE
                     </button>
                   </div>
+
+                  {/* ReactivaLeads Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.2rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        RL
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ReactivaLeads</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setIsReactivaLeadsModalOpen(true)}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      CONFIGURAR
+                    </button>
+                  </div>
                 </div>
               ) : ecosystemSubTab === 'externas' ? (
                 <div style={{
@@ -3527,57 +3578,6 @@ const handleDeleteMember = async (id) => {
                       }}
                     >
                       {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
-                    </button>
-                  </div>
-
-                  {/* ReactivaLeads Card */}
-                  <div style={{
-                    background: 'white',
-                    border: '1px solid rgba(0,0,0,0.06)',
-                    borderRadius: '24px',
-                    padding: '2rem',
-                    boxShadow: 'var(--shadow-sm)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '260px',
-                    position: 'relative'
-                  }}>
-                    <div>
-                      <div style={{
-                        width: '50px',
-                        height: '50px',
-                        borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 'bold',
-                        fontSize: '1.2rem',
-                        marginBottom: '1.25rem'
-                      }}>
-                        RL
-                      </div>
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>ReactivaLeads</h3>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
-                        Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
-                      </p>
-                    </div>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => setIsReactivaLeadsModalOpen(true)}
-                      style={{
-                        width: '100%',
-                        borderRadius: '30px',
-                        padding: '0.65rem',
-                        marginTop: '1.5rem',
-                        fontWeight: '600',
-                        fontSize: '0.85rem',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      CONFIGURAR
                     </button>
                   </div>
                 </div>
