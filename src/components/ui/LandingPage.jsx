@@ -5,6 +5,20 @@ import './LandingPage.css';
 export function LandingPage({ onLoginClick, onStartFree }) {
   const [email, setEmail] = useState('');
 
+  React.useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://agentes.konsul.digital/widget.js";
+    script.dataset.channelId = "cmm9al5n30018l5049iqbk2xe";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
+  }, []);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (email.trim()) {
