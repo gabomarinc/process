@@ -3467,8 +3467,6 @@ const handleDeleteMember = async (id) => {
                       PRÓXIMAMENTE
                     </button>
                   </div>
-
-                  </div>
                 </div>
               ) : ecosystemSubTab === 'externas' ? (
                 <div style={{
