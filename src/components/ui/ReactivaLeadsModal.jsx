@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useAlert } from '../../contexts/AlertContext';
 
 export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore }) {
-  const { addToast } = useAlert();
+  const showAlert = useAlert();
   const [activeTab, setActiveTab] = useState('connection');
   const [apiKey, setApiKey] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
@@ -73,15 +73,15 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
           body: JSON.stringify({ token: apiKey })
         });
         setIsConnected(true);
-        addToast('Conexión con ReactivaLeads establecida exitosamente', 'success');
+        showAlert('Conexión con ReactivaLeads establecida exitosamente', 'success');
         fetchRlTemplates();
         setActiveTab('rules');
       } else {
         const data = await res.json();
-        addToast(data.error || 'API Key inválida', 'error');
+        showAlert(data.error || 'API Key inválida', 'error');
       }
     } catch (err) {
-      addToast('Error de red al conectar', 'error');
+      showAlert('Error de red al conectar', 'error');
     } finally {
       setIsConnecting(false);
     }
@@ -103,14 +103,14 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        addToast('Regla añadida con éxito', 'success');
+        showAlert('Regla añadida con éxito', 'success');
         setNewRule({ ruleName: '', konsulTemplateId: '', reactivaleadsTemplateId: '', nameColumn: 'Nombre', phoneColumn: 'Telefono' });
         fetchRules();
       } else {
-        addToast('Error al añadir la regla', 'error');
+        showAlert('Error al añadir la regla', 'error');
       }
     } catch(err) {
-      addToast('Error de servidor', 'error');
+      showAlert('Error de servidor', 'error');
     }
   };
 
@@ -121,11 +121,11 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) {
-        addToast('Regla eliminada', 'success');
+        showAlert('Regla eliminada', 'success');
         fetchRules();
       }
     } catch(e) {
-      addToast('Error al eliminar', 'error');
+      showAlert('Error al eliminar', 'error');
     }
   };
 
