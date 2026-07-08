@@ -597,7 +597,11 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
                   
                   await fetch('https://reactivaleads.com/api/v1/executions', {
                     method: 'POST',
-                    headers: { 'x-api-key': rlToken, 'Content-Type': 'application/json' },
+                    headers: { 
+                      'x-api-key': rlToken,
+                      'Authorization': `Bearer ${rlToken}`,
+                      'Content-Type': 'application/json' 
+                    },
                     body: JSON.stringify(payload)
                   });
                   
@@ -1951,7 +1955,10 @@ app.post('/api/integrations/reactivaleads/test', authenticateToken, async (req, 
   const { token } = req.body;
   try {
     const rlRes = await fetch('https://reactivaleads.com/api/v1/templates', {
-      headers: { 'x-api-key': token }
+      headers: { 
+        'x-api-key': token,
+        'Authorization': `Bearer ${token}`
+      }
     });
     if (rlRes.ok) {
       res.json({ success: true });
@@ -1988,7 +1995,10 @@ app.get('/api/integrations/reactivaleads/templates', authenticateToken, async (r
     if (!token) return res.status(400).json({ error: 'No hay token configurado' });
 
     const rlRes = await fetch('https://reactivaleads.com/api/v1/templates', {
-      headers: { 'x-api-key': token }
+      headers: { 
+        'x-api-key': token,
+        'Authorization': `Bearer ${token}`
+      }
     });
     if (rlRes.ok) {
       const data = await rlRes.json();
