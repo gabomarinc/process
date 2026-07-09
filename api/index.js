@@ -265,7 +265,11 @@ app.post('/api/auth/login', async (req, res) => {
     const userRole = user.role || 'admin';
     const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: userRole, email: user.email }, JWT_SECRET, { expiresIn });
     
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: userRole } });
+    res.json({ token, user: { 
+      id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: userRole,
+      smtp_host: user.smtp_host, smtp_port: user.smtp_port, smtp_user: user.smtp_user, smtp_pass: user.smtp_pass,
+      imap_host: user.imap_host, imap_port: user.imap_port, imap_secure: user.imap_secure
+    } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al iniciar sesión', details: err.message });
@@ -1225,6 +1229,34 @@ app.put('/api/users/:id/role', authenticateToken, async (req, res) => {
 });
 
 // Update self profile
+
+app.put('/api/auth/email-settings', authenticateToken, async (req, res) => {
+  const { smtp_host, smtp_port, smtp_user, smtp_pass, imap_host, imap_port, imap_secure } = req.body;
+  try {
+    const query = `
+      UPDATE users 
+      SET smtp_host = $1, smtp_port = $2, smtp_user = $3, smtp_pass = $4, imap_host = $5, imap_port = $6, imap_secure = $7
+      WHERE id = $8
+      RETURNING id, name, email, organization_id, role, companion_name, companion_avatar,
+                smtp_host, smtp_port, smtp_user, smtp_pass, imap_host, imap_port, imap_secure
+    `;
+    const result = await pool.query(query, [smtp_host, smtp_port, smtp_user, smtp_pass, imap_host, imap_port, imap_secure, req.user.id]);
+    
+    const user = result.rows[0];
+    res.json({ 
+      user: { 
+        id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: user.role,
+        companionName: user.companion_name, companionAvatar: user.companion_avatar,
+        smtp_host: user.smtp_host, smtp_port: user.smtp_port, smtp_user: user.smtp_user, smtp_pass: user.smtp_pass,
+        imap_host: user.imap_host, imap_port: user.imap_port, imap_secure: user.imap_secure
+      } 
+    });
+  } catch (err) {
+    console.error('Error al actualizar config de correo:', err);
+    res.status(500).json({ error: 'Error al actualizar configuración de correo', details: err.message });
+  }
+});
+
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   const { name, email, password, companionName, companionAvatar } = req.body;
   try {

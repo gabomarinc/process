@@ -345,6 +345,16 @@ function App() {
   // SMTP & IMAP/POP credentials state (stateless client storage)
   const [smtpSettings, setSmtpSettings] = useState(() => {
     try {
+      const savedUserStr = localStorage.getItem('user');
+      const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
+      if (savedUserObj?.smtp_host || savedUserObj?.smtp_user) {
+        return {
+          smtpHost: savedUserObj.smtp_host || '',
+          smtpPort: savedUserObj.smtp_port || '465',
+          smtpUser: savedUserObj.smtp_user || '',
+          smtpPass: savedUserObj.smtp_pass || ''
+        };
+      }
       return JSON.parse(localStorage.getItem('smtp_settings')) || { smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '' };
     } catch {
       return { smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '' };
@@ -353,6 +363,15 @@ function App() {
 
   const [imapSettings, setImapSettings] = useState(() => {
     try {
+      const savedUserStr = localStorage.getItem('user');
+      const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
+      if (savedUserObj?.imap_host) {
+        return {
+          imapHost: savedUserObj.imap_host || '',
+          imapPort: savedUserObj.imap_port || '993',
+          imapSecure: savedUserObj.imap_secure !== false
+        };
+      }
       return JSON.parse(localStorage.getItem('imap_settings')) || { imapHost: '', imapPort: '993', imapSecure: true };
     } catch {
       return { imapHost: '', imapPort: '993', imapSecure: true };
@@ -761,8 +780,6 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch('/api/auth/profile', {
         method: 'PUT',
@@ -775,12 +792,12 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
       setToken(data.token);
-      setSettingsSuccessMsg('Perfil actualizado con éxito.');
+      showAlert('Perfil actualizado con éxito.', 'success');
       setProfileFormData(prev => ({ ...prev, password: '' }));
       // Reload templates/instances page metadata if companion settings change
       window.location.reload();
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
@@ -802,23 +819,51 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       if (!res.ok) {
         throw new Error(data.error || 'Falló la conexión de prueba.');
       }
-      setEmailTestStatus({ success: true, message: data.message });
+      setEmailTestStatus({ loading: false });
+      addToast(data.message, 'success');
     } catch (err) {
-      setEmailTestStatus({ success: false, message: err.message });
+      setEmailTestStatus({ loading: false });
+      addToast(err.message, 'error');
     }
   };
 
-  const handleSaveEmailSettings = (e) => {
+  const handleSaveEmailSettings = async (e) => {
     e.preventDefault();
-    localStorage.setItem('smtp_settings', JSON.stringify(smtpSettings));
-    localStorage.setItem('imap_settings', JSON.stringify(imapSettings));
-    setSettingsSuccessMsg('Configuración de correo electrónico guardada localmente.');
+    try {
+      const res = await fetch('/api/auth/email-settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          smtp_host: smtpSettings.smtpHost,
+          smtp_port: smtpSettings.smtpPort,
+          smtp_user: smtpSettings.smtpUser,
+          smtp_pass: smtpSettings.smtpPass,
+          imap_host: imapSettings.imapHost,
+          imap_port: imapSettings.imapPort,
+          imap_secure: imapSettings.imapSecure
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al guardar configuración.');
+      
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      
+      // Also save to localStorage for legacy compatibility
+      localStorage.setItem('smtp_settings', JSON.stringify(smtpSettings));
+      localStorage.setItem('imap_settings', JSON.stringify(imapSettings));
+      
+      addToast('Configuración de correo electrónico guardada correctamente en tu cuenta.', 'success');
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
   };
 
   const handleUpdateOrg = async (e) => {
     e.preventDefault();
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch('/api/organization', {
         method: 'PUT',
@@ -827,9 +872,9 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo actualizar la empresa.');
-      setSettingsSuccessMsg('Empresa actualizada con éxito.');
+      showAlert('Empresa actualizada con éxito.', 'success');
     } catch (err) {
-      setSettingsErrorMsg(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
@@ -880,8 +925,6 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
 
   const handleSaveClickupSettings = async (e) => {
     e.preventDefault();
-    setSettingsSuccessMsg('');
-    setSettingsErrorMsg('');
     try {
       const res = await fetch('/api/organization/clickup', {
         method: 'PUT',
@@ -3641,17 +3684,6 @@ const handleDeleteMember = async (id) => {
                 Administra los detalles de tu cuenta personal, la información general de la empresa y la gestión de usuarios con sus respectivos roles de acceso.
               </p>
 
-              {settingsSuccessMsg && (
-                <div style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
-                  {settingsSuccessMsg}
-                </div>
-              )}
-              {settingsErrorMsg && (
-                <div style={{ backgroundColor: '#FFEBEE', color: '#D32F2F', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
-                  {settingsErrorMsg}
-                </div>
-              )}
-
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
                 
                 {/* Form 1: Profile Details */}
@@ -3808,28 +3840,15 @@ const handleDeleteMember = async (id) => {
                       <label htmlFor="imapSecure" style={{ fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>Conexión Segura (SSL/TLS)</label>
                     </div>
 
-                    {emailTestStatus && (
-                      <div style={{ 
-                        backgroundColor: emailTestStatus.loading ? '#e0f2f1' : emailTestStatus.success ? '#e8f5e9' : '#ffebee',
-                        color: emailTestStatus.loading ? '#00695c' : emailTestStatus.success ? '#2e7d32' : '#c62828',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        marginTop: '0.25rem'
-                      }}>
-                        {emailTestStatus.loading ? 'Probando conexiones...' : emailTestStatus.message}
-                      </div>
-                    )}
-
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                       <button 
                         type="button" 
+                        onClick={handleTestEmailConnection} 
                         className="btn btn-secondary" 
-                        onClick={handleTestEmailConnection}
-                        style={{ flex: 1 }}
+                        disabled={emailTestStatus?.loading}
+                        style={{ flex: 1, padding: '0.65rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}
                       >
-                        Probar Conexión
+                        {emailTestStatus?.loading ? 'Probando...' : 'Probar Conexión'}
                       </button>
                       <button 
                         type="submit" 
