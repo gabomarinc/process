@@ -29,20 +29,36 @@ export default function Notifications({
   const [notifs, setNotifs] = useState(initialNotifications);
 
   useEffect(() => {
-    if (user && user.id && apiUrl) {
-      fetch(`${apiUrl}/notifications/${user.id}`, {
-        headers: {
-          'Authorization': `Bearer ${user.token || localStorage.getItem('token')}`
-        }
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setNotifs(data);
-        }
-      })
-      .catch(err => console.error('Error fetching notifications:', err));
-    }
+    const fetchNotifs = () => {
+      if (user && user.id && apiUrl) {
+        fetch(`${apiUrl}/notifications/${user.id}`, {
+          headers: {
+            'Authorization': `Bearer ${user.token || localStorage.getItem('token')}`
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setNotifs(data);
+          }
+        })
+        .catch(err => console.error('Error fetching notifications:', err));
+      }
+    };
+
+    fetchNotifs();
+    
+    // Poll every 30 seconds
+    const intervalId = setInterval(fetchNotifs, 30000);
+    
+    // Listen for custom event to trigger immediate refresh
+    const handleRefresh = () => fetchNotifs();
+    window.addEventListener('notifications-updated', handleRefresh);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('notifications-updated', handleRefresh);
+    };
   }, [user, apiUrl]);
 
   const unreadCount = notifs.filter((n) => !n.read).length;
@@ -101,6 +117,7 @@ export default function Notifications({
             type: 'alert'
           })
         });
+        window.dispatchEvent(new Event('notifications-updated'));
         markAsRead(e, n.id);
         if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
       } catch (err) {

@@ -493,7 +493,7 @@ export const ActiveExecutionModal = ({
                                         try {
                                           await fetch('/api/notifications', {
                                             method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                                             body: JSON.stringify({
                                               id: `help-${step.id}-${Date.now()}`,
                                               instanceId: activeInstance.id,
@@ -504,6 +504,7 @@ export const ActiveExecutionModal = ({
                                               type: 'alert'
                                             })
                                           });
+                                          window.dispatchEvent(new Event('notifications-updated'));
                                           if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                         } catch (err) {
                                           console.error("Error al pedir ayuda:", err);
@@ -571,7 +572,7 @@ export const ActiveExecutionModal = ({
                                         try {
                                           await fetch('/api/notifications', {
                                             method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                                             body: JSON.stringify({
                                               id: `help-${step.id}-${Date.now()}`,
                                               instanceId: activeInstance.id,
@@ -582,6 +583,7 @@ export const ActiveExecutionModal = ({
                                               type: 'alert'
                                             })
                                           });
+                                          window.dispatchEvent(new Event('notifications-updated'));
                                           if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                         } catch (err) {
                                           console.error("Error al pedir ayuda:", err);
@@ -864,7 +866,7 @@ export const ActiveExecutionModal = ({
                                            try {
                                              await fetch('/api/notifications', {
                                                method: 'POST',
-                                               headers: { 'Content-Type': 'application/json' },
+                                               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                                                body: JSON.stringify({
                                                  id: `help-${step.id}-${Date.now()}`,
                                                  instanceId: activeInstance.id,
@@ -875,6 +877,7 @@ export const ActiveExecutionModal = ({
                                                  type: 'alert'
                                                })
                                              });
+                                          window.dispatchEvent(new Event('notifications-updated'));
                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                            } catch (err) {
                                              console.error("Error al pedir ayuda:", err);
@@ -938,7 +941,7 @@ export const ActiveExecutionModal = ({
                                            try {
                                              await fetch('/api/notifications', {
                                                method: 'POST',
-                                               headers: { 'Content-Type': 'application/json' },
+                                               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                                                body: JSON.stringify({
                                                  id: `help-${step.id}-${Date.now()}`,
                                                  instanceId: activeInstance.id,
@@ -949,6 +952,7 @@ export const ActiveExecutionModal = ({
                                                  type: 'alert'
                                                })
                                              });
+                                          window.dispatchEvent(new Event('notifications-updated'));
                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                            } catch (err) {
                                              console.error("Error al pedir ayuda:", err);

@@ -511,9 +511,10 @@ function App() {
               try {
                 await fetch('/api/notifications', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                   body: JSON.stringify(newLog)
                 });
+                window.dispatchEvent(new Event('notifications-updated'));
               } catch (err) {
                 console.error("Error al guardar notificación de retraso en Neon:", err);
               }
@@ -612,7 +613,7 @@ function App() {
         try {
           await fetch('/api/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
             body: JSON.stringify({
               id: completeLogId,
               instanceId,
@@ -623,6 +624,7 @@ function App() {
               type: 'success'
             })
           });
+          window.dispatchEvent(new Event('notifications-updated'));
         } catch (err) {
           console.error("Error al registrar notificacion de avance:", err);
         }
@@ -746,9 +748,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         try {
           await fetch('/api/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
             body: JSON.stringify(newLog)
           });
+          window.dispatchEvent(new Event('notifications-updated'));
         } catch (err) {
           console.error("Error al registrar notificacion de asignacion:", err);
         }
@@ -1387,7 +1390,7 @@ const handleDeleteMember = async (id) => {
       const launchLogId = `launch-${newInstance.id}`;
       await fetch('/api/notifications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify({
           id: launchLogId,
           instanceId: newInstance.id,
@@ -1398,6 +1401,7 @@ const handleDeleteMember = async (id) => {
           type: 'message'
         })
       });
+      window.dispatchEvent(new Event('notifications-updated'));
     } catch (err) {
       console.error("Error al registrar notificacion de lanzamiento:", err);
     }
