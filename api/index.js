@@ -103,6 +103,12 @@ pool.query(`
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
+
+  INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+  SELECT 
+    'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'
+  FROM users 
+  WHERE role = 'admin' AND email NOT IN (SELECT email FROM team_members);
 `).then(() => {
   console.log('Migración de base de datos completada: columnas y tablas (incluyendo "api_tokens") aseguradas.');
 }).catch(err => {
@@ -243,6 +249,14 @@ app.post('/api/auth/register', async (req, res) => {
     );
     
     const user = newUser.rows[0];
+
+    // Add admin to team_members
+    await pool.query(
+      `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+       VALUES ($1, $2, $3, $4, $5, null, 'Administración')`,
+      ['admin_' + user.id, orgId, name, 'Fundador/Admin', email]
+    );
+
     const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     
     res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: user.role } });

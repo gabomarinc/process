@@ -3291,9 +3291,11 @@ const handleDeleteMember = async (id) => {
                           }}>
                             Editar
                           </button>
-                          <button className="btn btn-danger" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', color: '#d32f2f' }} onClick={() => handleDeleteMember(member.id)}>
-                            Eliminar
-                          </button>
+                          {member.email !== user?.email && orgUsers.find(u => u.email?.toLowerCase() === member.email?.toLowerCase())?.role !== 'admin' && (
+                            <button className="btn btn-danger" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', color: '#d32f2f' }} onClick={() => handleDeleteMember(member.id)}>
+                              Eliminar
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
