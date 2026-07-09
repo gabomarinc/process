@@ -200,33 +200,33 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
                     <input className="form-input" required placeholder="Ej. Lanzamiento Campaña Mensual" value={newRule.ruleName} onChange={e => setNewRule({...newRule, ruleName: e.target.value})} />
                   </div>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Plantilla Kônsul (Disparador)</label>
-                      <select className="form-input" required value={newRule.konsulTemplateId} onChange={e => setNewRule({...newRule, konsulTemplateId: e.target.value})}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>Plantilla Kônsul (Disparador)</label>
+                      <select className="form-input" required value={newRule.konsulTemplateId} onChange={e => setNewRule({...newRule, konsulTemplateId: e.target.value})} style={{ width: '100%' }}>
                         <option value="">-- Seleccionar Proceso --</option>
                         {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
                       </select>
                     </div>
                     
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Plantilla ReactivaLeads</label>
-                      <select className="form-input" required value={newRule.reactivaleadsTemplateId} onChange={e => setNewRule({...newRule, reactivaleadsTemplateId: e.target.value})}>
+                    <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>Plantilla ReactivaLeads</label>
+                      <select className="form-input" required value={newRule.reactivaleadsTemplateId} onChange={e => setNewRule({...newRule, reactivaleadsTemplateId: e.target.value})} style={{ width: '100%' }}>
                         <option value="">-- Plantilla Mensaje --</option>
                         {Array.isArray(rlTemplates) ? rlTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>) : <option value="default">Plantilla por Defecto</option>}
                       </select>
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Columna de Nombre (Excel)</label>
-                      <input className="form-input" required placeholder="Nombre" value={newRule.nameColumn} onChange={e => setNewRule({...newRule, nameColumn: e.target.value})} />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>Columna de Nombre (Excel)</label>
+                      <input className="form-input" required placeholder="Nombre" value={newRule.nameColumn} onChange={e => setNewRule({...newRule, nameColumn: e.target.value})} style={{ width: '100%' }} />
                     </div>
                     
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>Columna de Teléfono (Excel)</label>
-                      <input className="form-input" required placeholder="Telefono" value={newRule.phoneColumn} onChange={e => setNewRule({...newRule, phoneColumn: e.target.value})} />
+                    <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>Columna de Teléfono (Excel)</label>
+                      <input className="form-input" required placeholder="Telefono" value={newRule.phoneColumn} onChange={e => setNewRule({...newRule, phoneColumn: e.target.value})} style={{ width: '100%' }} />
                     </div>
                   </div>
 
