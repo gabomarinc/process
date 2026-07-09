@@ -668,112 +668,149 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
 // 8. Add a notification log
 app.post('/api/notifications', authenticateToken, async (req, res) => {
   const { id, instanceId, stepId, instanceName, stepTitle, message, type = 'message' } = req.body;
+  
+  let finalMessage = message;
+  if (type === 'help') {
+    finalMessage = `🤝 [PEDIDO DE AYUDA] ${req.user.name} necesita una mano en el paso "${stepTitle}" del proceso "${instanceName}".`;
+  }
+  
   try {
     // 1. Insert into notification_logs table (on conflict do nothing)
     await pool.query(
       `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (id) DO NOTHING`,
-      [id, req.user.organizationId, instanceId, stepId, instanceName, stepTitle, message]
+      [id, req.user.organizationId, instanceId, stepId, instanceName, stepTitle, finalMessage]
     );
 
     // 2. Determine recipients
     const recipients = new Set();
 
-    // 2.a. Admins of the organization receive all notifications
-    const adminsRes = await pool.query(
-      "SELECT id FROM users WHERE organization_id = $1 AND role = 'admin'",
-      [req.user.organizationId]
-    );
-    adminsRes.rows.forEach(row => recipients.add(row.id));
-
-    // 2.b. Check the instance steps for assignee and involved members
-    const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1', [instanceId]);
-    if (instRes.rows.length > 0) {
-      const steps = instRes.rows[0].steps || [];
-      const assignedMemberIds = new Set();
-      steps.forEach(s => {
-        if (s.assignedTo) {
-          assignedMemberIds.add(s.assignedTo);
-        }
-      });
-
-      const step = steps.find(s => s.id === stepId || s.title === stepTitle);
-      
-      // Send email alert to direct assignee (if exists)
-      if (step && step.assignedTo) {
-        const memberRes = await pool.query(
-          'SELECT name, email FROM team_members WHERE id = $1 AND organization_id = $2',
-          [step.assignedTo, req.user.organizationId]
-        );
+    if (type === 'help') {
+      // Get sender's team member details (department, manager_id)
+      const senderRes = await pool.query(
+        "SELECT department, manager_id FROM team_members WHERE email = $1 AND organization_id = $2",
+        [req.user.email, req.user.organizationId]
+      );
+      if (senderRes.rows.length > 0) {
+        const { department, manager_id } = senderRes.rows[0];
         
-        if (memberRes.rows.length > 0) {
-          const { name: memberName, email: memberEmail } = memberRes.rows[0];
-          const isOverdue = !id.startsWith('active-');
-          const subject = isOverdue 
-            ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
-            : `📋 Nueva tarea asignada: "${stepTitle}" en "${instanceName}"`;
-
-          const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
-
-          const htmlContent = `
-            <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-              <div style="text-align: center; margin-bottom: 2rem;">
-                <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
-              </div>
-              <h2 style="color: ${isOverdue ? '#D32F2F' : '#111827'}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
-                ${isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '📋 Tarea Asignada y Activa'}
-              </h2>
-              <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
-                Hola <strong>${memberName}</strong>,
-              </p>
-              <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
-                ${message}
-              </p>
-              <div style="background-color: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #f3f4f6; margin-bottom: 2rem;">
-                <h4 style="margin: 0 0 0.5rem 0; color: #111827; font-size: 1rem;">Detalles del Proceso:</h4>
-                <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Caso/Ejecución:</strong> ${instanceName}</p>
-                <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Paso:</strong> ${stepTitle}</p>
-                ${step.description ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
-              </div>
-              <div style="text-align: center; margin-bottom: 2rem;">
-                <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Acceder a la Plataforma</a>
-              </div>
-              <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
-              <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
-                Kônsul Process &copy; 2026. Todos los derechos reservados.
-              </p>
-            </div>
-          `;
-
-          await sendEmail({
-            to: memberEmail,
-            subject,
-            html: htmlContent
-          });
+        // Add manager
+        if (manager_id) {
+          const managerUser = await pool.query(
+            "SELECT u.id FROM users u JOIN team_members t ON u.email = t.email WHERE t.id = $1 AND u.organization_id = $2",
+            [manager_id, req.user.organizationId]
+          );
+          if (managerUser.rows.length > 0) {
+            recipients.add(managerUser.rows[0].id);
+          }
+        }
+        
+        // Add department colleagues (excluding sender)
+        if (department) {
+          const deptUsers = await pool.query(
+            "SELECT u.id FROM users u JOIN team_members t ON u.email = t.email WHERE t.department = $1 AND u.organization_id = $2 AND u.id <> $3",
+            [department, req.user.organizationId, req.user.id]
+          );
+          deptUsers.rows.forEach(row => recipients.add(row.id));
         }
       }
+    } else {
+      // 2.a. Admins of the organization receive all notifications
+      const adminsRes = await pool.query(
+        "SELECT id FROM users WHERE organization_id = $1 AND role = 'admin'",
+        [req.user.organizationId]
+      );
+      adminsRes.rows.forEach(row => recipients.add(row.id));
 
-      // Convert all assigned team member IDs to matching user IDs
-      if (assignedMemberIds.size > 0) {
-        const memberIdsArr = Array.from(assignedMemberIds);
-        const placeholders = memberIdsArr.map((_, idx) => `$${idx + 2}`).join(', ');
+      // 2.b. Check the instance steps for assignee and involved members
+      const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1', [instanceId]);
+      if (instRes.rows.length > 0) {
+        const steps = instRes.rows[0].steps || [];
+        const assignedMemberIds = new Set();
+        steps.forEach(s => {
+          if (s.assignedTo) {
+            assignedMemberIds.add(s.assignedTo);
+          }
+        });
+
+        const step = steps.find(s => s.id === stepId || s.title === stepTitle);
         
-        const membersEmailsRes = await pool.query(
-          `SELECT email FROM team_members WHERE id IN (${placeholders}) AND organization_id = $1`,
-          [req.user.organizationId, ...memberIdsArr]
-        );
-        
-        if (membersEmailsRes.rows.length > 0) {
-          const emails = membersEmailsRes.rows.map(m => m.email);
-          const emailPlaceholders = emails.map((_, idx) => `$${idx + 2}`).join(', ');
-          
-          const usersRes = await pool.query(
-            `SELECT id FROM users WHERE email IN (${emailPlaceholders}) AND organization_id = $1`,
-            [req.user.organizationId, ...emails]
+        // Send email alert to direct assignee (if exists)
+        if (step && step.assignedTo) {
+          const memberRes = await pool.query(
+            'SELECT name, email FROM team_members WHERE id = $1 AND organization_id = $2',
+            [step.assignedTo, req.user.organizationId]
           );
           
-          usersRes.rows.forEach(row => recipients.add(row.id));
+          if (memberRes.rows.length > 0) {
+            const { name: memberName, email: memberEmail } = memberRes.rows[0];
+            const isOverdue = !id.startsWith('active-');
+            const subject = isOverdue 
+              ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
+              : `📋 Nueva tarea asignada: "${stepTitle}" en "${instanceName}"`;
+
+            const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
+
+            const htmlContent = `
+              <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                <div style="text-align: center; margin-bottom: 2rem;">
+                  <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+                </div>
+                <h2 style="color: ${isOverdue ? '#D32F2F' : '#111827'}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
+                  ${isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '📋 Tarea Asignada y Activa'}
+                </h2>
+                <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+                  Hola <strong>${memberName}</strong>,
+                </p>
+                <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
+                  ${message}
+                </p>
+                <div style="background-color: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #f3f4f6; margin-bottom: 2rem;">
+                  <h4 style="margin: 0 0 0.5rem 0; color: #111827; font-size: 1rem;">Detalles del Proceso:</h4>
+                  <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Caso/Ejecución:</strong> ${instanceName}</p>
+                  <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Paso:</strong> ${stepTitle}</p>
+                  ${step.description ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
+                </div>
+                <div style="text-align: center; margin-bottom: 2rem;">
+                  <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 1rem; display: inline-block;">Acceder a la Plataforma</a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 2rem 0;" />
+                <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+                  Kônsul Process &copy; 2026. Todos los derechos reservados.
+                </p>
+              </div>
+            `;
+
+            await sendEmail({
+              to: memberEmail,
+              subject,
+              html: htmlContent
+            });
+          }
+        }
+
+        // Convert all assigned team member IDs to matching user IDs
+        if (assignedMemberIds.size > 0) {
+          const memberIdsArr = Array.from(assignedMemberIds);
+          const placeholders = memberIdsArr.map((_, idx) => `$${idx + 2}`).join(', ');
+          
+          const membersEmailsRes = await pool.query(
+            `SELECT email FROM team_members WHERE id IN (${placeholders}) AND organization_id = $1`,
+            [req.user.organizationId, ...memberIdsArr]
+          );
+          
+          if (membersEmailsRes.rows.length > 0) {
+            const emails = membersEmailsRes.rows.map(m => m.email);
+            const emailPlaceholders = emails.map((_, idx) => `$${idx + 2}`).join(', ');
+            
+            const usersRes = await pool.query(
+              `SELECT id FROM users WHERE email IN (${emailPlaceholders}) AND organization_id = $1`,
+              [req.user.organizationId, ...emails]
+            );
+            
+            usersRes.rows.forEach(row => recipients.add(row.id));
+          }
         }
       }
     }
@@ -783,7 +820,7 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
       await pool.query(
         `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
          VALUES ($1, $2, $3, $4, $5)`,
-        [userId, type, message, instanceId, stepId]
+        [userId, type, finalMessage, instanceId, stepId]
       );
     }
 

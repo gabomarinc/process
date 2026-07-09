@@ -688,6 +688,34 @@ function App() {
     }
   };
 
+  const handleRequestHelp = async (instanceId, stepId) => {
+    const inst = instances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    const updatedSteps = inst.steps.map(s => {
+      if (s.id !== stepId) return s;
+      return { ...s, helpRequested: true };
+    });
+
+    setInstances(prev => prev.map(i => {
+      if (i.id === instanceId) return { ...i, steps: updatedSteps };
+      return i;
+    }));
+
+    try {
+      await fetch(`/api/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ steps: updatedSteps })
+      });
+    } catch (err) {
+      console.error("Error al guardar solicitud de ayuda:", err);
+    }
+  };
+
   const handleSendChatMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() || !chatTemplateId) return;
@@ -4199,6 +4227,7 @@ const handleDeleteMember = async (id) => {
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
         handleUpdateStepComments={handleUpdateStepComments}
+        handleRequestHelp={handleRequestHelp}
         currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}

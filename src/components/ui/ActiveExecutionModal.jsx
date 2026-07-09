@@ -10,6 +10,7 @@ export const ActiveExecutionModal = ({
   handleStepComplete,
   handleAssignStepMember,
   handleUpdateStepComments,
+  handleRequestHelp,
   currentUser,
   fileStore = {},
   setFileStore,
@@ -22,6 +23,18 @@ export const ActiveExecutionModal = ({
   const [showAllSteps, setShowAllSteps] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+  const [showMotivationStepId, setShowMotivationStepId] = useState(null);
+
+  const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null) => {
+    handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName);
+    const targetStep = activeInstance.steps.find(s => s.id === stepId);
+    if (isCompleted && targetStep?.motivation) {
+      setShowMotivationStepId(stepId);
+      setTimeout(() => {
+        setShowMotivationStepId(null);
+      }, 8000);
+    }
+  };
 
   // Email sub-modal states
   const [emailModalStep, setEmailModalStep] = useState(null);
@@ -369,275 +382,322 @@ export const ActiveExecutionModal = ({
                       <h4 className="trio-card-title">{step.title}</h4>
                       
                       {isCenter && (
-                        <>
-                          <span className="trio-card-date">Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
-                          <p className="trio-card-desc">{step.description}</p>
-                          
-                          {isOverdue && (
-                            <div className="overdue-banner">
-                              <AlertCircle size={14} />
-                              <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
+                        <div style={{ display: 'flex', gap: '2rem', width: '100%', flexWrap: 'wrap', marginTop: '1.25rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
+                          {/* Col 1: Detalles del Paso */}
+                          <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
+                            <div>
+                              <h4 className="trio-card-title" style={{ margin: '0 0 0.5rem 0', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: '1.3' }}>{step.title}</h4>
+                              <span className="trio-card-date" style={{ display: 'inline-block', fontSize: '0.85rem', color: 'var(--color-primary-hover)', fontWeight: 600 }}>Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
                             </div>
-                          )}
-
-                          {/* Float Comments Block */}
-                          {(commentingStepId === step.id || isCenter) && (
-                            <div style={{ marginTop: '1rem', background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.75rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span>Notas de Relevo / Colaboración</span>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
+                            
+                            <p className="trio-card-desc" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>{step.description}</p>
+                            
+                            {isOverdue && (
+                              <div className="overdue-banner" style={{ margin: '0.5rem 0 0 0', display: 'flex', alignItems: 'center', gap: '6px', background: '#FFF0F0', color: '#D32F2F', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                <AlertCircle size={14} />
+                                <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
                               </div>
-                              <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                {(step.comments || []).map(c => (
-                                  <div key={c.id} style={{ display: 'flex', flexDirection: 'column', background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.03)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                      <span>{c.userName}</span>
-                                      <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{new Date(c.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                    </div>
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-main)', marginTop: '2px' }}>{c.text}</span>
-                                  </div>
-                                ))}
-                                {(step.comments || []).length === 0 && (
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe abajo (usa @ para mencionar a alguien).</span>
-                                )}
-                              </div>
-                              <form onSubmit={async (e) => {
-                                e.preventDefault();
-                                if (!commentText.trim()) return;
-                                const newComment = {
-                                  id: `c_${Date.now()}`,
-                                  userName: currentUser?.name || 'Miembro',
-                                  text: commentText,
-                                  timestamp: new Date().toISOString()
-                                };
-                                const updatedComments = [...(step.comments || []), newComment];
-                                await handleUpdateStepComments(activeInstance.id, step.id, updatedComments);
-                                setCommentText('');
-                                setMentionSearch(null);
-                              }} style={{ display: 'flex', gap: '4px', position: 'relative' }}>
-                                
-                                {mentionSearch && mentionSearch.stepId === step.id && (() => {
-                                  const matches = teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.query.toLowerCase()));
-                                  if (matches.length === 0) return null;
-                                  return (
-                                    <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ebd8c0', borderRadius: '8px', zIndex: 50, display: 'flex', flexDirection: 'column', maxHeight: '120px', overflowY: 'auto', boxShadow: '0 -4px 10px rgba(0,0,0,0.08)' }}>
-                                      {matches.map(m => (
-                                        <div 
-                                          key={m.id} 
-                                          style={{ padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #f5f3f0', textAlign: 'left' }}
-                                          onClick={() => {
-                                            const words = commentText.split(' ');
-                                            words.pop(); // Remove @query
-                                            setCommentText([...words, `@${m.name} `].join(' '));
-                                            setMentionSearch(null);
-                                          }}
-                                        >
-                                          <strong>{m.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>({m.role})</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
+                            )}
 
-                                <input
-                                  type="text"
-                                  placeholder="Nota... (ej. @Carlos)"
-                                  value={commentText}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setCommentText(val);
-                                    const lastWord = val.split(' ').pop();
-                                    if (lastWord.startsWith('@')) {
-                                      setMentionSearch({ query: lastWord.substring(1), stepId: step.id });
-                                    } else {
-                                      setMentionSearch(null);
-                                    }
-                                  }}
-                                  style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
-                                />
-                                <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
-                                  Guardar
-                                </button>
-                              </form>
-                            </div>
-                          )}
-
-                          <div className="trio-card-action">
-                            {step.type === 'manual' ? (
-                              <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
-                                {step.isCompleted ? (
-                                  <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                                    <Check size={16} /> Paso Completado
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="btn btn-primary"
-                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
-                                      onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
-                                    >
-                                      {(() => {
-                                        const nextStep = activeInstance.steps[item.index + 1];
-                                        const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
-                                        return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
-                                      })()}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary"
-                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
-                                      onClick={async (e) => {
-                                        e.stopPropagation();
-                                        const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                        try {
-                                          await fetch('/api/notifications', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                            body: JSON.stringify({
-                                              id: `help-${step.id}-${Date.now()}`,
-                                              instanceId: activeInstance.id,
-                                              stepId: step.id,
-                                              instanceName: activeInstance.instanceName,
-                                              stepTitle: step.title,
-                                              message: helpMsg,
-                                              type: 'alert'
-                                            })
-                                          });
-                                          window.dispatchEvent(new Event('notifications-updated'));
-                                          if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                        } catch (err) {
-                                          console.error("Error al pedir ayuda:", err);
-                                        }
-                                      }}
-                                    >
-                                      🙋‍♂️ Pedir una mano
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
-                                {step.isCompleted ? (
-                                  <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <FileCheck size={14} />
-                                      <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {step.uploadedFileName || 'Cargado'}
-                                      </span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
-                                      className="close-btn-aesthetic"
-                                      style={{ width: '24px', height: '24px', padding: 0 }}
-                                      title="Previsualizar archivo"
-                                    >
-                                      <Eye size={12} />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.4rem' }}>
-                                      <input 
-                                        type="file" 
-                                        style={{ display: 'none' }}
-                                        accept={step.acceptedFormats?.join(',')}
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const fileUrl = URL.createObjectURL(file);
-                                            setFileStore(prev => ({
-                                              ...prev,
-                                              [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                            }));
-                                            handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                          }
-                                        }}
-                                      />
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                        <Upload size={14} className="text-primary" />
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                          Subir archivo ({step.acceptedFormats?.join(', ')})
-                                        </span>
-                                      </div>
-                                    </label>
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary"
-                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
-                                      onClick={async (e) => {
-                                        e.stopPropagation();
-                                        const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                        try {
-                                          await fetch('/api/notifications', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                            body: JSON.stringify({
-                                              id: `help-${step.id}-${Date.now()}`,
-                                              instanceId: activeInstance.id,
-                                              stepId: step.id,
-                                              instanceName: activeInstance.instanceName,
-                                              stepTitle: step.title,
-                                              message: helpMsg,
-                                              type: 'alert'
-                                            })
-                                          });
-                                          window.dispatchEvent(new Event('notifications-updated'));
-                                          if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                        } catch (err) {
-                                          console.error("Error al pedir ayuda:", err);
-                                        }
-                                      }}
-                                    >
-                                      🙋‍♂️ Pedir una mano
-                                    </button>
-                                  </>
-                                )}
+                            {(step.motivation && showMotivationStepId === step.id) && (
+                              <div className="step-motivation" style={{ marginTop: 'auto', fontSize: '0.85rem', fontStyle: 'italic', background: 'var(--bg-companion)', padding: '12px', borderRadius: '10px', borderLeft: '3px solid var(--color-primary)', color: 'var(--text-main)', display: 'flex', gap: '8px', alignItems: 'flex-start', boxShadow: '0 4px 12px rgba(39, 190, 167, 0.08)' }}>
+                                <Lightbulb size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--color-primary)' }}/>
+                                <span>{step.motivation}</span>
                               </div>
                             )}
                           </div>
 
-                          {step.motivation && (
-                            <div className="step-motivation" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                              <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
-                            </div>
-                          )}
-
-                          <div style={{ marginTop: '0.5rem', width: '100%' }} onClick={e => e.stopPropagation()}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Asignados:</span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '100px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.06)', padding: '6px 10px', borderRadius: '8px', background: 'white' }}>
-                              {teamMembers.map(m => {
-                                const currentAssigned = Array.isArray(step.assignedTo)
-                                  ? step.assignedTo.map(String)
-                                  : step.assignedTo ? [String(step.assignedTo)] : [];
-                                const isChecked = currentAssigned.includes(String(m.id));
-                                return (
-                                  <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', cursor: 'pointer', margin: 0, padding: '2px 6px', border: '1px solid rgba(0,0,0,0.04)', borderRadius: '4px', background: isChecked ? 'rgba(39, 190, 167, 0.08)' : '#f9f9f9', userSelect: 'none' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        let updatedList;
-                                        if (e.target.checked) {
-                                          updatedList = [...currentAssigned, String(m.id)];
-                                        } else {
-                                          updatedList = currentAssigned.filter(id => id !== String(m.id));
-                                        }
-                                        handleAssignStepMember(activeInstance.id, step.id, updatedList);
-                                      }}
-                                      style={{ cursor: 'pointer', margin: 0 }}
-                                    />
-                                    <span>{m.name}</span>
-                                  </label>
-                                );
-                              })}
-                              {teamMembers.length === 0 && (
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin colaboradores</span>
+                          {/* Col 2: Acciones, Colaboradores y Notas */}
+                          <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '260px' }}>
+                            
+                            {/* Bloque de Acción Principal (Completar / Subir archivo) */}
+                            <div className="trio-card-action" style={{ background: '#FAF9F6', padding: '12px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.04)' }}>
+                              {step.type === 'manual' ? (
+                                <div style={{ width: '100%' }}>
+                                  {step.isCompleted ? (
+                                    <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                      <Check size={16} /> Paso Completado
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.55rem', borderRadius: '8px' }}
+                                        onClick={() => onCompleteStepLocal(step.id, true)}
+                                      >
+                                        {(() => {
+                                          const nextStep = activeInstance.steps[item.index + 1];
+                                          const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                          return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
+                                        })()}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        disabled={step.helpRequested}
+                                        style={{ 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          justifyContent: 'center', 
+                                          gap: '4px', 
+                                          width: '100%', 
+                                          fontSize: '0.75rem', 
+                                          padding: '0.4rem', 
+                                          marginTop: '0.5rem', 
+                                          background: step.helpRequested ? '#f5f5f5' : 'transparent', 
+                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #ebd8c0', 
+                                          color: step.helpRequested ? '#9e9e9e' : '#b58b53', 
+                                          borderRadius: '8px',
+                                          cursor: step.helpRequested ? 'not-allowed' : 'pointer'
+                                        }}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                          try {
+                                            await fetch('/api/notifications', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                              body: JSON.stringify({
+                                                id: `help-${step.id}-${Date.now()}`,
+                                                instanceId: activeInstance.id,
+                                                stepId: step.id,
+                                                instanceName: activeInstance.instanceName,
+                                                stepTitle: step.title,
+                                                message: helpMsg,
+                                                type: 'help'
+                                              })
+                                            });
+                                            window.dispatchEvent(new Event('notifications-updated'));
+                                            await handleRequestHelp(activeInstance.id, step.id);
+                                            if (addToast) addToast("¡Pedido de ayuda enviado al jefe y departamento! Un compañero vendrá al rescate.", "success");
+                                          } catch (err) {
+                                            console.error("Error al pedir ayuda:", err);
+                                          }
+                                        }}
+                                      >
+                                        {step.helpRequested ? '🤝 Ayuda Solicitada' : '🙋‍♂️ Pedir una mano'}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <div style={{ width: '100%' }}>
+                                  {step.isCompleted ? (
+                                    <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <FileCheck size={14} />
+                                        <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                          {step.uploadedFileName || 'Cargado'}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
+                                        className="close-btn-aesthetic"
+                                        style={{ width: '24px', height: '24px', padding: 0 }}
+                                        title="Previsualizar archivo"
+                                      >
+                                        <Eye size={12} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.5rem', borderRadius: '8px', cursor: 'pointer' }}>
+                                        <input 
+                                          type="file" 
+                                          style={{ display: 'none' }}
+                                          accept={step.acceptedFormats?.join(',')}
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              const fileUrl = URL.createObjectURL(file);
+                                              setFileStore(prev => ({
+                                                ...prev,
+                                                [step.id]: { url: fileUrl, name: file.name, type: file.type }
+                                              }));
+                                              onCompleteStepLocal(step.id, true, file.name);
+                                            }
+                                          }}
+                                        />
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                          <Upload size={14} className="text-primary" />
+                                          <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                            Subir archivo ({step.acceptedFormats?.join(', ')})
+                                          </span>
+                                        </div>
+                                      </label>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        disabled={step.helpRequested}
+                                        style={{ 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          justifyContent: 'center', 
+                                          gap: '4px', 
+                                          width: '100%', 
+                                          fontSize: '0.75rem', 
+                                          padding: '0.4rem', 
+                                          marginTop: '0.5rem', 
+                                          background: step.helpRequested ? '#f5f5f5' : 'transparent', 
+                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #ebd8c0', 
+                                          color: step.helpRequested ? '#9e9e9e' : '#b58b53', 
+                                          borderRadius: '8px',
+                                          cursor: step.helpRequested ? 'not-allowed' : 'pointer'
+                                        }}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                          try {
+                                            await fetch('/api/notifications', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                              body: JSON.stringify({
+                                                id: `help-${step.id}-${Date.now()}`,
+                                                instanceId: activeInstance.id,
+                                                stepId: step.id,
+                                                instanceName: activeInstance.instanceName,
+                                                stepTitle: step.title,
+                                                message: helpMsg,
+                                                type: 'help'
+                                              })
+                                            });
+                                            window.dispatchEvent(new Event('notifications-updated'));
+                                            await handleRequestHelp(activeInstance.id, step.id);
+                                            if (addToast) addToast("¡Pedido de ayuda enviado al jefe y departamento! Un compañero vendrá al rescate.", "success");
+                                          } catch (err) {
+                                            console.error("Error al pedir ayuda:", err);
+                                          }
+                                        }}
+                                      >
+                                        {step.helpRequested ? '🤝 Ayuda Solicitada' : '🙋‍♂️ Pedir una mano'}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               )}
                             </div>
+
+                            {/* Colaboradores / Asignados */}
+                            <div style={{ width: '100%' }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>Asignados al Paso:</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '100px', overflowY: 'auto', border: '1px solid rgba(0,0,0,0.06)', padding: '8px 10px', borderRadius: '8px', background: 'white' }}>
+                                {teamMembers.map(m => {
+                                  const currentAssigned = Array.isArray(step.assignedTo)
+                                    ? step.assignedTo.map(String)
+                                    : step.assignedTo ? [String(step.assignedTo)] : [];
+                                  const isChecked = currentAssigned.includes(String(m.id));
+                                  return (
+                                    <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', cursor: 'pointer', margin: 0, padding: '3px 6px', border: '1px solid rgba(0,0,0,0.04)', borderRadius: '6px', background: isChecked ? 'rgba(39, 190, 167, 0.08)' : '#f9f9f9', userSelect: 'none' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          let updatedList;
+                                          if (e.target.checked) {
+                                            updatedList = [...currentAssigned, String(m.id)];
+                                          } else {
+                                            updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                          }
+                                          handleAssignStepMember(activeInstance.id, step.id, updatedList);
+                                        }}
+                                        style={{ cursor: 'pointer', margin: 0 }}
+                                      />
+                                      <span>{m.name}</span>
+                                    </label>
+                                  );
+                                })}
+                                {teamMembers.length === 0 && (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin colaboradores</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Notas / Comentarios */}
+                            {(commentingStepId === step.id || isCenter) && (
+                              <div style={{ background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '10px', padding: '0.75rem', textAlign: 'left' }}>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>Notas de Relevo / Colaboración</span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
+                                </div>
+                                <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                  {(step.comments || []).map(c => (
+                                    <div key={c.id} style={{ display: 'flex', flexDirection: 'column', background: 'white', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.03)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                        <span>{c.userName}</span>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>{new Date(c.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                      </div>
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-main)', marginTop: '2px' }}>{c.text}</span>
+                                    </div>
+                                  ))}
+                                  {(step.comments || []).length === 0 && (
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin notas en este paso. Escribe abajo (usa @).</span>
+                                  )}
+                                </div>
+                                <form onSubmit={async (e) => {
+                                  e.preventDefault();
+                                  if (!commentText.trim()) return;
+                                  const newComment = {
+                                    id: `c_${Date.now()}`,
+                                    userName: currentUser?.name || 'Miembro',
+                                    text: commentText,
+                                    timestamp: new Date().toISOString()
+                                  };
+                                  const updatedComments = [...(step.comments || []), newComment];
+                                  await handleUpdateStepComments(activeInstance.id, step.id, updatedComments);
+                                  setCommentText('');
+                                  setMentionSearch(null);
+                                }} style={{ display: 'flex', gap: '4px', position: 'relative' }}>
+                                  
+                                  {mentionSearch && mentionSearch.stepId === step.id && (() => {
+                                    const matches = teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.query.toLowerCase()));
+                                    if (matches.length === 0) return null;
+                                    return (
+                                      <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ebd8c0', borderRadius: '8px', zIndex: 50, display: 'flex', flexDirection: 'column', maxHeight: '120px', overflowY: 'auto', boxShadow: '0 -4px 10px rgba(0,0,0,0.08)' }}>
+                                        {matches.map(m => (
+                                          <div 
+                                            key={m.id} 
+                                            style={{ padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #f5f3f0', textAlign: 'left' }}
+                                            onClick={() => {
+                                              const words = commentText.split(' ');
+                                              words.pop(); // Remove @query
+                                              setCommentText([...words, `@${m.name} `].join(' '));
+                                              setMentionSearch(null);
+                                            }}
+                                          >
+                                            <strong>{m.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>({m.role})</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
+
+                                  <input
+                                    type="text"
+                                    placeholder="Nota... (ej. @Carlos)"
+                                    value={commentText}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setCommentText(val);
+                                      const lastWord = val.split(' ').pop();
+                                      if (lastWord.startsWith('@')) {
+                                        setMentionSearch({ query: lastWord.substring(1), stepId: step.id });
+                                      } else {
+                                        setMentionSearch(null);
+                                      }
+                                    }}
+                                    style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
+                                  />
+                                  <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
+                                    Guardar
+                                  </button>
+                                </form>
+                              </div>
+                            )}
+
                           </div>
-                        </>
+                        </div>
                       )}
 
                       {!isCenter && (
