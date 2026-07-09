@@ -1,0 +1,402 @@
+/* MatrixModal.css */
+
+.matrix-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+}
+
+.matrix-wizard-card {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 2.5rem;
+  max-width: 650px;
+  width: 100%;
+  max-height: 90vh;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(220, 200, 190, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.matrix-wizard-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 1.5rem;
+  padding: 0 0.5rem;
+}
+
+.matrix-wizard-stepper::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #e5e7eb;
+  z-index: 1;
+}
+
+.matrix-wizard-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 2;
+  flex: 1;
+}
+
+.matrix-wizard-step-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.matrix-wizard-step.active .matrix-wizard-step-dot {
+  background: var(--color-primary, #27bea7);
+  border-color: var(--color-primary, #27bea7);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(39, 190, 167, 0.15);
+}
+
+.matrix-wizard-step.completed .matrix-wizard-step-dot {
+  background: var(--color-primary, #27bea7);
+  border-color: var(--color-primary, #27bea7);
+  color: white;
+}
+
+.matrix-wizard-step-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  transition: color 0.3s ease;
+}
+
+.matrix-wizard-step.active .matrix-wizard-step-label,
+.matrix-wizard-step.completed .matrix-wizard-step-label {
+  color: #1e293b;
+}
+
+.matrix-wizard-header {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.matrix-wizard-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.matrix-wizard-description {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.matrix-wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.matrix-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.matrix-form-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.matrix-form-input {
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  outline: none;
+  background-color: #fafafa;
+  transition: all 0.2s ease;
+}
+
+.matrix-form-input:focus {
+  border-color: var(--color-primary, #27bea7);
+  box-shadow: 0 0 0 3px rgba(39, 190, 167, 0.1);
+}
+
+.matrix-select-custom {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,0,0,0.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1em;
+  padding-right: 2.5rem;
+}
+
+.matrix-steps-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+}
+
+.matrix-step-item-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.2s;
+}
+
+.matrix-step-item-card:hover {
+  border-color: #cbd5e1;
+}
+
+.matrix-step-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.matrix-step-item-number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-primary, #27bea7);
+  background: rgba(39, 190, 167, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+
+.matrix-step-item-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.matrix-multiselect-dropdown {
+  position: relative;
+}
+
+.matrix-multiselect-trigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.matrix-multiselect-trigger:focus {
+  border-color: var(--color-primary, #27bea7);
+}
+
+.matrix-multiselect-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.matrix-multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 0.8rem;
+  color: #334155;
+  user-select: none;
+}
+
+.matrix-multiselect-option:hover {
+  background: #f1f5f9;
+}
+
+.matrix-multiselect-option input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.matrix-wizard-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.matrix-wizard-btn-back {
+  background: none;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.matrix-wizard-btn-back:hover {
+  background: #f8fafc;
+  color: #334155;
+  border-color: #94a3b8;
+}
+
+.matrix-wizard-btn-next {
+  background: var(--color-primary, #27bea7);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(39, 190, 167, 0.2);
+  transition: opacity 0.2s;
+}
+
+.matrix-wizard-btn-next:hover {
+  opacity: 0.95;
+}
+
+.matrix-wizard-step-info {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Preview Step styles */
+.matrix-preview-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.matrix-preview-header {
+  font-size: 0.9rem;
+  color: #475569;
+  background: #f8fafc;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--color-primary, #27bea7);
+  margin-bottom: 0.5rem;
+}
+
+.matrix-preview-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border-bottom: 1px dashed #e2e8f0;
+  padding-bottom: 0.75rem;
+}
+
+.matrix-preview-item:last-child {
+  border-bottom: none;
+}
+
+.matrix-preview-number {
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  font-size: 0.8rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.matrix-preview-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.matrix-preview-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.matrix-preview-assigned {
+  font-size: 0.8rem;
+  color: #64748b;
+}

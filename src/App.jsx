@@ -3,6 +3,7 @@ import { SuccessTicketModal } from "./components/ui/SuccessTicketModal";
 import { TemplateWizardModal } from "./components/ui/TemplateWizardModal";
 import { TemplatePreviewModal } from "./components/ui/TemplatePreviewModal";
 import { MemberModal } from "./components/ui/MemberModal";
+import { MatrixModal } from "./components/ui/MatrixModal";
 import { AddUserModal } from "./components/ui/AddUserModal";
 import { TemplateDetailsModal } from "./components/ui/TemplateDetailsModal";
 import { ActiveExecutionModal } from "./components/ui/ActiveExecutionModal";
@@ -244,6 +245,8 @@ function App() {
   // Team Management states
   const [teamMembers, setTeamMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showMatrixModal, setShowMatrixModal] = useState(false);
+  const [matrixModalStep, setMatrixModalStep] = useState(1);
   const [ticketModal, setTicketModal] = useState({ isOpen: false, title: "", message: "", ticketId: "", customFields: [] });
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState(null);
@@ -2496,12 +2499,9 @@ const handleDeleteMember = async (id) => {
                         <div 
                           className="grid-card-nav"
                           onClick={() => {
-                            setActiveTab('templates');
+                            setMatrixModalStep(1);
+                            setShowMatrixModal(true);
                             setOpenDropdown(null);
-                            if (templates.length > 0) {
-                              setSelectedTemplateId(templates[0].id);
-                              setDetailModalTab('team');
-                            }
                           }}
                         >
                           <div className="card-nav-header">
@@ -4747,6 +4747,32 @@ const handleDeleteMember = async (id) => {
         modifiedTemplateIds={modifiedTemplateIds}
         setTemplates={setTemplates}
         showAlert={showAlert}
+      />
+
+      <MatrixModal
+        isOpen={showMatrixModal}
+        onClose={() => {
+          setShowMatrixModal(false);
+          setMatrixModalStep(1);
+        }}
+        step={matrixModalStep}
+        setStep={setMatrixModalStep}
+        templates={templates}
+        teamMembers={teamMembers}
+        showAlert={showAlert}
+        handleSave={async (updatedTemplate) => {
+          await saveTemplate(updatedTemplate);
+          setTicketModal({
+            isOpen: true,
+            title: "¡Asignación Guardada!",
+            message: `Se actualizaron los responsables de los pasos de la plantilla "${updatedTemplate.title}" correctamente.`,
+            ticketId: "Asignación Matricial",
+            customFields: [
+              { label: "Plantilla", value: updatedTemplate.title },
+              { label: "Pasos Asignados", value: `${updatedTemplate.steps?.filter(s => s && s.assignedTo?.length > 0).length || 0} de ${updatedTemplate.steps?.length || 0}` }
+            ]
+          });
+        }}
       />
 
       <AddUserModal
