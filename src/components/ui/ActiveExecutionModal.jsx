@@ -211,7 +211,7 @@ export const ActiveExecutionModal = ({
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: '850px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div className="modal-card" style={{ maxWidth: '1200px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Fixed Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
            <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>

@@ -2009,7 +2009,8 @@ button, input, select {
 }
 
 .trio-card {
-  flex: 1;
+  flex: 0.65;
+  min-width: 0;
   background: white;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(0, 0, 0, 0.05);
@@ -2025,6 +2026,7 @@ button, input, select {
 
 /* Offset positioning matching React component */
 .trio-card.trio-active {
+  flex: 2.3;
   transform: translateY(-8px);
   border-color: rgba(39, 190, 167, 0.35);
   background-color: #FFFDFB;
@@ -2033,8 +2035,12 @@ button, input, select {
 }
 
 @media (max-width: 768px) {
+  .trio-card {
+    flex: 1;
+  }
   .trio-card.trio-active {
     transform: none;
+    flex: 1;
   }
 }
 
