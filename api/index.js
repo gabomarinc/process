@@ -1379,7 +1379,7 @@ app.put('/api/organization', authenticateToken, async (req, res) => {
     // Ensure column exists
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT');
-    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT \\'[]\\'::jsonb');
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT '[]'::jsonb");
     
     await pool.query(
       'UPDATE organizations SET name = $1, gemini_api_key = $2, description = $3, departments = $4 WHERE id = $5',
