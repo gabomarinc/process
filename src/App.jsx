@@ -260,10 +260,12 @@ function App() {
   const [memberFormData, setMemberFormData] = useState({ name: '', role: '', email: '', assignedProcesses: [], department: '', managerId: '', systemRole: '' });
   const [fileStore, setFileStore] = useState({});
   const [clickupToken, setClickupToken] = useState('');
+  const [reactivaleadsToken, setReactivaleadsToken] = useState('');
   const [clickupRules, setClickupRules] = useState([]);
   const [newClickupRule, setNewClickupRule] = useState({ ruleName: '', clickupListId: '', clickupListName: '', clickupStatus: '', templateId: '' });
   const [isTestingClickup, setIsTestingClickup] = useState(false);
   const [clickupConnectionStatus, setClickupConnectionStatus] = useState(null);
+  const [isEditingClickupToken, setIsEditingClickupToken] = useState(false);
   const [ecosystemSubTab, setEcosystemSubTab] = useState('oficiales'); // 'oficiales' or 'ondemand'
   const [showClickupModal, setShowClickupModal] = useState(false);
   
@@ -434,6 +436,9 @@ function App() {
             if (orgData.gemini_api_key) {
               setApiKey(orgData.gemini_api_key);
               setTempKey(orgData.gemini_api_key);
+            }
+            if (orgData.reactivaleads_api_key) {
+              setReactivaleadsToken(orgData.reactivaleads_api_key);
             }
           }
 
@@ -3501,6 +3506,11 @@ const handleDeleteMember = async (id) => {
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
                         Envía notificaciones masivas de WhatsApp y reactiva prospectos directamente desde tus ejecuciones.
                       </p>
+                      {reactivaleadsToken && (
+                        <span className="badge success" style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
+                          Conectado
+                        </span>
+                      )}
                     </div>
                     <button
                       className="btn btn-primary"
@@ -3515,7 +3525,7 @@ const handleDeleteMember = async (id) => {
                         letterSpacing: '0.5px'
                       }}
                     >
-                      CONFIGURAR
+                      {reactivaleadsToken ? 'CONFIGURAR' : 'ACTIVAR'}
                     </button>
                   </div>
                 </div>
@@ -4686,28 +4696,45 @@ const handleDeleteMember = async (id) => {
                 <Key size={18} style={{ color: 'var(--color-primary)' }} />
                 1. Conexión de API con ClickUp
               </h4>
-              <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div className="form-group" style={{ flex: 1, minWidth: '250px', margin: 0 }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Personal API Token</label>
-                  <input 
-                    type="password" 
-                    className="form-input" 
-                    placeholder="pk_..." 
-                    value={clickupToken} 
-                    onChange={(e) => setClickupToken(e.target.value)} 
-                    required 
-                    style={{ margin: 0, height: '42px' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', width: 'auto' }}>
-                  <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }} disabled={isTestingClickup}>
-                    {isTestingClickup ? 'Probando...' : 'Probar Conexión'}
-                  </button>
-                  <button type="submit" className="btn btn-primary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
-                    Guardar Token
+              
+              {clickupToken && !isEditingClickupToken ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'rgba(76,175,80,0.1)', color: '#2e7d32', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    <CheckCircle size={18} /> Conectado exitosamente con ClickUp
+                  </div>
+                  <button type="button" onClick={() => setIsEditingClickupToken(true)} className="btn btn-secondary" style={{ width: 'max-content', padding: '0.5rem 1.5rem', borderRadius: '30px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    Cambiar API Token
                   </button>
                 </div>
-              </form>
+              ) : (
+                <form onSubmit={handleSaveClickupSettings} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div className="form-group" style={{ flex: 1, minWidth: '250px', margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>Personal API Token</label>
+                    <input 
+                      type="password" 
+                      className="form-input" 
+                      placeholder="pk_..." 
+                      value={clickupToken} 
+                      onChange={(e) => setClickupToken(e.target.value)} 
+                      required 
+                      style={{ margin: 0, height: '42px' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', width: 'auto' }}>
+                    <button type="button" onClick={handleTestClickupConnection} className="btn btn-secondary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }} disabled={isTestingClickup}>
+                      {isTestingClickup ? 'Probando...' : 'Probar Conexión'}
+                    </button>
+                    <button type="submit" className="btn btn-primary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                      Guardar Token
+                    </button>
+                    {clickupToken && (
+                      <button type="button" onClick={() => setIsEditingClickupToken(false)} className="btn btn-secondary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
 
               {clickupConnectionStatus && (
                 <div style={{ 
@@ -5148,6 +5175,8 @@ const handleDeleteMember = async (id) => {
         user={user}
         templates={templates}
         fileStore={fileStore}
+        initialToken={reactivaleadsToken}
+        onTokenChange={setReactivaleadsToken}
       />
 
       <OnDemandModal

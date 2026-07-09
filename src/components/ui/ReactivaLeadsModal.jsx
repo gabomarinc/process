@@ -3,12 +3,13 @@ import { X, CheckCircle, Plus, Trash2, ArrowRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './dialog';
 import { useAlert } from '../../contexts/AlertContext';
 
-export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore }) {
+export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore, initialToken, onTokenChange }) {
   const showAlert = useAlert();
   const [activeTab, setActiveTab] = useState('connection');
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(initialToken || '');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(!!initialToken);
+  const [isEditingToken, setIsEditingToken] = useState(false);
   const [rules, setRules] = useState([]);
   const [rlTemplates, setRlTemplates] = useState([]);
   
@@ -50,10 +51,18 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
 
   useEffect(() => {
     if (isOpen) {
-      fetchRlTemplates();
       fetchRules();
+      if (initialToken) {
+        setIsConnected(true);
+        setApiKey(initialToken);
+        fetchRlTemplates(initialToken);
+      } else {
+        setIsConnected(false);
+        setApiKey('');
+      }
+      setIsEditingToken(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialToken]);
 
   const handleConnect = async (e) => {
     e.preventDefault();
@@ -73,8 +82,10 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
           body: JSON.stringify({ token: apiKey })
         });
         setIsConnected(true);
+        setIsEditingToken(false);
+        if (onTokenChange) onTokenChange(apiKey);
         showAlert('Conexión con ReactivaLeads establecida exitosamente', 'success');
-        fetchRlTemplates();
+        fetchRlTemplates(apiKey);
         setActiveTab('rules');
       } else {
         const data = await res.json();
@@ -165,27 +176,40 @@ export function ReactivaLeadsModal({ isOpen, onClose, user, templates, fileStore
                 Para conectar con ReactivaLeads, necesitas tu API Key generada desde su panel de desarrollo.
               </p>
               
-              <form onSubmit={handleConnect} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <div className="form-group">
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>API Key (x-api-key)</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="Pega tu API Key aquí..."
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                  />
+              {isConnected && !isEditingToken ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'rgba(76,175,80,0.1)', color: '#2e7d32', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    <CheckCircle size={18} /> Conectado exitosamente con ReactivaLeads
+                  </div>
+                  <button type="button" onClick={() => setIsEditingToken(true)} className="btn btn-secondary" style={{ width: 'max-content', padding: '0.5rem 1.5rem', borderRadius: '30px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    Cambiar API Key
+                  </button>
                 </div>
-                
-                <button type="submit" className="btn btn-primary" disabled={isConnecting || !apiKey} style={{ width: '100%' }}>
-                  {isConnecting ? 'Verificando...' : 'Conectar y Validar'}
-                </button>
-              </form>
-              
-              {isConnected && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', background: 'rgba(76,175,80,0.1)', color: '#2e7d32', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
-                  <CheckCircle size={18} /> Conectado exitosamente con ReactivaLeads
-                </div>
+              ) : (
+                <form onSubmit={handleConnect} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.06)' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>API Key (x-api-key)</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Pega tu API Key aquí..."
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      style={{ height: '42px' }}
+                    />
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button type="submit" className="btn btn-primary" disabled={isConnecting || !apiKey} style={{ flex: 1, height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                      {isConnecting ? 'Verificando...' : 'Conectar y Validar'}
+                    </button>
+                    {isConnected && (
+                      <button type="button" onClick={() => { setIsEditingToken(false); setApiKey(initialToken); }} className="btn btn-secondary" style={{ padding: '0 1.5rem', height: '42px', borderRadius: '30px', fontWeight: 600, fontSize: '0.85rem' }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </form>
               )}
             </div>
           )}
