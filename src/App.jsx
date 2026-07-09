@@ -3142,6 +3142,7 @@ const handleDeleteMember = async (id) => {
                 expandedTemplateMembers={expandedTemplateMembers}
                 setExpandedTemplateMembers={setExpandedTemplateMembers}
                 setTicketModal={setTicketModal}
+                departments={orgFormData.departments || []}
               />
             </div>
           

@@ -25,7 +25,8 @@ export const TemplateDetailsModal = ({
   handleAddStep,
   expandedTemplateMembers,
   setExpandedTemplateMembers,
-  setTicketModal
+  setTicketModal,
+  departments = []
 }) => {
   useEffect(() => {
     if (activeTemplate && activeTemplate.steps && teamMembers) {
@@ -53,13 +54,14 @@ export const TemplateDetailsModal = ({
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-          <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
-        </div>
+        <div className="tdm-modal-card" style={{ position: 'relative' }}>
+          {/* Close button inside card */}
+          <div style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 20 }}>
+            <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
+          </div>
 
-        <div className="tdm-modal-card">
           {/* Header */}
-          <div className="tdm-header">
+          <div className="tdm-header" style={{ paddingRight: '3.5rem' }}>
             <div style={{ flex: 1 }}>
               <div className="tdm-header-info">
                 <span className="tdm-header-avatar">{activeTemplate.companionAvatar || <Settings size={24}/>}</span>
@@ -77,12 +79,42 @@ export const TemplateDetailsModal = ({
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>Categoría:</span>
-                  <input 
-                    type="text"
-                    value={activeTemplate.category || ''} 
-                    onChange={(e) => saveTemplate({ ...activeTemplate, category: e.target.value })} 
-                    className="tdm-category-input"
-                  />
+                  {departments.length > 0 ? (
+                    <select
+                      value={activeTemplate.category || ''}
+                      onChange={(e) => saveTemplate({ ...activeTemplate, category: e.target.value })}
+                      className="tdm-category-input"
+                      style={{ 
+                        height: 'auto', 
+                        padding: '0.25rem 2rem 0.25rem 0.5rem',
+                        appearance: 'none',
+                        backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'rgba(0,0,0,0.5)\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E")',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.5rem center',
+                        backgroundSize: '0.8em',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: '#334155',
+                        width: '150px',
+                        backgroundColor: '#ffffff'
+                      }}
+                    >
+                      <option value="">Seleccionar área...</option>
+                      {departments.map((dept, idx) => (
+                        <option key={idx} value={dept}>{dept}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input 
+                      type="text"
+                      value={activeTemplate.category || ''} 
+                      onChange={(e) => saveTemplate({ ...activeTemplate, category: e.target.value })} 
+                      className="tdm-category-input"
+                      placeholder="Ej. Operaciones"
+                    />
+                  )}
                 </div>
               </div>
             </div>
