@@ -411,91 +411,65 @@ function App() {
   const [showAllSteps, setShowAllSteps] = useState(false);
 
 
-  // Fetch initial data from database
+  // Fetch initial data from database (Optimized Bootstrapping)
   useEffect(() => {
     const loadData = async () => {
       if (!localStorage.getItem('token')) return;
 
       try {
-        const templatesRes = await fetch('/api/templates');
-        const templatesData = await templatesRes.json();
-        setTemplates(templatesData);
-        // No default template selected to show the cards grid directly
-
-        const instancesRes = await fetch('/api/instances');
-        const instancesData = await instancesRes.json();
-        setInstances(instancesData);
-
-
-        const logsRes = await fetch('/api/notifications');
-        const logsData = await logsRes.json();
-        setNotificationLogs(logsData);
-
-        const teamRes = await fetch('/api/team');
-        const teamData = await teamRes.json();
-        setTeamMembers(teamData);
-
-        const clientsRes = await fetch('/api/clients');
-        const clientsData = await clientsRes.json();
-        setClients(clientsData);
-
-        // Fetch users and organization details
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          setProfileFormData({ 
-            name: parsed.name, 
-            email: parsed.email, 
-            password: '', 
-            companionName: parsed.companionName || '', 
-            companionAvatar: parsed.companionAvatar || '' 
-          });
-
-          // Fetch organization details for ALL users to load the shared Gemini API Key
-          const orgRes = await fetch('/api/organization');
-          if (orgRes.ok) {
-            const orgData = await orgRes.json();
+        const bootstrapRes = await fetch('/api/bootstrap');
+        if (bootstrapRes.ok) {
+          const data = await bootstrapRes.json();
+          
+          setTemplates(data.templates || []);
+          setInstances(data.instances || []);
+          setNotificationLogs(data.notifications || []);
+          setTeamMembers(data.team || []);
+          setClients(data.clients || []);
+          
+          if (data.organization) {
             setOrgFormData({ 
-              name: orgData.name || '',
-              description: orgData.description || '',
-              departments: orgData.departments || []
+              name: data.organization.name || '',
+              description: data.organization.description || '',
+              departments: data.organization.departments || []
             });
-            if (orgData.gemini_api_key) {
-              setApiKey(orgData.gemini_api_key);
-              setTempKey(orgData.gemini_api_key);
-            }
-            if (orgData.reactivaleads_api_key) {
-              setReactivaleadsToken(orgData.reactivaleads_api_key);
+            if (data.organization.gemini_api_key) {
+              setApiKey(data.organization.gemini_api_key);
+              setTempKey(data.organization.gemini_api_key);
             }
           }
 
-          // Fetch ClickUp Settings and Rules
-          const clickupRes = await fetch('/api/organization/clickup');
-          if (clickupRes.ok) {
-            const clickupData = await clickupRes.json();
-            setClickupToken(clickupData.clickupToken || '');
-          }
-          const clickupRulesRes = await fetch('/api/integrations/clickup/rules');
-          if (clickupRulesRes.ok) {
-            const clickupRulesData = await clickupRulesRes.json();
-            setClickupRules(clickupRulesData);
+          if (data.clickup) {
+            setClickupToken(data.clickup.clickupToken || '');
           }
 
-          if (parsed.role === 'admin') {
-            const usersRes = await fetch('/api/users');
-            if (usersRes.ok) {
-              const usersData = await usersRes.json();
-              setOrgUsers(usersData);
-            }
-            const tokensRes = await fetch('/api/developer/tokens');
-            if (tokensRes.ok) {
-              const tokensData = await tokensRes.json();
-              setApiTokens(tokensData);
+          if (data.clickupRules) {
+            setClickupRules(data.clickupRules);
+          }
+
+          const savedUser = localStorage.getItem('user');
+          if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            setProfileFormData({ 
+              name: parsed.name, 
+              email: parsed.email, 
+              password: '', 
+              companionName: parsed.companionName || '', 
+              companionAvatar: parsed.companionAvatar || '' 
+            });
+
+            if (parsed.role === 'admin') {
+              if (data.users) {
+                setOrgUsers(data.users);
+              }
+              if (data.apiTokens) {
+                setApiTokens(data.apiTokens);
+              }
             }
           }
         }
       } catch (err) {
-        console.error("Error al cargar datos desde Neon:", err);
+        console.error("Error al cargar datos desde Neon (Bootstrap):", err);
       }
     };
     loadData();
@@ -507,6 +481,7 @@ function App() {
   // Trigger alert notifications for overdue steps and save to Neon DB
   useEffect(() => {
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       const now = new Date();
       instances.forEach(async (inst) => {
         inst.steps.forEach(async (step) => {
@@ -549,7 +524,7 @@ function App() {
           }
         });
       });
-    }, 10000); // Check for delays every 10 seconds
+    }, 60000); // Check for delays every 60 seconds (1 minute)
 
     return () => clearInterval(interval);
   }, [instances, notificationLogs]);

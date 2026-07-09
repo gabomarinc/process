@@ -30,6 +30,7 @@ export default function Notifications({
 
   useEffect(() => {
     const fetchNotifs = () => {
+      if (document.visibilityState !== 'visible') return;
       if (user && user.id && apiUrl) {
         fetch(`${apiUrl}/notifications/${user.id}`, {
           headers: {
@@ -46,10 +47,21 @@ export default function Notifications({
       }
     };
 
-    fetchNotifs();
+    // Initial fetch if page is currently visible
+    if (document.visibilityState === 'visible') {
+      fetchNotifs();
+    }
     
-    // Poll every 30 seconds
-    const intervalId = setInterval(fetchNotifs, 30000);
+    // Poll every 60 seconds
+    const intervalId = setInterval(fetchNotifs, 60000);
+    
+    // Refresh immediately when document visibility changes to visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifs();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     // Listen for custom event to trigger immediate refresh
     const handleRefresh = () => fetchNotifs();
@@ -57,6 +69,7 @@ export default function Notifications({
 
     return () => {
       clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('notifications-updated', handleRefresh);
     };
   }, [user, apiUrl]);

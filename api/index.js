@@ -19,7 +19,10 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon.tech')
     ? { rejectUnauthorized: false }
-    : false
+    : false,
+  max: 6,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 2000
 });
 
 // Run auto-migration for user columns
@@ -374,6 +377,196 @@ app.post('/api/auth/reset-password', async (req, res) => {
 });
 
 // --- SECURED CRUD ROUTES ---
+
+app.get('/api/bootstrap', authenticateToken, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const isGuest = req.user.role === 'guest';
+    const isAdmin = req.user.role === 'admin';
+    const isGerente = req.user.role === 'gerente';
+
+    // 1. Templates query
+    let templatesQuery = 'SELECT * FROM templates WHERE organization_id = $1';
+    if (!isAdmin && !isGerente) {
+      templatesQuery += " AND status = 'approved'";
+    }
+    const templatesPromise = pool.query(templatesQuery, [orgId]);
+
+    // 2. Instances query
+    const instancesPromise = pool.query('SELECT * FROM instances WHERE organization_id = $1 ORDER BY started_at DESC', [orgId]);
+
+    // 3. Clients query
+    const clientsPromise = pool.query('SELECT * FROM clients WHERE organization_id = $1 ORDER BY name ASC', [orgId]);
+
+    // 4. Notifications query (logs)
+    const logsPromise = pool.query('SELECT * FROM notification_logs WHERE organization_id = $1 ORDER BY logged_at DESC', [orgId]);
+
+    // 5. Team members & users for team
+    const teamPromise = pool.query(`
+      SELECT t.*, u.password_hash 
+      FROM team_members t 
+      LEFT JOIN users u ON t.email = u.email AND t.organization_id = u.organization_id
+      WHERE t.organization_id = $1 
+      ORDER BY t.name ASC
+    `, [orgId]);
+
+    const adminsPromise = pool.query("SELECT id, name, email, role, companion_avatar as avatar FROM users WHERE organization_id = $1 AND role = 'admin'", [orgId]);
+
+    // 6. Organization details
+    const orgPromise = pool.query('SELECT * FROM organizations WHERE id = $1', [orgId]);
+
+    // 7. ClickUp rules query
+    const clickupRulesPromise = pool.query(
+      'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern" FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      [orgId]
+    );
+
+    // 8. Admin only: users & api tokens
+    const usersPromise = isAdmin 
+      ? pool.query('SELECT id, name, email, role, created_at FROM users WHERE organization_id = $1 ORDER BY name ASC', [orgId])
+      : Promise.resolve({ rows: [] });
+
+    const developerTokensPromise = isAdmin
+      ? pool.query('SELECT id, name, token, created_at, last_used_at FROM api_tokens WHERE organization_id = $1 ORDER BY created_at DESC', [orgId])
+      : Promise.resolve({ rows: [] });
+
+    // Execute queries in parallel
+    const [
+      templatesRes,
+      instancesRes,
+      clientsRes,
+      logsRes,
+      teamRes,
+      adminsRes,
+      orgRes,
+      clickupRulesRes,
+      usersRes,
+      devTokensRes
+    ] = await Promise.all([
+      templatesPromise,
+      instancesPromise,
+      clientsPromise,
+      logsPromise,
+      teamPromise,
+      adminsPromise,
+      orgPromise,
+      clickupRulesPromise,
+      usersPromise,
+      developerTokensPromise
+    ]);
+
+    // Map Templates
+    const templatesMapped = templatesRes.rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      durationDays: row.duration_days,
+      companionName: row.companion_name,
+      companionAvatar: row.companion_avatar,
+      companionGreeting: row.companion_greeting,
+      category: row.category,
+      steps: row.steps,
+      status: row.status || 'approved'
+    }));
+
+    // Map Instances
+    let instancesRows = instancesRes.rows;
+    if (isGuest) {
+      const memberRes = await pool.query('SELECT id FROM team_members WHERE email = $1 AND organization_id = $2', [req.user.email, orgId]);
+      const memberId = memberRes.rows[0]?.id;
+      instancesRows = instancesRows.filter(row => {
+        try {
+          const steps = row.steps || [];
+          return steps.some(step => step.assignedTo === memberId || step.assignedTo === req.user.email);
+        } catch (e) {
+          return false;
+        }
+      });
+    }
+    const instancesMapped = instancesRows.map(row => ({
+      id: row.id,
+      templateId: row.template_id,
+      title: row.title,
+      instanceName: row.instance_name,
+      startedAt: row.started_at,
+      companionName: row.companion_name,
+      companionAvatar: row.companion_avatar,
+      companionGreeting: row.companion_greeting,
+      category: row.category,
+      steps: row.steps
+    }));
+
+    // Map logs
+    const logsMapped = logsRes.rows.map(row => ({
+      id: row.id,
+      instanceId: row.instance_id,
+      stepId: row.step_id,
+      time: row.logged_at,
+      instanceName: row.instance_name,
+      stepTitle: row.step_title,
+      message: row.message
+    }));
+
+    // Map team
+    const teamMapped = teamRes.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      email: row.email,
+      avatar: row.avatar,
+      assignedProcesses: row.assigned_processes || [],
+      department: row.department || '',
+      managerId: row.manager_id || '',
+      geminiApiKey: row.gemini_api_key || '',
+      status: row.password_hash === 'INVITED_PENDING' ? 'pending' : 'active',
+      isSystem: false
+    }));
+    const adminUsers = adminsRes.rows
+      .filter(row => !teamMapped.some(m => m.email?.toLowerCase() === row.email?.toLowerCase()))
+      .map(row => ({
+        id: 'admin_' + row.id,
+        name: row.name + " (" + row.role + ")",
+        role: row.role,
+        email: row.email,
+        avatar: row.avatar,
+        assignedProcesses: [],
+        department: 'Administración',
+        managerId: '',
+        geminiApiKey: '',
+        status: 'active',
+        isSystem: true
+      }));
+    const fullTeam = [...adminUsers, ...teamMapped];
+
+    const orgRow = orgRes.rows[0] || {};
+
+    res.json({
+      templates: templatesMapped,
+      instances: instancesMapped,
+      clients: clientsRes.rows,
+      notifications: logsMapped,
+      team: fullTeam,
+      organization: {
+        id: orgRow.id,
+        name: orgRow.name || '',
+        description: orgRow.description || '',
+        departments: orgRow.departments || [],
+        gemini_api_key: orgRow.gemini_api_key || ''
+      },
+      clickup: {
+        clickupToken: orgRow.clickup_token || '',
+        clickupWorkspaceId: orgRow.clickup_workspace_id || ''
+      },
+      clickupRules: clickupRulesRes.rows,
+      users: usersRes.rows,
+      apiTokens: devTokensRes.rows
+    });
+
+  } catch (err) {
+    console.error("Error bootstrapping dashboard:", err);
+    res.status(500).json({ error: 'Error al iniciar panel de control' });
+  }
+});
 
 // 1. Get all templates
 app.get('/api/templates', authenticateToken, async (req, res) => {
