@@ -397,7 +397,8 @@ function App() {
   const [newUserFormData, setNewUserFormData] = useState({ name: '', email: '', password: '', role: 'agent' });
   const [addUserError, setAddUserError] = useState('');
   const [profileFormData, setProfileFormData] = useState({ name: '', email: '', password: '', companionName: '', companionAvatar: '' });
-  const [orgFormData, setOrgFormData] = useState({ name: '' });
+  const [orgFormData, setOrgFormData] = useState({ name: '', description: '', departments: [] });
+  const [newDeptInput, setNewDeptInput] = useState('');
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState('');
   const [settingsErrorMsg, setSettingsErrorMsg] = useState('');
 
@@ -451,7 +452,11 @@ function App() {
           const orgRes = await fetch('/api/organization');
           if (orgRes.ok) {
             const orgData = await orgRes.json();
-            setOrgFormData({ name: orgData.name });
+            setOrgFormData({ 
+              name: orgData.name || '',
+              description: orgData.description || '',
+              departments: orgData.departments || []
+            });
             if (orgData.gemini_api_key) {
               setApiKey(orgData.gemini_api_key);
               setTempKey(orgData.gemini_api_key);
@@ -3904,6 +3909,72 @@ const handleDeleteMember = async (id) => {
                           required 
                         />
                       </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Descripción de la Empresa</label>
+                        <textarea 
+                          className="form-input" 
+                          placeholder="Breve descripción de los servicios, misión o visión de la empresa..."
+                          value={orgFormData.description || ''} 
+                          onChange={(e) => setOrgFormData({ ...orgFormData, description: e.target.value })} 
+                          rows={3}
+                          style={{ resize: 'vertical' }}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Departamentos o Áreas</label>
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Ej. Ventas, Soporte, TI..."
+                            value={newDeptInput}
+                            onChange={(e) => setNewDeptInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const val = newDeptInput.trim();
+                                if (val && !orgFormData.departments?.includes(val)) {
+                                  setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
+                                  setNewDeptInput('');
+                                }
+                              }
+                            }}
+                          />
+                          <button 
+                            type="button" 
+                            className="btn btn-secondary" 
+                            onClick={() => {
+                              const val = newDeptInput.trim();
+                              if (val && !orgFormData.departments?.includes(val)) {
+                                setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
+                                setNewDeptInput('');
+                              }
+                            }}
+                          >
+                            Agregar
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {(orgFormData.departments || []).map((dept, idx) => (
+                            <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'var(--color-primary-light)', color: 'var(--color-primary-hover)', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                              {dept}
+                              <button 
+                                type="button" 
+                                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                onClick={() => setOrgFormData({ ...orgFormData, departments: orgFormData.departments.filter(d => d !== dept) })}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                          {(!orgFormData.departments || orgFormData.departments.length === 0) && (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No hay departamentos agregados.</span>
+                          )}
+                        </div>
+                      </div>
+
                       <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
                         Actualizar Empresa
                       </button>
@@ -4429,13 +4500,17 @@ const handleDeleteMember = async (id) => {
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <div className="form-group" style={{ flex: 1 }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Área / Departamento</label>
-                    <input
+                    <select
                       className="form-input"
-                      placeholder="Ej. Operaciones"
                       value={memberFormData.department || ''}
                       onChange={(e) => setMemberFormData({ ...memberFormData, department: e.target.value })}
                       required
-                    />
+                    >
+                      <option value="">Seleccionar departamento...</option>
+                      {orgFormData.departments?.map((dept, idx) => (
+                        <option key={idx} value={dept}>{dept}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group" style={{ flex: 1 }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Jefe Directo (Opcional)</label>

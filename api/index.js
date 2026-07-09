@@ -30,6 +30,8 @@ pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry BIGINT;
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT;
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT '[]'::jsonb;
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_token VARCHAR(255);
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_workspace_id VARCHAR(100);
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS reactivaleads_api_key VARCHAR(255);
@@ -1369,16 +1371,25 @@ app.put('/api/organization', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
   }
-  const { name, gemini_api_key } = req.body;
+  const { name, gemini_api_key, description, departments } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
   }
   try {
     // Ensure column exists
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT');
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT \\'[]\\'::jsonb');
+    
     await pool.query(
-      'UPDATE organizations SET name = $1, gemini_api_key = $2 WHERE id = $3',
-      [name, gemini_api_key !== undefined ? gemini_api_key : null, req.user.organizationId]
+      'UPDATE organizations SET name = $1, gemini_api_key = $2, description = $3, departments = $4 WHERE id = $5',
+      [
+        name, 
+        gemini_api_key !== undefined ? gemini_api_key : null, 
+        description || null, 
+        departments ? JSON.stringify(departments) : '[]', 
+        req.user.organizationId
+      ]
     );
     res.json({ message: 'Organización actualizada con éxito.' });
   } catch (err) {
