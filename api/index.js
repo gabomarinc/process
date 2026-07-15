@@ -383,7 +383,7 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
   } catch (err) {
     console.error('Error en el callback de Kinde:', err);
     const frontendUrl = (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
-    res.redirect(`${frontendUrl}/?error=kinde_auth_failed`);
+    res.redirect(`${frontendUrl}/?error=${encodeURIComponent(err.message || 'kinde_auth_failed')}`);
   }
 });
 
