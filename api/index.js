@@ -247,7 +247,7 @@ app.get('/api/auth/login', async (req, res) => {
     let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
       client_id: process.env.KINDE_CLIENT_ID,
       response_type: 'code',
-      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
+      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/api/auth/kinde_callback',
       scope: 'openid profile email',
       state: state
     }).toString();
@@ -272,7 +272,7 @@ app.get('/api/auth/register', async (req, res) => {
     let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
       client_id: process.env.KINDE_CLIENT_ID,
       response_type: 'code',
-      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
+      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/api/auth/kinde_callback',
       scope: 'openid profile email',
       state: state,
       prompt: 'create'
