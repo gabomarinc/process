@@ -244,7 +244,8 @@ app.get('/api/auth/login', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.kindeState = state;
     
-    let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
+    const issuerUrl = (process.env.KINDE_ISSUER_URL || '').replace(/\/$/, '');
+    let authUrl = `${issuerUrl}/oauth2/auth?` + new URLSearchParams({
       client_id: process.env.KINDE_CLIENT_ID,
       response_type: 'code',
       redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/api/auth/kinde_callback',
@@ -269,7 +270,8 @@ app.get('/api/auth/register', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.kindeState = state;
     
-    let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
+    const issuerUrl = (process.env.KINDE_ISSUER_URL || '').replace(/\/$/, '');
+    let authUrl = `${issuerUrl}/oauth2/auth?` + new URLSearchParams({
       client_id: process.env.KINDE_CLIENT_ID,
       response_type: 'code',
       redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/api/auth/kinde_callback',
@@ -293,8 +295,9 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
       throw new Error(error_description || error);
     }
     
+    const issuerUrl = (process.env.KINDE_ISSUER_URL || '').replace(/\/$/, '');
     // Exchange code for token
-    const tokenResponse = await fetch(`${process.env.KINDE_ISSUER_URL}/oauth2/token`, {
+    const tokenResponse = await fetch(`${issuerUrl}/oauth2/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -308,20 +311,35 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
       }).toString()
     });
     
-    const tokenData = await tokenResponse.json();
+    const tokenRawText = await tokenResponse.text();
+    let tokenData;
+    try {
+      tokenData = JSON.parse(tokenRawText);
+    } catch (e) {
+      console.error('Non-JSON response from token endpoint:', tokenRawText);
+      throw new Error(`Error en el servidor de autenticación (Status ${tokenResponse.status}): La respuesta no fue JSON.`);
+    }
+
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.error('Error in token exchange:', tokenData);
-      throw new Error(tokenData.error_description || tokenData.error || 'Error intercambiando el token de acceso');
+      throw new Error(tokenData.error_description || tokenData.error || `Error intercambiando el token (Status ${tokenResponse.status})`);
     }
     
     // Fetch user profile using access_token
-    const profileResponse = await fetch(`${process.env.KINDE_ISSUER_URL}/oauth2/v2/user_profile`, {
+    const profileResponse = await fetch(`${issuerUrl}/oauth2/v2/user_profile`, {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`
       }
     });
     
-    let profile = await profileResponse.json();
+    const profileRawText = await profileResponse.text();
+    let profile;
+    try {
+      profile = JSON.parse(profileRawText);
+    } catch (e) {
+      console.error('Non-JSON response from profile endpoint:', profileRawText);
+      throw new Error(`Error obteniendo perfil (Status ${profileResponse.status}): La respuesta no fue JSON.`);
+    }
     
     if (!profile || !profile.email) {
       if (tokenData.id_token) {
@@ -391,7 +409,8 @@ app.get('/api/auth/logout', async (req, res) => {
   try {
     req.session = null;
     
-    const logoutUrl = new URL(`${process.env.KINDE_ISSUER_URL}/logout`);
+    const issuerUrl = (process.env.KINDE_ISSUER_URL || '').replace(/\/$/, '');
+    const logoutUrl = new URL(`${issuerUrl}/logout`);
     const redirectUrl = process.env.KINDE_POST_LOGOUT_REDIRECT_URL || 'http://localhost:3000';
     logoutUrl.searchParams.append('redirect', redirectUrl);
     
