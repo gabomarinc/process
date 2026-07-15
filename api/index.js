@@ -131,23 +131,7 @@ app.use(cookieSession({
   sameSite: 'lax'
 }));
 
-const getSessionManager = (req) => ({
-  getSessionItem: (key) => req.session[key],
-  setSessionItem: (key, value) => { req.session[key] = value; },
-  removeSessionItem: (key) => { delete req.session[key]; },
-  destroySession: () => { req.session = null; }
-});
-
-const getKindeClient = () => {
-  return new KindeClient({
-    domain: process.env.KINDE_ISSUER_URL || '',
-    clientId: process.env.KINDE_CLIENT_ID || '',
-    clientSecret: process.env.KINDE_CLIENT_SECRET || '',
-    redirectUri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
-    logoutRedirectUri: process.env.KINDE_POST_LOGOUT_REDIRECT_URL || 'http://localhost:3000',
-    grantType: GrantType.AUTHORIZATION_CODE,
-  });
-};
+// Kinde setup variables removed as we use manual OAuth2 calls
 
 
 // Log database connection check on start (only locally)
@@ -257,17 +241,23 @@ const authenticateApiKey = async (req, res, next) => {
 
 app.get('/api/auth/login', async (req, res) => {
   try {
-    const kindeClient = getKindeClient();
-    const sessionManager = getSessionManager(req);
-    const loginUrl = await kindeClient.login(sessionManager);
+    const state = crypto.randomBytes(16).toString('hex');
+    req.session.kindeState = state;
+    
+    let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
+      client_id: process.env.KINDE_CLIENT_ID,
+      response_type: 'code',
+      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
+      scope: 'openid profile email',
+      state: state
+    }).toString();
     
     // Support prompt=none via query params for seamless SSO
-    let finalUrl = loginUrl.toString();
     if (req.query.prompt === 'none') {
-      finalUrl += '&prompt=none';
+      authUrl += '&prompt=none';
     }
     
-    res.redirect(finalUrl);
+    res.redirect(authUrl);
   } catch (err) {
     console.error('Error al generar URL de login Kinde:', err);
     res.status(500).json({ error: 'Error al iniciar sesión con Kinde' });
@@ -276,10 +266,19 @@ app.get('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/register', async (req, res) => {
   try {
-    const kindeClient = getKindeClient();
-    const sessionManager = getSessionManager(req);
-    const registerUrl = await kindeClient.register(sessionManager);
-    res.redirect(registerUrl.toString());
+    const state = crypto.randomBytes(16).toString('hex');
+    req.session.kindeState = state;
+    
+    let authUrl = `${process.env.KINDE_ISSUER_URL}/oauth2/auth?` + new URLSearchParams({
+      client_id: process.env.KINDE_CLIENT_ID,
+      response_type: 'code',
+      redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
+      scope: 'openid profile email',
+      state: state,
+      prompt: 'create'
+    }).toString();
+    
+    res.redirect(authUrl);
   } catch (err) {
     console.error('Error al generar URL de registro Kinde:', err);
     res.status(500).json({ error: 'Error al registrar con Kinde' });
@@ -288,13 +287,57 @@ app.get('/api/auth/register', async (req, res) => {
 
 app.get('/api/auth/kinde_callback', async (req, res) => {
   try {
-    const kindeClient = getKindeClient();
-    const sessionManager = getSessionManager(req);
-    await kindeClient.handleRedirectToApp(sessionManager, new URL(`${req.protocol}://${req.get('host')}${req.originalUrl}`));
+    const { code, state, error, error_description } = req.query;
+    if (error) {
+      console.error("Kinde returned error:", error, error_description);
+      throw new Error(error_description || error);
+    }
     
-    const profile = await kindeClient.getUserProfile(sessionManager);
+    // Exchange code for token
+    const tokenResponse = await fetch(`${process.env.KINDE_ISSUER_URL}/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: process.env.KINDE_CLIENT_ID,
+        client_secret: process.env.KINDE_CLIENT_SECRET,
+        code,
+        redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback'
+      }).toString()
+    });
+    
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error('Error in token exchange:', tokenData);
+      throw new Error('Error intercambiando el token de acceso');
+    }
+    
+    // Fetch user profile using access_token
+    const profileResponse = await fetch(`${process.env.KINDE_ISSUER_URL}/oauth2/v2/user_profile`, {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`
+      }
+    });
+    
+    let profile = await profileResponse.json();
+    
     if (!profile || !profile.email) {
-      throw new Error('Perfil de usuario incompleto desde Kinde');
+      if (tokenData.id_token) {
+        const decodedIdToken = jwt.decode(tokenData.id_token);
+        if (decodedIdToken) {
+          profile = {
+            email: decodedIdToken.email || profile.email,
+            given_name: decodedIdToken.given_name || profile.given_name,
+            family_name: decodedIdToken.family_name || profile.family_name
+          };
+        }
+      }
+      
+      if (!profile.email) {
+        throw new Error('Perfil de usuario incompleto desde Kinde');
+      }
     }
     
     // Check if user exists in DB
@@ -346,9 +389,12 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
 
 app.get('/api/auth/logout', async (req, res) => {
   try {
-    const kindeClient = getKindeClient();
-    const sessionManager = getSessionManager(req);
-    const logoutUrl = await kindeClient.logout(sessionManager);
+    req.session = null;
+    
+    const logoutUrl = new URL(`${process.env.KINDE_ISSUER_URL}/logout`);
+    const redirectUrl = process.env.KINDE_POST_LOGOUT_REDIRECT_URL || 'http://localhost:3000';
+    logoutUrl.searchParams.append('redirect', redirectUrl);
+    
     res.json({ logoutUrl: logoutUrl.toString() });
   } catch (err) {
     console.error('Error al generar logout:', err);
