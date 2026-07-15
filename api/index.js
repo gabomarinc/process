@@ -311,7 +311,7 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
     const tokenData = await tokenResponse.json();
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.error('Error in token exchange:', tokenData);
-      throw new Error('Error intercambiando el token de acceso');
+      throw new Error(tokenData.error_description || tokenData.error || 'Error intercambiando el token de acceso');
     }
     
     // Fetch user profile using access_token
