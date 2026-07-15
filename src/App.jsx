@@ -128,6 +128,34 @@ function App() {
     };
 
     const params = new URLSearchParams(window.location.search);
+    
+    // Kinde SSO Token Handling
+    const kindeToken = params.get('token');
+    const kindeError = params.get('error');
+
+    if (kindeToken) {
+      try {
+        const payload = JSON.parse(atob(kindeToken.split('.')[1]));
+        const userObj = { 
+          id: payload.id, 
+          name: payload.name || payload.email.split('@')[0], 
+          email: payload.email, 
+          organizationId: payload.organizationId, 
+          role: payload.role 
+        };
+        localStorage.setItem('token', kindeToken);
+        localStorage.setItem('user', JSON.stringify(userObj));
+        setToken(kindeToken);
+        setUser(userObj);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {
+        console.error("Error parsing Kinde JWT token", e);
+      }
+    } else if (kindeError) {
+      setAuthError('Error de autenticación con Kinde. Por favor, intenta de nuevo.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     const tokenParam = params.get('resetToken');
     if (tokenParam) {
       setResetToken(tokenParam);
@@ -226,6 +254,13 @@ function App() {
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);
+    fetch('/api/auth/logout')
+      .then(res => res.json())
+      .then(data => {
+        if (data.logoutUrl) window.location.href = data.logoutUrl;
+        else window.location.reload();
+      })
+      .catch(() => window.location.reload());
   };
 
 
@@ -2067,12 +2102,8 @@ const handleDeleteMember = async (id) => {
     if (!showAuthScreen) {
       return (
         <LandingPage 
-          onLoginClick={() => { setAuthView('login'); setShowAuthScreen(true); }}
-          onStartFree={(email) => { 
-            setAuthForm({ ...authForm, email }); 
-            setAuthView('register'); 
-            setShowAuthScreen(true); 
-          }}
+          onLoginClick={() => { window.location.href = '/api/auth/login'; }}
+          onStartFree={(email) => { window.location.href = '/api/auth/register'; }}
         />
       );
     }

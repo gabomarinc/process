@@ -8,6 +8,8 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import net from 'net';
 import tls from 'tls';
+import cookieSession from 'cookie-session';
+import { KindeClient, GrantType } from "@kinde-oss/kinde-nodejs-sdk";
 
 dotenv.config();
 
@@ -121,6 +123,33 @@ pool.query(`
 app.use(cors());
 app.use(express.json());
 
+app.use(cookieSession({
+  name: 'kinde_session',
+  secret: process.env.JWT_SECRET || 'secret_konsul_token_2026',
+  maxAge: 24 * 60 * 60 * 1000,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax'
+}));
+
+const getSessionManager = (req) => ({
+  getSessionItem: (key) => req.session[key],
+  setSessionItem: (key, value) => { req.session[key] = value; },
+  removeSessionItem: (key) => { delete req.session[key]; },
+  destroySession: () => { req.session = null; }
+});
+
+const getKindeClient = () => {
+  return new KindeClient({
+    domain: process.env.KINDE_ISSUER_URL || '',
+    clientId: process.env.KINDE_CLIENT_ID || '',
+    clientSecret: process.env.KINDE_CLIENT_SECRET || '',
+    redirectUri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback',
+    logoutRedirectUri: process.env.KINDE_POST_LOGOUT_REDIRECT_URL || 'http://localhost:3000',
+    grantType: GrantType.AUTHORIZATION_CODE,
+  });
+};
+
+
 // Log database connection check on start (only locally)
 if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
   pool.connect((err, client, release) => {
@@ -224,76 +253,109 @@ const authenticateApiKey = async (req, res, next) => {
   }
 };
 
-// --- AUTH ROUTES ---
+// --- AUTH ROUTES (KINDE SSO) ---
 
-app.post('/api/auth/register', async (req, res) => {
-  const { name, email, password, companyName } = req.body;
-  if (!companyName) {
-    return res.status(400).json({ error: 'El nombre de la empresa es requerido' });
-  }
-
+app.get('/api/auth/login', async (req, res) => {
   try {
-    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (existingUser.rows.length > 0) return res.status(400).json({ error: 'El usuario ya existe' });
+    const kindeClient = getKindeClient();
+    const sessionManager = getSessionManager(req);
+    const loginUrl = await kindeClient.login(sessionManager);
     
-    // Create Organization first
-    const orgRes = await pool.query(
-      'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
-      [companyName]
-    );
-    const orgId = orgRes.rows[0].id;
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    // Support prompt=none via query params for seamless SSO
+    let finalUrl = loginUrl.toString();
+    if (req.query.prompt === 'none') {
+      finalUrl += '&prompt=none';
+    }
     
-    const newUser = await pool.query(
-      'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, organization_id, name, email, role',
-      [orgId, name, email, passwordHash, 'admin']
-    );
-    
-    const user = newUser.rows[0];
-
-    // Add admin to team_members
-    await pool.query(
-      `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
-       VALUES ($1, $2, $3, $4, $5, null, 'Administración')`,
-      ['admin_' + user.id, orgId, name, 'Fundador/Admin', email]
-    );
-
-    const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-    
-    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: user.role } });
+    res.redirect(finalUrl);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al registrar usuario', details: err.message });
+    console.error('Error al generar URL de login Kinde:', err);
+    res.status(500).json({ error: 'Error al iniciar sesión con Kinde' });
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password, rememberMe } = req.body;
+app.get('/api/auth/register', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(400).json({ error: 'Credenciales inválidas' });
+    const kindeClient = getKindeClient();
+    const sessionManager = getSessionManager(req);
+    const registerUrl = await kindeClient.register(sessionManager);
+    res.redirect(registerUrl.toString());
+  } catch (err) {
+    console.error('Error al generar URL de registro Kinde:', err);
+    res.status(500).json({ error: 'Error al registrar con Kinde' });
+  }
+});
+
+app.get('/api/auth/kinde_callback', async (req, res) => {
+  try {
+    const kindeClient = getKindeClient();
+    const sessionManager = getSessionManager(req);
+    await kindeClient.handleRedirectToApp(sessionManager, new URL(`${req.protocol}://${req.get('host')}${req.originalUrl}`));
     
-    const user = result.rows[0];
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+    const profile = await kindeClient.getUserProfile(sessionManager);
+    if (!profile || !profile.email) {
+      throw new Error('Perfil de usuario incompleto desde Kinde');
+    }
     
-    const expiresIn = rememberMe ? '30d' : '1h';
-    // Fallback default role 'admin' if not defined
+    // Check if user exists in DB
+    let userResult = await pool.query('SELECT * FROM users WHERE email = $1', [profile.email]);
+    let user;
+    
+    if (userResult.rows.length === 0) {
+      // Create Organization
+      const orgName = `Organización de ${profile.given_name || 'Usuario'}`;
+      const orgRes = await pool.query(
+        'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+        [orgName]
+      );
+      const orgId = orgRes.rows[0].id;
+
+      // Generar hash dummy porque la clave real la maneja Kinde
+      const dummyHash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+      const fullName = profile.given_name ? `${profile.given_name} ${profile.family_name || ''}`.trim() : profile.email.split('@')[0];
+      
+      const newUser = await pool.query(
+        'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [orgId, fullName, profile.email, dummyHash, 'admin']
+      );
+      user = newUser.rows[0];
+
+      // Insert into team_members
+      await pool.query(
+        `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+         VALUES ($1, $2, $3, $4, $5, null, 'Administración')`,
+        ['admin_' + user.id, orgId, fullName, 'Fundador/Admin', profile.email]
+      );
+    } else {
+      user = userResult.rows[0];
+    }
+    
     const userRole = user.role || 'admin';
-    const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: userRole, email: user.email }, JWT_SECRET, { expiresIn });
+    const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: userRole, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
     
-    res.json({ token, user: { 
-      id: user.id, name: user.name, email: user.email, organizationId: user.organization_id, role: userRole,
-      smtp_host: user.smtp_host, smtp_port: user.smtp_port, smtp_user: user.smtp_user, smtp_pass: user.smtp_pass,
-      imap_host: user.imap_host, imap_port: user.imap_port, imap_secure: user.imap_secure
-    } });
+    // Redirect to frontend dashboard with token in URL param
+    const frontendUrl = process.env.KINDE_SITE_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/?token=${encodeURIComponent(token)}`);
+    
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al iniciar sesión', details: err.message });
+    console.error('Error en el callback de Kinde:', err);
+    const frontendUrl = process.env.KINDE_SITE_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/?error=kinde_auth_failed`);
   }
 });
+
+app.get('/api/auth/logout', async (req, res) => {
+  try {
+    const kindeClient = getKindeClient();
+    const sessionManager = getSessionManager(req);
+    const logoutUrl = await kindeClient.logout(sessionManager);
+    res.json({ logoutUrl: logoutUrl.toString() });
+  } catch (err) {
+    console.error('Error al generar logout:', err);
+    res.status(500).json({ error: 'Error al cerrar sesión' });
+  }
+});
+
 
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
