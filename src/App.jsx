@@ -152,7 +152,8 @@ function App() {
         console.error("Error parsing Kinde JWT token", e);
       }
     } else if (kindeError) {
-      setAuthError('Error de autenticación con Kinde. Por favor, intenta de nuevo.');
+      setAuthError('Error de autenticación con Kinde. Por favor, revisa tus credenciales o la configuración.');
+      setShowAuthScreen(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 

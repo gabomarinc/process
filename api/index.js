@@ -304,7 +304,7 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
         client_id: process.env.KINDE_CLIENT_ID,
         client_secret: process.env.KINDE_CLIENT_SECRET,
         code,
-        redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000') + '/api/auth/kinde_callback'
+        redirect_uri: (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/api/auth/kinde_callback'
       }).toString()
     });
     
@@ -377,12 +377,12 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
     const token = jwt.sign({ id: user.id, organizationId: user.organization_id, role: userRole, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
     
     // Redirect to frontend dashboard with token in URL param
-    const frontendUrl = process.env.KINDE_SITE_URL || 'http://localhost:3000';
+    const frontendUrl = (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
     res.redirect(`${frontendUrl}/?token=${encodeURIComponent(token)}`);
     
   } catch (err) {
     console.error('Error en el callback de Kinde:', err);
-    const frontendUrl = process.env.KINDE_SITE_URL || 'http://localhost:3000';
+    const frontendUrl = (process.env.KINDE_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
     res.redirect(`${frontendUrl}/?error=kinde_auth_failed`);
   }
 });
