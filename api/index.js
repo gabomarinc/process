@@ -205,7 +205,13 @@ const authenticateApiKey = async (req, res, next) => {
   const apiKey = req.headers['x-api-key'] || (req.headers['authorization'] && req.headers['authorization'].startsWith('Bearer ') && req.headers['authorization'].split(' ')[1]);
 
   if (!apiKey) {
-    return res.status(401).json({ error: 'Acceso denegado. API key no proporcionada.' });
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Acceso denegado. API key no proporcionada.'
+      }
+    });
   }
 
   try {
@@ -215,7 +221,13 @@ const authenticateApiKey = async (req, res, next) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(403).json({ error: 'API key inválida o revocada.' });
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'API key inválida o revocada.'
+        }
+      });
     }
 
     const apiToken = result.rows[0];
@@ -233,7 +245,13 @@ const authenticateApiKey = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('Error al autenticar API key:', err);
-    res.status(500).json({ error: 'Error del servidor al autenticar API key.' });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: 'Error del servidor al autenticar API key.'
+      }
+    });
   }
 };
 
@@ -2484,7 +2502,7 @@ app.post('/api/developer/tokens', authenticateToken, async (req, res) => {
   if (!name) return res.status(400).json({ error: 'El nombre de la llave es requerido.' });
   
   try {
-    const key = 'kp_' + crypto.randomBytes(24).toString('hex');
+    const key = 'kp_live_' + crypto.randomBytes(24).toString('hex');
     
     const result = await pool.query(
       'INSERT INTO api_tokens (organization_id, name, token) VALUES ($1, $2, $3) RETURNING id, name, token, created_at',
@@ -2516,6 +2534,14 @@ app.delete('/api/developer/tokens/:id', authenticateToken, async (req, res) => {
 
 // --- PUBLIC DEVELOPER API V1 ---
 
+// Health Check
+app.get('/api/v1/health', (req, res) => {
+  res.json({
+    status: "ok",
+    app: "konsulprocess"
+  });
+});
+
 // Get all templates for the organization
 app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
   try {
@@ -2534,10 +2560,23 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
       category: row.category,
       steps: row.steps
     }));
-    res.json(mapped);
+    res.json({
+      success: true,
+      data: mapped,
+      meta: {
+        app: "konsulprocess",
+        version: "1"
+      }
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al recuperar plantillas de la base de datos' });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Error al recuperar plantillas de la base de datos"
+      }
+    });
   }
 });
 
@@ -2545,7 +2584,13 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
 app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
   const { templateId, instanceName } = req.body;
   if (!templateId || !instanceName) {
-    return res.status(400).json({ error: 'El templateId e instanceName son requeridos.' });
+    return res.status(422).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "El templateId e instanceName son requeridos."
+      }
+    });
   }
 
   try {
@@ -2555,7 +2600,13 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     );
 
     if (templateRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Plantilla no encontrada o no pertenece a tu organización.' });
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Plantilla no encontrada o no pertenece a tu organización."
+        }
+      });
     }
 
     const template = templateRes.rows[0];
@@ -2598,16 +2649,28 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     );
 
     res.status(201).json({
-      message: 'Ejecución iniciada con éxito programáticamente',
-      id: instId,
-      title: template.title,
-      instanceName,
-      startedAt,
-      steps: stepsWithDates
+      success: true,
+      data: {
+        id: instId,
+        title: template.title,
+        instanceName,
+        startedAt,
+        steps: stepsWithDates
+      },
+      meta: {
+        app: "konsulprocess",
+        version: "1"
+      }
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al iniciar la ejecución programáticamente' });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Error al iniciar la ejecución programáticamente"
+      }
+    });
   }
 });
 
@@ -2621,23 +2684,42 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Ejecución no encontrada.' });
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Ejecución no encontrada."
+        }
+      });
     }
 
     const row = result.rows[0];
     res.json({
-      id: row.id,
-      templateId: row.template_id,
-      title: row.title,
-      instanceName: row.instance_name,
-      startedAt: row.started_at,
-      companionName: row.companion_name,
-      category: row.category,
-      steps: row.steps
+      success: true,
+      data: {
+        id: row.id,
+        templateId: row.template_id,
+        title: row.title,
+        instanceName: row.instance_name,
+        startedAt: row.started_at,
+        companionName: row.companion_name,
+        category: row.category,
+        steps: row.steps
+      },
+      meta: {
+        app: "konsulprocess",
+        version: "1"
+      }
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al obtener detalles del proceso' });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Error al obtener detalles del proceso"
+      }
+    });
   }
 });
 
