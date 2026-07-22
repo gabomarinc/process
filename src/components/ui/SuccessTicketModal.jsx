@@ -124,7 +124,7 @@ export const SuccessTicketModal = ({ isOpen, onClose, title, message, ticketId, 
 
           <DashedLine />
 
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem 0 0.5rem' }}><img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style={{ height: '28px', objectFit: 'contain' }} /></div>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem 0 0.5rem' }}><img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style={{ height: '28px', objectFit: 'contain' }} /></div>
 
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
             <button className="btn btn-primary" style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={onClose}>
