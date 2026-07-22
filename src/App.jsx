@@ -209,82 +209,6 @@ function App() {
     }
   }, [user]);
 
-  // URL Hash routing / breadcrumbs synchronization
-  useEffect(() => {
-    if (!user) return;
-
-    const handleHashChange = () => {
-      const hash = window.location.hash;
-      if (!hash) {
-        window.location.hash = '#/ejecuciones';
-        return;
-      }
-
-      if (hash.startsWith('#/ejecuciones/detalle/')) {
-        const id = hash.replace('#/ejecuciones/detalle/', '');
-        setActiveTab('instances');
-        setSelectedInstanceId(id);
-      } else if (hash === '#/ejecuciones/clientes') {
-        setActiveTab('clients');
-        setSelectedInstanceId("");
-      } else if (hash === '#/ejecuciones') {
-        setActiveTab('instances');
-        setSelectedInstanceId("");
-      } else if (hash.startsWith('#/plantillas/detalle/')) {
-        const id = hash.replace('#/plantillas/detalle/', '');
-        setActiveTab('templates');
-        setSelectedTemplateId(id);
-      } else if (hash === '#/plantillas') {
-        setActiveTab('templates');
-        setSelectedTemplateId("");
-      } else if (hash === '#/equipo') {
-        setActiveTab('team');
-      } else if (hash === '#/ecosistema') {
-        setActiveTab('ecosystem');
-      } else if (hash === '#/ajustes') {
-        setActiveTab('settings');
-      }
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    // Execute on initial render
-    handleHashChange();
-
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [user]);
-
-  // Synchronize state changes to URL Hash (breadcrumbs)
-  useEffect(() => {
-    if (!user) return;
-    let targetHash = '#/ejecuciones';
-
-    if (activeTab === 'instances') {
-      if (selectedInstanceId) {
-        targetHash = `#/ejecuciones/detalle/${selectedInstanceId}`;
-      } else {
-        targetHash = '#/ejecuciones';
-      }
-    } else if (activeTab === 'clients') {
-      targetHash = '#/ejecuciones/clientes';
-    } else if (activeTab === 'templates') {
-      if (selectedTemplateId) {
-        targetHash = `#/plantillas/detalle/${selectedTemplateId}`;
-      } else {
-        targetHash = '#/plantillas';
-      }
-    } else if (activeTab === 'team') {
-      targetHash = '#/equipo';
-    } else if (activeTab === 'ecosystem') {
-      targetHash = '#/ecosistema';
-    } else if (activeTab === 'settings') {
-      targetHash = '#/ajustes';
-    }
-
-    if (window.location.hash !== targetHash) {
-      window.history.pushState(null, document.title, targetHash);
-    }
-  }, [activeTab, selectedInstanceId, selectedTemplateId, user]);
-
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -522,6 +446,82 @@ function App() {
   const [openDropdown, setOpenDropdown] = useState(null); // null, 'procesos', 'cuenta'
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showAllSteps, setShowAllSteps] = useState(false);
+
+  // URL Hash routing / breadcrumbs synchronization
+  useEffect(() => {
+    if (!user) return;
+
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (!hash) {
+        window.location.hash = '#/ejecuciones';
+        return;
+      }
+
+      if (hash.startsWith('#/ejecuciones/detalle/')) {
+        const id = hash.replace('#/ejecuciones/detalle/', '');
+        setActiveTab('instances');
+        setSelectedInstanceId(id);
+      } else if (hash === '#/ejecuciones/clientes') {
+        setActiveTab('clients');
+        setSelectedInstanceId("");
+      } else if (hash === '#/ejecuciones') {
+        setActiveTab('instances');
+        setSelectedInstanceId("");
+      } else if (hash.startsWith('#/plantillas/detalle/')) {
+        const id = hash.replace('#/plantillas/detalle/', '');
+        setActiveTab('templates');
+        setSelectedTemplateId(id);
+      } else if (hash === '#/plantillas') {
+        setActiveTab('templates');
+        setSelectedTemplateId("");
+      } else if (hash === '#/equipo') {
+        setActiveTab('team');
+      } else if (hash === '#/ecosistema') {
+        setActiveTab('ecosystem');
+      } else if (hash === '#/ajustes') {
+        setActiveTab('settings');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    // Execute on initial render
+    handleHashChange();
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [user]);
+
+  // Synchronize state changes to URL Hash (breadcrumbs)
+  useEffect(() => {
+    if (!user) return;
+    let targetHash = '#/ejecuciones';
+
+    if (activeTab === 'instances') {
+      if (selectedInstanceId) {
+        targetHash = `#/ejecuciones/detalle/${selectedInstanceId}`;
+      } else {
+        targetHash = '#/ejecuciones';
+      }
+    } else if (activeTab === 'clients') {
+      targetHash = '#/ejecuciones/clientes';
+    } else if (activeTab === 'templates') {
+      if (selectedTemplateId) {
+        targetHash = `#/plantillas/detalle/${selectedTemplateId}`;
+      } else {
+        targetHash = '#/plantillas';
+      }
+    } else if (activeTab === 'team') {
+      targetHash = '#/equipo';
+    } else if (activeTab === 'ecosystem') {
+      targetHash = '#/ecosistema';
+    } else if (activeTab === 'settings') {
+      targetHash = '#/ajustes';
+    }
+
+    if (window.location.hash !== targetHash) {
+      window.history.pushState(null, document.title, targetHash);
+    }
+  }, [activeTab, selectedInstanceId, selectedTemplateId, user]);
 
 
   // Fetch initial data from database (Optimized Bootstrapping)
