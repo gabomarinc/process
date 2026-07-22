@@ -147,7 +147,7 @@ function App() {
         localStorage.setItem('user', JSON.stringify(userObj));
         setToken(kindeToken);
         setUser(userObj);
-        window.history.replaceState({}, document.title, window.location.pathname);
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
       } catch (e) {
         console.error("Error parsing Kinde JWT token", e);
       }
@@ -155,7 +155,7 @@ function App() {
       const errorMessage = kindeError !== 'kinde_auth_failed' ? decodeURIComponent(kindeError) : 'Error de autenticación con Kinde. Por favor, revisa tus credenciales o la configuración.';
       setAuthError(`Error: ${errorMessage}`);
       setShowAuthScreen(true);
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
     }
 
     const tokenParam = params.get('resetToken');
@@ -208,6 +208,82 @@ function App() {
       setDashboardViewMode('focus');
     }
   }, [user]);
+
+  // URL Hash routing / breadcrumbs synchronization
+  useEffect(() => {
+    if (!user) return;
+
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (!hash) {
+        window.location.hash = '#/ejecuciones';
+        return;
+      }
+
+      if (hash.startsWith('#/ejecuciones/detalle/')) {
+        const id = hash.replace('#/ejecuciones/detalle/', '');
+        setActiveTab('instances');
+        setSelectedInstanceId(id);
+      } else if (hash === '#/ejecuciones/clientes') {
+        setActiveTab('clients');
+        setSelectedInstanceId("");
+      } else if (hash === '#/ejecuciones') {
+        setActiveTab('instances');
+        setSelectedInstanceId("");
+      } else if (hash.startsWith('#/plantillas/detalle/')) {
+        const id = hash.replace('#/plantillas/detalle/', '');
+        setActiveTab('templates');
+        setSelectedTemplateId(id);
+      } else if (hash === '#/plantillas') {
+        setActiveTab('templates');
+        setSelectedTemplateId("");
+      } else if (hash === '#/equipo') {
+        setActiveTab('team');
+      } else if (hash === '#/ecosistema') {
+        setActiveTab('ecosystem');
+      } else if (hash === '#/ajustes') {
+        setActiveTab('settings');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    // Execute on initial render
+    handleHashChange();
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [user]);
+
+  // Synchronize state changes to URL Hash (breadcrumbs)
+  useEffect(() => {
+    if (!user) return;
+    let targetHash = '#/ejecuciones';
+
+    if (activeTab === 'instances') {
+      if (selectedInstanceId) {
+        targetHash = `#/ejecuciones/detalle/${selectedInstanceId}`;
+      } else {
+        targetHash = '#/ejecuciones';
+      }
+    } else if (activeTab === 'clients') {
+      targetHash = '#/ejecuciones/clientes';
+    } else if (activeTab === 'templates') {
+      if (selectedTemplateId) {
+        targetHash = `#/plantillas/detalle/${selectedTemplateId}`;
+      } else {
+        targetHash = '#/plantillas';
+      }
+    } else if (activeTab === 'team') {
+      targetHash = '#/equipo';
+    } else if (activeTab === 'ecosystem') {
+      targetHash = '#/ecosistema';
+    } else if (activeTab === 'settings') {
+      targetHash = '#/ajustes';
+    }
+
+    if (window.location.hash !== targetHash) {
+      window.history.pushState(null, document.title, targetHash);
+    }
+  }, [activeTab, selectedInstanceId, selectedTemplateId, user]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -831,7 +907,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     try {
       const res = await fetch('/api/auth/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || localStorage.getItem('token')}`
+        },
         body: JSON.stringify(profileFormData)
       });
       const data = await res.json();
