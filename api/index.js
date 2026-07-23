@@ -2542,6 +2542,35 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
+// Helpers for template variables extraction and injection
+function extractVariables(template) {
+  const vars = new Set();
+  const regex = /\{([a-zA-Z0-9_-]+)\}/g;
+  
+  const searchString = JSON.stringify({
+    title: template.title,
+    description: template.description,
+    steps: template.steps
+  });
+  
+  let match;
+  while ((match = regex.exec(searchString)) !== null) {
+    vars.add(match[1]);
+  }
+  return Array.from(vars);
+}
+
+function replaceVariables(text, variables) {
+  if (!text) return '';
+  let result = typeof text === 'object' ? JSON.stringify(text) : String(text);
+  for (const [key, value] of Object.entries(variables || {})) {
+    const valStr = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), valStr);
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), valStr);
+  }
+  return typeof text === 'object' ? JSON.parse(result) : result;
+}
+
 // Get all templates for the organization
 app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
   try {
@@ -2551,22 +2580,13 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
     );
     const mapped = result.rows.map(row => ({
       id: row.id,
-      title: row.title,
+      name: row.title,
       description: row.description,
-      durationDays: row.duration_days,
-      companionName: row.companion_name,
-      companionAvatar: row.companion_avatar,
-      companionGreeting: row.companion_greeting,
-      category: row.category,
-      steps: row.steps
+      variables: extractVariables(row)
     }));
     res.json({
       success: true,
-      data: mapped,
-      meta: {
-        app: "konsulprocess",
-        version: "1"
-      }
+      data: mapped
     });
   } catch (err) {
     console.error(err);
@@ -2575,6 +2595,118 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
       error: {
         code: "SERVER_ERROR",
         message: "Error al recuperar plantillas de la base de datos"
+      }
+    });
+  }
+});
+
+// Execute a template programmatically
+app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
+  const { template_id, variables } = req.body;
+  if (!template_id) {
+    return res.status(422).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "El template_id es requerido."
+      }
+    });
+  }
+
+  try {
+    const templateRes = await pool.query(
+      'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
+      [template_id, req.user.organizationId]
+    );
+
+    if (templateRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Plantilla no encontrada o no pertenece a tu organización."
+        }
+      });
+    }
+
+    const template = templateRes.rows[0];
+    const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
+    const startedAt = new Date().toISOString();
+
+    const instanceName = replaceVariables(template.title, variables) || template.title;
+
+    const stepsWithDates = (template.steps || []).map((step, idx) => {
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + (step.durationDays || 1));
+      
+      const label = replaceVariables(step.label, variables);
+      
+      return {
+        id: step.id || `step_${idx + 1}`,
+        label: label,
+        type: step.type || 'text',
+        assignedTo: step.assignedTo || 'Unassigned',
+        isCompleted: false,
+        completedAt: null,
+        completedBy: null,
+        dueDate: dueDate.toISOString(),
+        options: step.options || []
+      };
+    });
+
+    await pool.query(
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        instId,
+        req.user.organizationId,
+        template_id,
+        template.title,
+        instanceName,
+        startedAt,
+        template.companion_name,
+        template.companion_avatar,
+        template.companion_greeting,
+        template.category,
+        JSON.stringify(stepsWithDates)
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Instancia de proceso iniciada con éxito.",
+      execution_id: instId
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Error al iniciar la ejecución del proceso"
+      }
+    });
+  }
+});
+
+// Get team members of the organization
+app.get('/api/v1/team-members', authenticateApiKey, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, name, email FROM team_members WHERE organization_id = $1',
+      [req.user.organizationId]
+    );
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (err) {
+    console.error('Error al obtener miembros del equipo:', err);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Error al recuperar miembros del equipo de la base de datos."
       }
     });
   }
