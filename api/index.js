@@ -2656,7 +2656,18 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     const instanceName = customInstanceName || replaceVariables(template.title, variables) || template.title;
 
     // Resolve target member email from variables
-    const targetEmail = variables?.['Miembro Involucrado (Email)'] || variables?.['miembro_email'] || variables?.['email_miembro'];
+    let targetEmail = variables?.['Miembro Involucrado (Email)'] || variables?.['miembro_email'] || variables?.['email_miembro'];
+
+    if (!targetEmail) {
+      // Find the first admin or user in the organization to assign as default
+      const userRes = await pool.query(
+        "SELECT email FROM users WHERE organization_id = $1 ORDER BY role = 'admin' DESC, id ASC LIMIT 1",
+        [req.user.organizationId]
+      );
+      if (userRes.rows.length > 0) {
+        targetEmail = userRes.rows[0].email;
+      }
+    }
 
     const stepsWithDates = (template.steps || []).map((step, idx) => {
       const dueDate = new Date();
