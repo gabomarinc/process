@@ -2578,12 +2578,27 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
       "SELECT * FROM templates WHERE organization_id = $1 AND status = 'approved'",
       [req.user.organizationId]
     );
-    const mapped = result.rows.map(row => ({
-      id: row.id,
-      name: row.title,
-      description: row.description,
-      variables: extractVariables(row)
-    }));
+    const mapped = result.rows.map(row => {
+      const templateVars = extractVariables(row);
+      
+      // Inject default execution variables
+      if (!templateVars.includes('Cliente / Nombre de la Ejecución')) {
+        templateVars.push('Cliente / Nombre de la Ejecución');
+      }
+      if (!templateVars.includes('Miembro Involucrado (Email)')) {
+        templateVars.push('Miembro Involucrado (Email)');
+      }
+      if (!templateVars.includes('Fecha de Inicio')) {
+        templateVars.push('Fecha de Inicio');
+      }
+
+      return {
+        id: row.id,
+        name: row.title,
+        description: row.description,
+        variables: templateVars
+      };
+    });
     res.json({
       success: true,
       data: mapped
@@ -2631,9 +2646,17 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
 
     const template = templateRes.rows[0];
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
-    const startedAt = new Date().toISOString();
 
-    const instanceName = replaceVariables(template.title, variables) || template.title;
+    // Resolve custom start date from variables
+    const customStartDate = variables?.['Fecha de Inicio'] || variables?.['fecha_inicio'];
+    const startedAt = customStartDate ? new Date(customStartDate).toISOString() : new Date().toISOString();
+
+    // Resolve custom instance name from variables
+    const customInstanceName = variables?.['Cliente / Nombre de la Ejecución'] || variables?.['Nombre de la Ejecución'] || variables?.['cliente'];
+    const instanceName = customInstanceName || replaceVariables(template.title, variables) || template.title;
+
+    // Resolve target member email from variables
+    const targetEmail = variables?.['Miembro Involucrado (Email)'] || variables?.['miembro_email'] || variables?.['email_miembro'];
 
     const stepsWithDates = (template.steps || []).map((step, idx) => {
       const dueDate = new Date();
@@ -2645,7 +2668,7 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
         id: step.id || `step_${idx + 1}`,
         label: label,
         type: step.type || 'text',
-        assignedTo: step.assignedTo || 'Unassigned',
+        assignedTo: (step.assignedTo && step.assignedTo !== 'Unassigned') ? step.assignedTo : (targetEmail || 'Unassigned'),
         isCompleted: false,
         completedAt: null,
         completedBy: null,
