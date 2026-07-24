@@ -1812,7 +1812,9 @@ const handleDeleteMember = async (id) => {
   const handleSavePreview = async (templateData) => {
     try {
       setPreviewTemplate(null);
-      setTemplates(prev => [templateData, ...prev]);
+      const initialStatus = user?.role === 'gerente' ? 'pending_approval' : 'approved';
+      const newTemplate = { ...templateData, status: initialStatus };
+      setTemplates(prev => [newTemplate, ...prev]);
       setSelectedTemplateId(templateData.id);
       
       setTicketModal({
