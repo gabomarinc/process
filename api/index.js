@@ -2585,9 +2585,6 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
       if (!templateVars.includes('Cliente / Nombre de la Ejecución')) {
         templateVars.push('Cliente / Nombre de la Ejecución');
       }
-      if (!templateVars.includes('Miembro Involucrado (Email)')) {
-        templateVars.push('Miembro Involucrado (Email)');
-      }
       if (!templateVars.includes('Fecha de Inicio')) {
         templateVars.push('Fecha de Inicio');
       }
