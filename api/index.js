@@ -2668,20 +2668,20 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
 
     const stepsWithDates = (template.steps || []).map((step, idx) => {
       const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + (step.durationDays || 1));
-      
-      const label = replaceVariables(step.label, variables);
+      dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || 1));
       
       return {
-        id: step.id || `step_${idx + 1}`,
-        label: label,
-        type: step.type || 'text',
+        ...step,
+        id: step.id || `step_run_${idx}_${Date.now()}`,
+        title: replaceVariables(step.title, variables) || '',
+        description: replaceVariables(step.description, variables) || '',
+        motivation: replaceVariables(step.motivation, variables) || '',
         assignedTo: (step.assignedTo && step.assignedTo !== 'Unassigned') ? step.assignedTo : (targetEmail || 'Unassigned'),
         isCompleted: false,
         completedAt: null,
         completedBy: null,
         dueDate: dueDate.toISOString(),
-        options: step.options || []
+        uploadedFileName: null
       };
     });
 
