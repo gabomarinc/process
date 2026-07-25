@@ -108,6 +108,8 @@ pool.query(`
   ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
+  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb;
+  ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer';
 
   INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
   SELECT 
@@ -638,7 +640,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       companionAvatar: row.companion_avatar,
       companionGreeting: row.companion_greeting,
       category: row.category,
-      steps: row.steps
+      steps: row.steps,
+      status: row.status || 'Por hacer'
     }));
 
     // Map logs
@@ -646,7 +649,7 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       id: row.id,
       instanceId: row.instance_id,
       stepId: row.step_id,
-      time: row.logged_at,
+      loggedAt: row.logged_at,
       instanceName: row.instance_name,
       stepTitle: row.step_title,
       message: row.message
@@ -696,7 +699,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         name: orgRow.name || '',
         description: orgRow.description || '',
         departments: orgRow.departments || [],
-        gemini_api_key: orgRow.gemini_api_key || ''
+        gemini_api_key: orgRow.gemini_api_key || '',
+        kanban_columns: orgRow.kanban_columns || ["Por hacer", "En curso", "Terminado"]
       },
       clickup: {
         clickupToken: orgRow.clickup_token || '',
@@ -844,7 +848,8 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
       companionAvatar: row.companion_avatar,
       companionGreeting: row.companion_greeting,
       category: row.category,
-      steps: row.steps
+      steps: row.steps,
+      status: row.status || 'Por hacer'
     }));
     res.json(mapped);
   } catch (err) {
@@ -893,12 +898,12 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
 
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
-  const { id, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, steps } = req.body;
+  const { id, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status } = req.body;
   try {
     await pool.query(
-      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps)]
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer']
     );
     res.status(201).json({ message: 'Ejecución iniciada con éxito' });
   } catch (err) {
@@ -907,15 +912,33 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Update an instance (steps changes)
+// 5. Update an instance (steps or status changes)
 app.put('/api/instances/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { steps } = req.body;
+  const { steps, status } = req.body;
   try {
-    await pool.query(
-      `UPDATE instances SET steps = $1 WHERE id = $2 AND organization_id = $3`,
-      [JSON.stringify(steps), id, req.user.organizationId]
-    );
+    let query = 'UPDATE instances SET ';
+    const params = [];
+    let paramIdx = 1;
+    const updates = [];
+
+    if (steps !== undefined) {
+      updates.push(`steps = $${paramIdx++}`);
+      params.push(JSON.stringify(steps));
+    }
+    if (status !== undefined) {
+      updates.push(`status = $${paramIdx++}`);
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No se enviaron campos para actualizar.' });
+    }
+
+    query += updates.join(', ') + ` WHERE id = $${paramIdx++} AND organization_id = $${paramIdx++}`;
+    params.push(id, req.user.organizationId);
+
+    await pool.query(query, params);
     
     // Trigger ReactivaLeads if all steps are completed
     if (steps && Array.isArray(steps)) {
@@ -1747,6 +1770,27 @@ app.put('/api/organization', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la empresa.' });
+  }
+});
+
+// Update organization kanban columns
+app.put('/api/organization/kanban-columns', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { columns } = req.body;
+  if (!Array.isArray(columns)) {
+    return res.status(400).json({ error: 'Las columnas deben ser un arreglo.' });
+  }
+  try {
+    await pool.query(
+      'UPDATE organizations SET kanban_columns = $1 WHERE id = $2',
+      [JSON.stringify(columns), req.user.organizationId]
+    );
+    res.json({ message: 'Columnas de Kanban actualizadas con éxito.', columns });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar las columnas de Kanban.' });
   }
 });
 

@@ -9,6 +9,8 @@ import { TemplateDetailsModal } from "./components/ui/TemplateDetailsModal";
 import { ActiveExecutionModal } from "./components/ui/ActiveExecutionModal";
 import { OnDemandModal } from "./components/ui/OnDemandModal";
 import { ReactivaLeadsModal } from "./components/ui/ReactivaLeadsModal";
+import { KanbanBoard } from "./components/ui/KanbanBoard";
+import { ProjectDetailsModal } from "./components/ui/ProjectDetailsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import "./App.css";
@@ -324,6 +326,8 @@ function App() {
   const [configuringRule, setConfiguringRule] = useState(null);
   const [showConfigureRuleModal, setShowConfigureRuleModal] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
+  const [kanbanColumns, setKanbanColumns] = useState(["Por hacer", "En curso", "Terminado"]);
+  const [selectedKanbanInstanceId, setSelectedKanbanInstanceId] = useState("");
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -546,6 +550,9 @@ function App() {
               description: data.organization.description || '',
               departments: data.organization.departments || []
             });
+            if (data.organization.kanban_columns) {
+              setKanbanColumns(data.organization.kanban_columns);
+            }
             if (data.organization.gemini_api_key) {
               setApiKey(data.organization.gemini_api_key);
               setTempKey(data.organization.gemini_api_key);
@@ -1605,6 +1612,94 @@ const handleDeleteMember = async (id) => {
     }
   };
 
+  const handleUpdateInstanceStatus = async (id, status) => {
+    // Update locally
+    setInstances(prev => prev.map(inst => inst.id === id ? { ...inst, status } : inst));
+    
+    // Update in backend
+    try {
+      await fetch(`/api/instances/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      addToast(`Estado de la ejecución actualizado a "${status}"`, 'success');
+    } catch (err) {
+      console.error("Error al actualizar estado en Neon:", err);
+    }
+  };
+
+  const handleSaveKanbanColumns = async (newCols) => {
+    setKanbanColumns(newCols);
+    try {
+      await fetch('/api/organization/kanban-columns', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columns: newCols })
+      });
+    } catch (err) {
+      console.error("Error al guardar columnas de Kanban:", err);
+    }
+  };
+
+  const handleAddColumn = (colName) => {
+    if (kanbanColumns.includes(colName)) {
+      addToast('Este estado ya existe', 'warning');
+      return;
+    }
+    const updated = [...kanbanColumns, colName];
+    handleSaveKanbanColumns(updated);
+    addToast(`Estado "${colName}" creado`, 'success');
+  };
+
+  const handleRenameColumn = async (index, newName) => {
+    if (kanbanColumns.includes(newName)) {
+      addToast('Este estado ya existe', 'warning');
+      return;
+    }
+    const oldName = kanbanColumns[index];
+    const updated = [...kanbanColumns];
+    updated[index] = newName;
+    handleSaveKanbanColumns(updated);
+
+    // Update all instances in that column locally
+    setInstances(prev => prev.map(inst => {
+      const currentStatus = inst.status || 'Por hacer';
+      if (currentStatus.toLowerCase() === oldName.toLowerCase()) {
+        // Also update backend for each instance
+        fetch(`/api/instances/${inst.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newName })
+        }).catch(err => console.error("Error al renombrar estado de instancia:", err));
+        return { ...inst, status: newName };
+      }
+      return inst;
+    }));
+    addToast(`Estado renombrado de "${oldName}" a "${newName}"`, 'success');
+  };
+
+  const handleDeleteColumn = async (index, colName) => {
+    const updated = kanbanColumns.filter((_, idx) => idx !== index);
+    const fallbackStatus = updated[0] || 'Por hacer';
+    handleSaveKanbanColumns(updated);
+
+    // Update all instances in that column to fallback status
+    setInstances(prev => prev.map(inst => {
+      const currentStatus = inst.status || 'Por hacer';
+      if (currentStatus.toLowerCase() === colName.toLowerCase()) {
+        fetch(`/api/instances/${inst.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: fallbackStatus })
+        }).catch(err => console.error("Error al restablecer estado de instancia:", err));
+        return { ...inst, status: fallbackStatus };
+      }
+      return inst;
+    }));
+    addToast(`Estado "${colName}" eliminado. Las ejecuciones se movieron a "${fallbackStatus}"`, 'info');
+  };
+
   // --- Process Template CRUD Operations ---
 
   const saveTemplate = async (updatedTemplate) => {
@@ -2485,6 +2580,17 @@ const handleDeleteMember = async (id) => {
               )}
             </div>
 
+            {/* 1b. Tablero Nav Link */}
+            <div className="nav-menu-item-unified">
+              <button 
+                className={`nav-trigger-btn ${activeTab === 'kanban' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('kanban'); setOpenDropdown(null); }}
+              >
+                <LayoutGrid size={15} className="icon-blue" style={{ transform: 'rotate(90deg)' }} />
+                <span>Tablero</span>
+              </button>
+            </div>
+
             {/* 2. Plantillas Dropdown */}
             {user?.role !== 'guest' && (
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
@@ -2797,11 +2903,25 @@ const handleDeleteMember = async (id) => {
       )}
 
       {/* Dashboard Grid */}
-      <div className={activeTab === 'settings' ? '' : 'dashboard-grid'}>
+      <div className={(activeTab === 'settings' || activeTab === 'kanban') ? '' : 'dashboard-grid'}>
         
         {/* Left Side: Display based on Active Tab */}
-        <div className="card-section" style={activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : {}}>
-          {activeTab === 'instances' ? (
+        <div className="card-section" style={
+          activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : 
+          activeTab === 'kanban' ? { width: '100%', maxWidth: 'none', margin: 0, padding: '0 0.5rem' } : {}
+        }>
+          {activeTab === 'kanban' ? (
+            <KanbanBoard 
+              instances={instances}
+              kanbanColumns={kanbanColumns}
+              onUpdateInstanceStatus={handleUpdateInstanceStatus}
+              onAddColumn={handleAddColumn}
+              onRenameColumn={handleRenameColumn}
+              onDeleteColumn={handleDeleteColumn}
+              onOpenInstanceModal={(id) => setSelectedKanbanInstanceId(id)}
+              teamMembers={teamMembers}
+            />
+          ) : activeTab === 'instances' ? (
             <div style={{ width: '100%' }}>
               {/* Focus vs Bird's Eye View Mode Toggle */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -4395,6 +4515,19 @@ const handleDeleteMember = async (id) => {
         fileStore={fileStore}
         setFileStore={setFileStore}
         addToast={addToast}
+      />
+
+      <ProjectDetailsModal
+        isOpen={!!selectedKanbanInstanceId}
+        onClose={() => setSelectedKanbanInstanceId("")}
+        activeInstance={instances.find(i => i.id === selectedKanbanInstanceId)}
+        kanbanColumns={kanbanColumns}
+        teamMembers={teamMembers}
+        onUpdateInstanceStatus={handleUpdateInstanceStatus}
+        handleStepComplete={handleStepComplete}
+        handleAssignStepMember={handleAssignStepMember}
+        handleUpdateStepComments={handleUpdateStepComments}
+        currentUser={user}
       />
 
 
