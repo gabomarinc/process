@@ -367,3 +367,40 @@
   background: #f5f3f0;
   color: var(--text-muted);
 }
+
+.kanban-priority-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  display: inline-block;
+}
+
+.kanban-priority-badge.baja {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.kanban-priority-badge.media {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+.kanban-priority-badge.alta {
+  background: #fbe9e7;
+  color: #d84315;
+}
+
+.kanban-priority-badge.urgente {
+  background: #ffebee;
+  color: #c62828;
+  animation: pulse-priority 2s infinite;
+}
+
+@keyframes pulse-priority {
+  0% { opacity: 1; }
+  50% { opacity: 0.65; }
+  100% { opacity: 1; }
+}

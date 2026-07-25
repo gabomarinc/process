@@ -17,6 +17,8 @@ export const ProjectDetailsModal = ({
   kanbanColumns = ["Por hacer", "En curso", "Terminado"],
   teamMembers = [],
   onUpdateInstanceStatus,
+  onUpdateInstancePriority,
+  onAskAIForProjectSummary,
   handleStepComplete,
   handleAssignStepMember,
   handleUpdateStepComments,
@@ -25,6 +27,12 @@ export const ProjectDetailsModal = ({
   const [expandedStepId, setExpandedStepId] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [activeStepCommentId, setActiveStepCommentId] = useState(null);
+  const [aiSummary, setAiSummary] = useState('');
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
+
+  React.useEffect(() => {
+    setAiSummary('');
+  }, [activeInstance?.id]);
 
   if (!isOpen || !activeInstance) return null;
 
@@ -58,6 +66,19 @@ export const ProjectDetailsModal = ({
     const updatedComments = [...(step.comments || []), newComment];
     await handleUpdateStepComments(activeInstance.id, stepId, updatedComments);
     setCommentText('');
+  };
+
+  const handleConsultAI = async () => {
+    setIsLoadingAI(true);
+    setAiSummary('');
+    try {
+      const result = await onAskAIForProjectSummary(activeInstance);
+      setAiSummary(result);
+    } catch (e) {
+      setAiSummary("Error al generar resumen.");
+    } finally {
+      setIsLoadingAI(false);
+    }
   };
 
   return (
@@ -110,6 +131,46 @@ export const ProjectDetailsModal = ({
             overflowY: 'auto',
             borderRight: '1px solid rgba(0,0,0,0.06)'
           }}>
+            {/* Notion AI Assistant Block */}
+            <div style={{ 
+              background: 'linear-gradient(135deg, rgba(251, 243, 230, 0.4) 0%, rgba(245, 235, 220, 0.4) 100%)',
+              border: '1px solid rgba(181, 139, 83, 0.15)',
+              borderRadius: '10px',
+              padding: '1rem',
+              marginBottom: '1.5rem',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary-hover)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  ✨ Asistente de Proyectos IA
+                </span>
+                {!isLoadingAI && (
+                  <button 
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 12px', fontSize: '0.75rem', minWidth: 'auto', borderRadius: '15px' }}
+                    onClick={handleConsultAI}
+                  >
+                    {aiSummary ? 'Actualizar 🔄' : 'Analizar Estado 🧠'}
+                  </button>
+                )}
+              </div>
+
+              {isLoadingAI ? (
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  🧠 Analizando tareas y cronogramas con Gemini...
+                </div>
+              ) : aiSummary ? (
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', color: 'var(--text-main)', lineHeight: '1.5' }}>
+                  {aiSummary}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  ¿Quieres un resumen rápido de las siguientes acciones y alertas críticas del proyecto? Deja que el asistente analice el checklist por ti.
+                </p>
+              )}
+            </div>
+
             <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>
               Tareas del Proyecto ({completedSteps}/{totalSteps})
             </h3>
@@ -325,6 +386,33 @@ export const ProjectDetailsModal = ({
                 {kanbanColumns.map((col, idx) => (
                   <option key={idx} value={col}>{col}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Priority Dropdown */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
+                Prioridad
+              </label>
+              <select 
+                value={activeInstance.priority || 'Media'} 
+                onChange={(e) => onUpdateInstancePriority(activeInstance.id, e.target.value)}
+                style={{ 
+                  width: '100%',
+                  padding: '0.5rem', 
+                  borderRadius: '6px', 
+                  border: '1px solid var(--border-color)', 
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  outline: 'none',
+                  background: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="Baja">Baja 🟢</option>
+                <option value="Media">Media 🟡</option>
+                <option value="Alta">Alta 🟠</option>
+                <option value="Urgente">Urgente 🔴</option>
               </select>
             </div>
 

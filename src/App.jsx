@@ -1629,6 +1629,69 @@ const handleDeleteMember = async (id) => {
     }
   };
 
+  const handleUpdateInstancePriority = async (id, priority) => {
+    // Update locally
+    setInstances(prev => prev.map(inst => inst.id === id ? { ...inst, priority } : inst));
+    
+    // Update in backend
+    try {
+      await fetch(`/api/instances/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority })
+      });
+      addToast(`Prioridad de la ejecución actualizada a "${priority}"`, 'success');
+    } catch (err) {
+      console.error("Error al actualizar prioridad en Neon:", err);
+    }
+  };
+
+  const handleAskAIForProjectSummary = async (instance) => {
+    if (!apiKey) {
+      return "Para utilizar el asistente de IA, por favor configura tu Gemini API Key en los Ajustes de la Organización.";
+    }
+    
+    const stepsPrompt = (instance.steps || []).map((s, idx) => 
+      `Paso ${idx + 1}: "${s.title}" - Estado: ${s.isCompleted ? 'Completado' : 'Pendiente'}, Asignado: ${s.assignedTo || 'Sin asignar'}, Límite: ${s.dueDate ? new Date(s.dueDate).toLocaleDateString('es-ES') : 'Sin fecha'}`
+    ).join('\n');
+
+    const prompt = `
+      Eres el Asistente de Proyectos de Kônsul.
+      Analiza el siguiente estado del proyecto "${instance.instanceName}" (basado en la plantilla "${instance.title}"):
+      
+      Pasos/Tareas del proyecto:
+      ${stepsPrompt}
+      
+      Genera un resumen inteligente y empático al estilo Notion AI:
+      1. Un resumen breve (1-2 frases) del estado general actual.
+      2. Los 3 próximos pasos críticos en los que el equipo debe enfocarse (con viñetas).
+      3. Cualquier riesgo potencial (ej. tareas vencidas o sin asignar).
+      
+      Responde directamente con formato de texto plano estructurado de forma limpia y directa con saltos de línea normales y viñetas simples con guiones. Sé conciso y profesional.
+    `;
+
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }]
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) throw new Error("Error en la llamada a Gemini");
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener un resumen.";
+    } catch (err) {
+      console.error(err);
+      return "Hubo un error al conectar con el asistente de IA. Por favor, inténtalo de nuevo.";
+    }
+  };
+
   const handleSaveKanbanColumns = async (newCols) => {
     setKanbanColumns(newCols);
     try {
@@ -2553,16 +2616,12 @@ const handleDeleteMember = async (id) => {
                       <div 
                         className="nav-small-item-link"
                         onClick={() => {
-                          setActiveTab('instances');
+                          setActiveTab('kanban');
                           setOpenDropdown(null);
-                          setTimeout(() => {
-                            const el = document.getElementById('instances-logs-section');
-                            if (el) el.scrollIntoView({ behavior: 'smooth' });
-                          }, 100);
                         }}
                       >
-                        <Bell size={16} />
-                        <span>Historial de Alertas</span>
+                        <LayoutGrid size={16} style={{ transform: 'rotate(90deg)' }} />
+                        <span>Tablero de Control</span>
                       </div>
                       <div 
                         className="nav-small-item-link"
@@ -2578,17 +2637,6 @@ const handleDeleteMember = async (id) => {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* 1b. Tablero Nav Link */}
-            <div className="nav-menu-item-unified">
-              <button 
-                className={`nav-trigger-btn ${activeTab === 'kanban' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('kanban'); setOpenDropdown(null); }}
-              >
-                <LayoutGrid size={15} className="icon-blue" style={{ transform: 'rotate(90deg)' }} />
-                <span>Tablero</span>
-              </button>
             </div>
 
             {/* 2. Plantillas Dropdown */}
@@ -4524,6 +4572,8 @@ const handleDeleteMember = async (id) => {
         kanbanColumns={kanbanColumns}
         teamMembers={teamMembers}
         onUpdateInstanceStatus={handleUpdateInstanceStatus}
+        onUpdateInstancePriority={handleUpdateInstancePriority}
+        onAskAIForProjectSummary={handleAskAIForProjectSummary}
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
         handleUpdateStepComments={handleUpdateStepComments}

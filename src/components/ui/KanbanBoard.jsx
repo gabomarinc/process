@@ -22,6 +22,7 @@ export const KanbanBoard = ({
   teamMembers = []
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('All');
   const [newColumnName, setNewColumnName] = useState('');
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [editingColumnIdx, setEditingColumnIdx] = useState(null);
@@ -34,12 +35,14 @@ export const KanbanBoard = ({
     return colors[index % colors.length];
   };
 
-  // Filter instances by search query
+  // Filter instances by search query and priority
   const filteredInstances = instances.filter(inst => {
     const query = searchQuery.toLowerCase();
-    return (inst.instanceName?.toLowerCase().includes(query) || 
-            inst.title?.toLowerCase().includes(query) || 
-            inst.category?.toLowerCase().includes(query));
+    const matchesSearch = (inst.instanceName?.toLowerCase().includes(query) || 
+                           inst.title?.toLowerCase().includes(query) || 
+                           inst.category?.toLowerCase().includes(query));
+    const matchesPriority = priorityFilter === 'All' || (inst.priority || 'Media') === priorityFilter;
+    return matchesSearch && matchesPriority;
   });
 
   // Calculate stats for a card
@@ -171,11 +174,24 @@ export const KanbanBoard = ({
         <div className="kanban-board-actions">
           <input 
             type="text" 
-            placeholder="Buscar ejecuciones..." 
+            placeholder="Buscar..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="kanban-search-input"
+            style={{ width: '160px' }}
           />
+          <select 
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            className="kanban-search-input"
+            style={{ width: '130px', padding: '0.5rem 0.75rem', cursor: 'pointer' }}
+          >
+            <option value="All">Prioridades: Todas</option>
+            <option value="Baja">Baja</option>
+            <option value="Media">Media</option>
+            <option value="Alta">Alta</option>
+            <option value="Urgente">Urgente</option>
+          </select>
           {!isAddingColumn && (
             <button 
               className="btn btn-primary"
@@ -292,7 +308,12 @@ export const KanbanBoard = ({
                       onDragStart={(e) => handleDragStart(e, inst.id)}
                       onClick={() => onOpenInstanceModal(inst.id)}
                     >
-                      <div className="kanban-card-category">{inst.category || 'General'}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                        <span className="kanban-card-category">{inst.category || 'General'}</span>
+                        <span className={`kanban-priority-badge ${(inst.priority || 'Media').toLowerCase()}`}>
+                          {inst.priority || 'Media'}
+                        </span>
+                      </div>
                       <h4 className="kanban-card-title text-ellipsis-2">{inst.instanceName}</h4>
                       <div className="kanban-card-subtitle text-ellipsis">{inst.title}</div>
                       

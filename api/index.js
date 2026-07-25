@@ -110,6 +110,7 @@ pool.query(`
   ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb;
   ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer';
+  ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media';
 
   INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
   SELECT 
@@ -641,7 +642,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       companionGreeting: row.companion_greeting,
       category: row.category,
       steps: row.steps,
-      status: row.status || 'Por hacer'
+      status: row.status || 'Por hacer',
+      priority: row.priority || 'Media'
     }));
 
     // Map logs
@@ -849,7 +851,8 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
       companionGreeting: row.companion_greeting,
       category: row.category,
       steps: row.steps,
-      status: row.status || 'Por hacer'
+      status: row.status || 'Por hacer',
+      priority: row.priority || 'Media'
     }));
     res.json(mapped);
   } catch (err) {
@@ -898,12 +901,12 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
 
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
-  const { id, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status } = req.body;
+  const { id, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
   try {
     await pool.query(
-      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer']
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
     );
     res.status(201).json({ message: 'Ejecución iniciada con éxito' });
   } catch (err) {
@@ -912,10 +915,10 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Update an instance (steps or status changes)
+// 5. Update an instance (steps, status, or priority changes)
 app.put('/api/instances/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { steps, status } = req.body;
+  const { steps, status, priority } = req.body;
   try {
     let query = 'UPDATE instances SET ';
     const params = [];
@@ -929,6 +932,10 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
     if (status !== undefined) {
       updates.push(`status = $${paramIdx++}`);
       params.push(status);
+    }
+    if (priority !== undefined) {
+      updates.push(`priority = $${paramIdx++}`);
+      params.push(priority);
     }
 
     if (updates.length === 0) {
