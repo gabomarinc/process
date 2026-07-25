@@ -469,6 +469,9 @@ function App() {
       } else if (hash === '#/ejecuciones/clientes') {
         setActiveTab('clients');
         setSelectedInstanceId("");
+      } else if (hash === '#/ejecuciones/tablero') {
+        setActiveTab('kanban');
+        setSelectedInstanceId("");
       } else if (hash === '#/ejecuciones') {
         setActiveTab('instances');
         setSelectedInstanceId("");
@@ -508,6 +511,8 @@ function App() {
       }
     } else if (activeTab === 'clients') {
       targetHash = '#/ejecuciones/clientes';
+    } else if (activeTab === 'kanban') {
+      targetHash = '#/ejecuciones/tablero';
     } else if (activeTab === 'templates') {
       if (selectedTemplateId) {
         targetHash = `#/plantillas/detalle/${selectedTemplateId}`;
@@ -1643,6 +1648,21 @@ const handleDeleteMember = async (id) => {
       addToast(`Prioridad de la ejecución actualizada a "${priority}"`, 'success');
     } catch (err) {
       console.error("Error al actualizar prioridad en Neon:", err);
+    }
+  };
+
+  const handleUpdateInstanceAttachments = async (id, attachments) => {
+    // Update locally
+    setInstances(prev => prev.map(inst => inst.id === id ? { ...inst, attachments } : inst));
+    // Persist to backend
+    try {
+      await fetch(`/api/instances/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attachments })
+      });
+    } catch (err) {
+      console.error("Error al actualizar adjuntos en Neon:", err);
     }
   };
 
@@ -4573,6 +4593,7 @@ const handleDeleteMember = async (id) => {
         teamMembers={teamMembers}
         onUpdateInstanceStatus={handleUpdateInstanceStatus}
         onUpdateInstancePriority={handleUpdateInstancePriority}
+        onUpdateInstanceAttachments={handleUpdateInstanceAttachments}
         onAskAIForProjectSummary={handleAskAIForProjectSummary}
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}

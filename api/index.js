@@ -111,6 +111,7 @@ const pool = new Pool({
     `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media'`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`,
     
     `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
      SELECT 'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'
@@ -648,7 +649,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       category: row.category,
       steps: row.steps,
       status: row.status || 'Por hacer',
-      priority: row.priority || 'Media'
+      priority: row.priority || 'Media',
+      attachments: row.attachments || []
     }));
 
     // Map logs
@@ -857,7 +859,8 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
       category: row.category,
       steps: row.steps,
       status: row.status || 'Por hacer',
-      priority: row.priority || 'Media'
+      priority: row.priority || 'Media',
+      attachments: row.attachments || []
     }));
     res.json(mapped);
   } catch (err) {
@@ -920,10 +923,10 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
   }
 });
 
-// 5. Update an instance (steps, status, or priority changes)
+// 5. Update an instance (steps, status, priority, or attachments changes)
 app.put('/api/instances/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { steps, status, priority } = req.body;
+  const { steps, status, priority, attachments } = req.body;
   try {
     let query = 'UPDATE instances SET ';
     const params = [];
@@ -941,6 +944,10 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
     if (priority !== undefined) {
       updates.push(`priority = $${paramIdx++}`);
       params.push(priority);
+    }
+    if (attachments !== undefined) {
+      updates.push(`attachments = $${paramIdx++}`);
+      params.push(JSON.stringify(attachments));
     }
 
     if (updates.length === 0) {
