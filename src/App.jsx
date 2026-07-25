@@ -4578,6 +4578,8 @@ const handleDeleteMember = async (id) => {
         handleAssignStepMember={handleAssignStepMember}
         handleUpdateStepComments={handleUpdateStepComments}
         currentUser={user}
+        fileStore={fileStore}
+        setFileStore={setFileStore}
       />
 
 

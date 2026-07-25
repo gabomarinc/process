@@ -28,100 +28,105 @@ const pool = new Pool({
 });
 
 // Run auto-migration for user columns
-pool.query(`
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin';
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_name VARCHAR(100);
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_avatar VARCHAR(50);
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry BIGINT;
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255);
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT;
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT '[]'::jsonb;
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_token VARCHAR(255);
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_workspace_id VARCHAR(100);
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS reactivaleads_api_key VARCHAR(255);
+(async () => {
+  const migrations = [
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'admin'`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_name VARCHAR(100)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS companion_avatar VARCHAR(50)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry BIGINT`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_token VARCHAR(255)`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS clickup_workspace_id VARCHAR(100)`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS reactivaleads_api_key VARCHAR(255)`,
+    
+    `CREATE TABLE IF NOT EXISTS reactivaleads_rules (
+      id SERIAL PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      rule_name VARCHAR(255) NOT NULL,
+      konsul_template_id VARCHAR(100) NOT NULL,
+      reactivaleads_template_id VARCHAR(100) NOT NULL,
+      mapping JSONB,
+      active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS clients (
+      id VARCHAR(255) PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  CREATE TABLE IF NOT EXISTS reactivaleads_rules (
-    id SERIAL PRIMARY KEY,
-    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
-    rule_name VARCHAR(255) NOT NULL,
-    konsul_template_id VARCHAR(100) NOT NULL,
-    reactivaleads_template_id VARCHAR(100) NOT NULL,
-    mapping JSONB,
-    active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-  );
-  
-  CREATE TABLE IF NOT EXISTS clients (
-    id VARCHAR(255) PRIMARY KEY,
-    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-  );
+    `CREATE TABLE IF NOT EXISTS clickup_rules (
+      id SERIAL PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      rule_name VARCHAR(255) NOT NULL,
+      clickup_list_id VARCHAR(100) NOT NULL,
+      clickup_list_name VARCHAR(255) NOT NULL,
+      clickup_status VARCHAR(100) NOT NULL,
+      template_id VARCHAR(100) NOT NULL,
+      active BOOLEAN DEFAULT TRUE,
+      status VARCHAR(50) DEFAULT 'approved',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  CREATE TABLE IF NOT EXISTS clickup_rules (
-    id SERIAL PRIMARY KEY,
-    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
-    rule_name VARCHAR(255) NOT NULL,
-    clickup_list_id VARCHAR(100) NOT NULL,
-    clickup_list_name VARCHAR(255) NOT NULL,
-    clickup_status VARCHAR(100) NOT NULL,
-    template_id VARCHAR(100) NOT NULL,
-    active BOOLEAN DEFAULT TRUE,
-    status VARCHAR(50) DEFAULT 'approved',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-  );
+    `CREATE TABLE IF NOT EXISTS api_tokens (
+      id SERIAL PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      token VARCHAR(255) UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      last_used_at TIMESTAMPTZ
+    )`,
 
-  CREATE TABLE IF NOT EXISTS api_tokens (
-    id SERIAL PRIMARY KEY,
-    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    token VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    last_used_at TIMESTAMPTZ
-  );
+    `CREATE TABLE IF NOT EXISTS notification_logs (
+      id VARCHAR(255) PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      instance_id VARCHAR(100),
+      step_id VARCHAR(100),
+      instance_name VARCHAR(255),
+      step_title VARCHAR(255),
+      message TEXT,
+      logged_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  CREATE TABLE IF NOT EXISTS notification_logs (
-    id VARCHAR(255) PRIMARY KEY,
-    organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
-    instance_id VARCHAR(100),
-    step_id VARCHAR(100),
-    instance_name VARCHAR(255),
-    step_title VARCHAR(255),
-    message TEXT,
-    logged_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-  );
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INT REFERENCES users(id) ON DELETE CASCADE,
+      type VARCHAR(50) DEFAULT 'message',
+      message TEXT NOT NULL,
+      instance_id VARCHAR(100),
+      step_id VARCHAR(100),
+      read BOOLEAN DEFAULT FALSE,
+      timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  CREATE TABLE IF NOT EXISTS notifications (
-    id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    type VARCHAR(50) DEFAULT 'message',
-    message TEXT NOT NULL,
-    instance_id VARCHAR(100),
-    step_id VARCHAR(100),
-    read BOOLEAN DEFAULT FALSE,
-    timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-  );
+    `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS step_id VARCHAR(100)`,
+    `ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
+    `ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
+    `ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}'`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer'`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media'`,
+    
+    `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+     SELECT 'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'
+     FROM users 
+     WHERE role = 'admin' AND email NOT IN (SELECT email FROM team_members)`
+  ];
 
-  ALTER TABLE notifications ADD COLUMN IF NOT EXISTS step_id VARCHAR(100);
-
-  ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
-  ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved';
-  ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}';
-  ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb;
-  ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer';
-  ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media';
-
-  INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
-  SELECT 
-    'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'
-  FROM users 
-  WHERE role = 'admin' AND email NOT IN (SELECT email FROM team_members);
-`).then(() => {
-  console.log('Migración de base de datos completada: columnas y tablas (incluyendo "api_tokens") aseguradas.');
-}).catch(err => {
-  console.error('Error al migrar base de datos:', err);
-});
+  for (const q of migrations) {
+    try {
+      await pool.query(q);
+    } catch (err) {
+      console.warn('Migration step failed:', q.substring(0, 80) + '...', err.message);
+    }
+  }
+  console.log('Migración de base de datos completada: columnas y tablas aseguradas.');
+})();
 
 app.use(cors());
 app.use(express.json());
