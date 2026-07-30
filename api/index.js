@@ -23,7 +23,7 @@ const pool = new Pool({
     ? { rejectUnauthorized: false }
     : false,
   max: 6,
-  idleTimeoutMillis: 10000,
+  idleTimeoutMillis: 1000,
   connectionTimeoutMillis: 2000
 });
 
@@ -112,6 +112,12 @@ const pool = new Pool({
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`,
+    
+    `CREATE INDEX IF NOT EXISTS idx_instances_org ON instances(organization_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_team_members_org ON team_members(organization_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_clients_org ON clients(organization_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token)`,
     
     `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
      SELECT 'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'

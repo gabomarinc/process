@@ -52,8 +52,8 @@ export default function Notifications({
       fetchNotifs();
     }
     
-    // Poll every 60 seconds
-    const intervalId = setInterval(fetchNotifs, 60000);
+    // Poll every 5 minutes (reduced from 60s for DB optimization)
+    const intervalId = setInterval(fetchNotifs, 300000);
     
     // Refresh immediately when document visibility changes to visible
     const handleVisibilityChange = () => {
