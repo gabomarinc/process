@@ -203,6 +203,34 @@ const sendEmail = async ({ to, subject, html }) => {
   }
 };
 
+// Helper to notify Suite Automations engine
+const triggerProcessAutomation = async (triggerName, user, data = {}) => {
+  try {
+    const suiteUrl = process.env.SUITE_URL || 'https://suite.konsul.digital';
+    let userIdentifier = user?.email || user?.id;
+
+    if (!userIdentifier && user?.organizationId) {
+      const uRes = await pool.query("SELECT email FROM users WHERE organization_id = $1 LIMIT 1", [user.organizationId]);
+      if (uRes.rows.length > 0) userIdentifier = uRes.rows[0].email;
+    }
+
+    if (!userIdentifier) return;
+
+    fetch(`${suiteUrl}/api/v1/automations/trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        appCode: 'process',
+        triggerName,
+        userId: userIdentifier,
+        data
+      })
+    }).catch(err => console.error(`Error triggering Suite automation (${triggerName}):`, err.message));
+  } catch (err) {
+    console.error(`Error in triggerProcessAutomation:`, err);
+  }
+};
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -922,6 +950,13 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
     );
+
+    triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+      'Título de Tarea': title || instanceName || 'Nueva Tarea',
+      'Descripción': `Iniciada en categoría ${category || 'General'}`,
+      'Miembro Asignado': req.user?.email || 'Admin'
+    });
+
     res.status(201).json({ message: 'Ejecución iniciada con éxito' });
   } catch (err) {
     console.error(err);
@@ -964,6 +999,13 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
     params.push(id, req.user.organizationId);
 
     await pool.query(query, params);
+
+    if (status !== undefined) {
+      triggerProcessAutomation('Estado de Tarea Cambiado', req.user, {
+        'Título de Tarea': req.body.title || `Ejecución #${id}`,
+        'Columna Actual': status
+      });
+    }
     
     // Trigger ReactivaLeads if all steps are completed
     if (steps && Array.isArray(steps)) {
@@ -2771,6 +2813,12 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
         JSON.stringify(stepsWithDates)
       ]
     );
+
+    triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+      'Título de Tarea': instanceName,
+      'Descripción': `Plantilla ${template.title} ejecutada vía API`,
+      'Miembro Asignado': targetEmail || 'Admin'
+    });
 
     res.status(201).json({
       success: true,
