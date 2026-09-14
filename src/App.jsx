@@ -1700,6 +1700,21 @@ const handleDeleteMember = async (id) => {
     }
   };
 
+  const handleUpdateInstanceNotes = async (id, notes) => {
+    // Update locally
+    setInstances(prev => prev.map(inst => inst.id === id ? { ...inst, notes } : inst));
+    // Persist to backend
+    try {
+      await fetch(`/api/instances/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      });
+    } catch (err) {
+      console.error("Error al actualizar notas en Neon:", err);
+    }
+  };
+
   const handleAskAIForProjectSummary = async (instance) => {
     if (!apiKey) {
       return "Para utilizar el asistente de IA, por favor configura tu Gemini API Key en los Ajustes de la Organización.";
@@ -5083,6 +5098,8 @@ const handleDeleteMember = async (id) => {
         onUpdateInstanceStatus={handleUpdateInstanceStatus}
         onUpdateInstancePriority={handleUpdateInstancePriority}
         onUpdateInstanceAttachments={handleUpdateInstanceAttachments}
+        onUpdateInstanceNotes={handleUpdateInstanceNotes}
+        onDeleteInstance={(id) => { deleteInstance(id); setSelectedKanbanInstanceId(""); }}
         onAskAIForProjectSummary={handleAskAIForProjectSummary}
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
@@ -5090,6 +5107,7 @@ const handleDeleteMember = async (id) => {
         currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}
+        addToast={addToast}
       />
 
 

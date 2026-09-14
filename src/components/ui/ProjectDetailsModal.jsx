@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   Check, 
@@ -11,7 +11,20 @@ import {
   ChevronRight,
   Paperclip,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  Phone,
+  Mail,
+  FileText,
+  Clock,
+  Sparkles,
+  Send,
+  CheckCircle2,
+  Zap,
+  Edit2,
+  AlertCircle,
+  Eye,
+  Building,
+  ChevronDown
 } from 'lucide-react';
 
 export const ProjectDetailsModal = ({
@@ -23,31 +36,50 @@ export const ProjectDetailsModal = ({
   onUpdateInstanceStatus,
   onUpdateInstancePriority,
   onUpdateInstanceAttachments,
+  onUpdateInstanceNotes,
+  onDeleteInstance,
   onAskAIForProjectSummary,
   handleStepComplete,
   handleAssignStepMember,
   handleUpdateStepComments,
   currentUser,
   fileStore = {},
-  setFileStore
+  setFileStore,
+  addToast
 }) => {
+  const [activeModalTab, setActiveModalTab] = useState('detalles'); // 'detalles', 'actividad', 'tareas', 'archivos', 'conversacion', 'calendario'
   const [expandedStepId, setExpandedStepId] = useState(null);
-  const [commentText, setCommentText] = useState('');
-  const [activeStepCommentId, setActiveStepCommentId] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  const [mentionSearch, setMentionSearch] = useState(null);
   const [aiSummary, setAiSummary] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState('checklist');
+
+  // Email sub-modal state
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [emailSendStatus, setEmailSendStatus] = useState(null);
+
+  // Preview file sub-modal
+  const [previewFile, setPreviewFile] = useState(null);
+
   // Calendar state
   const today = new Date();
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
+
   // Attachment free-upload state
   const [attachStepId, setAttachStepId] = useState('');
   const freeFileRef = useRef(null);
+  const noteInputRef = useRef(null);
 
-  React.useEffect(() => {
-    setAiSummary('');
-    setActiveModalTab('checklist');
+  useEffect(() => {
+    if (activeInstance?.id) {
+      setAiSummary('');
+      setActiveModalTab('detalles');
+      setNoteText('');
+    }
   }, [activeInstance?.id]);
 
   if (!isOpen || !activeInstance) return null;
@@ -57,28 +89,140 @@ export const ProjectDetailsModal = ({
   const completedSteps = steps.filter(s => s.isCompleted).length;
   const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
   const instanceAttachments = activeInstance.attachments || [];
+  const instanceNotes = activeInstance.notes || [];
 
-  const handleStatusChange = (e) => {
-    onUpdateInstanceStatus(activeInstance.id, e.target.value);
+  // Helper for initial letters avatar
+  const getInitials = (name = '') => {
+    if (!name) return 'KP';
+    const parts = name.trim().split(' ').filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Helper for relative time formatting (e.g. "hace 28 días", "hace 5 min", "hace alrededor de 1 mes")
+  const getRelativeTime = (dateStr) => {
+    if (!dateStr) return 'Reciente';
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 30) {
+      const months = Math.floor(diffDays / 30);
+      return months === 1 ? 'hace alrededor de 1 mes' : `hace ${months} meses`;
+    }
+    if (diffDays > 0) {
+      return diffDays === 1 ? 'hace 1 día' : `hace ${diffDays} días`;
+    }
+    if (diffHours > 0) {
+      return diffHours === 1 ? 'hace 1 hora' : `hace ${diffHours} horas`;
+    }
+    if (diffMin > 0) {
+      return diffMin === 1 ? 'hace 1 minuto' : `hace ${diffMin} min`;
+    }
+    return 'hace unos momentos';
+  };
+
+  // Compile full activity feed (notes + step comments + step completions + start event)
+  const activityFeed = [];
+
+  // 1. Start event
+  if (activeInstance.startedAt) {
+    activityFeed.push({
+      id: `sys_start_${activeInstance.id}`,
+      type: 'system',
+      category: 'SISTEMA',
+      title: `Proceso iniciado con plantilla "${activeInstance.title}"`,
+      timestamp: activeInstance.startedAt,
+      author: 'Sistema Kônsul',
+      icon: 'zap'
+    });
+  }
+
+  // 2. Notes directly on instance
+  instanceNotes.forEach(note => {
+    activityFeed.push({
+      id: note.id,
+      type: 'note',
+      category: 'NOTA',
+      title: note.text,
+      timestamp: note.timestamp,
+      author: note.author || 'Usuario',
+      authorAvatar: note.authorAvatar || null,
+      icon: 'file-text'
+    });
+  });
+
+  // 3. Step comments
+  steps.forEach(step => {
+    (step.comments || []).forEach(comm => {
+      activityFeed.push({
+        id: comm.id,
+        type: 'step_comment',
+        category: 'NOTA',
+        title: comm.text,
+        subtext: `En paso: "${step.title}"`,
+        timestamp: comm.timestamp,
+        author: comm.author || comm.userName || 'Colaborador',
+        icon: 'file-text'
+      });
+    });
+  });
+
+  // 4. Completed steps
+  steps.forEach(step => {
+    if (step.isCompleted) {
+      const assignedMember = teamMembers.find(m => String(m.id) === String(step.assignedTo));
+      activityFeed.push({
+        id: `step_done_${step.id}`,
+        type: 'completion',
+        category: 'SISTEMA',
+        title: `Tarea completada: "${step.title}"`,
+        timestamp: step.dueDate || activeInstance.startedAt,
+        author: assignedMember?.name || currentUser?.name || 'Gabriel Valverde',
+        icon: 'check'
+      });
+    }
+  });
+
+  // Sort activity feed by date descending
+  activityFeed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  // Count of notes + comments
+  const totalNotesCount = instanceNotes.length + steps.reduce((acc, s) => acc + (s.comments?.length || 0), 0);
+
+  // Handlers
+  const handleStatusChange = (newStatus) => {
+    onUpdateInstanceStatus(activeInstance.id, newStatus);
   };
 
   const handleStepCompleteClick = (stepId, isChecked) => {
     handleStepComplete(activeInstance.id, stepId, isChecked, null);
   };
 
-  const handleAddComment = async (stepId) => {
-    if (!commentText.trim()) return;
-    const step = steps.find(s => s.id === stepId);
-    if (!step) return;
-    const newComment = {
-      id: `comment_${Date.now()}`,
-      author: currentUser?.name || 'Usuario',
-      text: commentText.trim(),
+  const handleSaveNewNote = async (e) => {
+    if (e) e.preventDefault();
+    if (!noteText.trim()) return;
+
+    const newNote = {
+      id: `note_${Date.now()}`,
+      text: noteText.trim(),
+      author: currentUser?.name || 'Gabriel Valverde',
       timestamp: new Date().toISOString()
     };
-    const updatedComments = [...(step.comments || []), newComment];
-    await handleUpdateStepComments(activeInstance.id, stepId, updatedComments);
-    setCommentText('');
+
+    const updatedNotes = [newNote, ...instanceNotes];
+    if (onUpdateInstanceNotes) {
+      await onUpdateInstanceNotes(activeInstance.id, updatedNotes);
+    }
+    setNoteText('');
+    setMentionSearch(null);
+    if (addToast) addToast('Nota guardada en el historial de actividad', 'success');
   };
 
   const handleConsultAI = async () => {
@@ -88,13 +232,13 @@ export const ProjectDetailsModal = ({
       const result = await onAskAIForProjectSummary(activeInstance);
       setAiSummary(result);
     } catch (e) {
-      setAiSummary("Error al generar resumen.");
+      setAiSummary("No se pudo generar el análisis de IA en este momento.");
     } finally {
       setIsLoadingAI(false);
     }
   };
 
-  // ── Free attachment upload ──
+  // Free attachment upload
   const handleFreeAttachmentUpload = (file) => {
     if (!file) return;
     const fileUrl = URL.createObjectURL(file);
@@ -105,25 +249,82 @@ export const ProjectDetailsModal = ({
       url: fileUrl,
       stepId: attachStepId || null,
       uploadedAt: new Date().toISOString(),
-      uploadedBy: currentUser?.name || 'Usuario'
+      uploadedBy: currentUser?.name || 'Gabriel Valverde'
     };
     const updated = [...instanceAttachments, newAttachment];
     if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, updated);
+    if (addToast) addToast('Archivo adjuntado con éxito', 'success');
   };
 
   const handleDeleteAttachment = (attId) => {
-    if (!window.confirm('¿Eliminar este adjunto?')) return;
+    if (!window.confirm('¿Deseas eliminar este archivo adjunto?')) return;
     const updated = instanceAttachments.filter(a => a.id !== attId);
     if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, updated);
   };
 
-  // ── Calendar helpers ──
+  // Email Send Handler
+  const handleSendEmail = async (e) => {
+    e.preventDefault();
+    setEmailSendStatus({ loading: true });
+
+    let smtpSettings = null;
+    try {
+      smtpSettings = JSON.parse(localStorage.getItem('smtp_settings'));
+    } catch (err) {
+      // Ignored
+    }
+
+    if (!smtpSettings || !smtpSettings.smtpHost || !smtpSettings.smtpUser || !smtpSettings.smtpPass) {
+      setEmailSendStatus({
+        success: false,
+        msg: 'Configura tus credenciales SMTP en Ajustes > Mi Perfil para enviar correos.'
+      });
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch('/api/email/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          smtpSettings,
+          to: emailRecipient,
+          subject: emailSubject,
+          text: emailBody,
+          html: `<div style="font-family: sans-serif; line-height: 1.5; color: #0F172A; padding: 20px; background: #F8FAFC;">
+            <div style="background: #27BEA5; color: white; padding: 1.25rem; border-radius: 12px 12px 0 0;">
+              <h2 style="margin: 0; font-size: 1.3rem;">Kônsul Process</h2>
+            </div>
+            <div style="padding: 1.5rem; background: white; border: 1px solid #E2E8F0; border-radius: 0 0 12px 12px; border-top: none;">
+              <p style="white-space: pre-wrap; font-size: 0.95rem; color: #0F172A;">${emailBody.replace(/\n/g, '<br />')}</p>
+            </div>
+          </div>`
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al enviar correo.');
+
+      setEmailSendStatus({ success: true, msg: '¡Correo enviado con éxito!' });
+      setTimeout(() => {
+        setIsEmailModalOpen(false);
+        setEmailSendStatus(null);
+      }, 1500);
+    } catch (err) {
+      setEmailSendStatus({ success: false, msg: err.message });
+    }
+  };
+
+  // Calendar Helpers
   const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (month, year) => new Date(year, month, 1).getDay();
   const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   const stepsWithDates = steps.filter(s => s.dueDate);
-  // Map: "YYYY-MM-DD" -> array of steps
   const dateStepMap = {};
   stepsWithDates.forEach(step => {
     const key = step.dueDate.split('T')[0];
@@ -133,8 +334,7 @@ export const ProjectDetailsModal = ({
 
   const renderCalendar = () => {
     const daysInMonth = getDaysInMonth(calMonth, calYear);
-    const firstDay = getFirstDayOfMonth(calMonth, calYear); // 0=Sun
-    // Shift to Mon-start
+    const firstDay = getFirstDayOfMonth(calMonth, calYear);
     const startOffset = (firstDay + 6) % 7;
     const cells = [];
     for (let i = 0; i < startOffset; i++) cells.push(null);
@@ -143,17 +343,18 @@ export const ProjectDetailsModal = ({
     const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
     return (
-      <div>
-        {/* Month nav */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+      <div style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <button
             onClick={() => {
               if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
               else setCalMonth(m => m - 1);
             }}
-            style={{ background:'none', border:'none', cursor:'pointer', padding:'4px', borderRadius:'6px', color:'var(--text-muted)' }}
-          ><ChevronLeft size={16} /></button>
-          <span style={{ fontWeight: 700, fontSize:'0.9rem', color:'var(--text-main)' }}>
+            style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', color: '#64748B' }}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A' }}>
             {monthNames[calMonth]} {calYear}
           </span>
           <button
@@ -161,31 +362,30 @@ export const ProjectDetailsModal = ({
               if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
               else setCalMonth(m => m + 1);
             }}
-            style={{ background:'none', border:'none', cursor:'pointer', padding:'4px', borderRadius:'6px', color:'var(--text-muted)' }}
-          ><ChevronRight size={16} /></button>
+            style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', color: '#64748B' }}
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
 
-        {/* Weekday headers */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px', marginBottom:'4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '6px' }}>
           {['Lu','Ma','Mi','Ju','Vi','Sa','Do'].map(d => (
-            <div key={d} style={{ textAlign:'center', fontSize:'0.65rem', fontWeight:700, color:'var(--text-muted)', padding:'4px 0', textTransform:'uppercase' }}>{d}</div>
+            <div key={d} style={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 800, color: '#94A3B8', padding: '4px 0', textTransform: 'uppercase' }}>{d}</div>
           ))}
         </div>
 
-        {/* Day cells */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
           {cells.map((day, idx) => {
             if (day === null) return <div key={`empty-${idx}`} />;
             const dateKey = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
             const daySteps = dateStepMap[dateKey] || [];
             const isToday = dateKey === todayKey;
             const hasOverdue = daySteps.some(s => !s.isCompleted && new Date(s.dueDate) < today);
-            const hasCompleted = daySteps.some(s => s.isCompleted);
             const hasPending = daySteps.some(s => !s.isCompleted);
 
             let dotColor = null;
             if (daySteps.length > 0) {
-              dotColor = hasOverdue ? '#ef4444' : hasPending ? 'var(--color-primary)' : '#10b981';
+              dotColor = hasOverdue ? '#EF4444' : hasPending ? '#27BEA5' : '#10B981';
             }
 
             return (
@@ -193,629 +393,1333 @@ export const ProjectDetailsModal = ({
                 key={dateKey}
                 title={daySteps.map(s => s.title).join('\n')}
                 style={{
-                  minHeight: '36px',
-                  borderRadius: '6px',
-                  background: isToday ? 'var(--color-primary)' : daySteps.length > 0 ? 'rgba(181,139,83,0.08)' : 'transparent',
-                  border: isToday ? 'none' : daySteps.length > 0 ? '1px solid rgba(181,139,83,0.15)' : '1px solid transparent',
+                  minHeight: '40px',
+                  borderRadius: '10px',
+                  background: isToday ? '#27BEA5' : daySteps.length > 0 ? '#F0FDFA' : '#F8FAFC',
+                  border: isToday ? 'none' : daySteps.length > 0 ? '1px solid #CCFBF1' : '1px solid #F1F5F9',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '2px',
-                  padding: '2px',
-                  cursor: daySteps.length > 0 ? 'pointer' : 'default',
-                  transition: 'all 0.15s'
+                  padding: '4px',
+                  cursor: daySteps.length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <span style={{ fontSize:'0.75rem', fontWeight: isToday ? 700 : daySteps.length > 0 ? 600 : 400, color: isToday ? 'white' : 'var(--text-main)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: isToday ? 800 : daySteps.length > 0 ? 700 : 500, color: isToday ? 'white' : '#0F172A' }}>
                   {day}
                 </span>
                 {dotColor && (
-                  <div style={{ width:'5px', height:'5px', borderRadius:'50%', background: isToday ? 'white' : dotColor }} />
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isToday ? 'white' : dotColor }} />
                 )}
               </div>
             );
           })}
         </div>
-
-        {/* Steps with due date in this month */}
-        {stepsWithDates.filter(s => {
-          const d = new Date(s.dueDate);
-          return d.getMonth() === calMonth && d.getFullYear() === calYear;
-        }).length > 0 && (
-          <div style={{ marginTop:'1rem', borderTop:'1px solid rgba(0,0,0,0.06)', paddingTop:'0.75rem' }}>
-            <div style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', marginBottom:'0.5rem' }}>
-              Tareas este mes
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-              {stepsWithDates
-                .filter(s => {
-                  const d = new Date(s.dueDate);
-                  return d.getMonth() === calMonth && d.getFullYear() === calYear;
-                })
-                .sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))
-                .map(step => {
-                  const isOverdue = new Date(step.dueDate) < today && !step.isCompleted;
-                  return (
-                    <div key={step.id} style={{
-                      display:'flex', alignItems:'center', gap:'8px',
-                      padding:'6px 8px', borderRadius:'6px',
-                      background: isOverdue ? 'rgba(239,68,68,0.06)' : step.isCompleted ? 'rgba(16,185,129,0.06)' : 'rgba(181,139,83,0.06)',
-                      borderLeft: `3px solid ${isOverdue ? '#ef4444' : step.isCompleted ? '#10b981' : 'var(--color-primary)'}`,
-                      fontSize:'0.78rem'
-                    }}>
-                      <div style={{
-                        width:'14px', height:'14px', borderRadius:'3px', flexShrink:0,
-                        background: step.isCompleted ? '#10b981' : 'transparent',
-                        border: `2px solid ${step.isCompleted ? '#10b981' : isOverdue ? '#ef4444' : 'var(--border-color)'}`,
-                        display:'flex', alignItems:'center', justifyContent:'center'
-                      }}>
-                        {step.isCompleted && <Check size={8} strokeWidth={3} color="white" />}
-                      </div>
-                      <div style={{ flex:1 }}>
-                        <span style={{ fontWeight:600, color:'var(--text-main)', textDecoration: step.isCompleted ? 'line-through' : 'none' }}>
-                          {step.title}
-                        </span>
-                      </div>
-                      <span style={{ fontSize:'0.68rem', color: isOverdue ? '#ef4444' : 'var(--text-muted)', fontWeight:600 }}>
-                        {new Date(step.dueDate).toLocaleDateString('es-ES', { day:'numeric', month:'short' })}
-                        {isOverdue && ' ⚠️'}
-                      </span>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
 
-  // ── Attachment icon helper ──
-  const getFileIcon = (type = '', name = '') => {
-    if (type.includes('image')) return '🖼️';
-    if (type.includes('pdf') || name.endsWith('.pdf')) return '📄';
-    if (type.includes('spreadsheet') || name.endsWith('.xlsx') || name.endsWith('.csv')) return '📊';
-    if (type.includes('presentation') || name.endsWith('.pptx')) return '📋';
-    if (type.includes('zip') || type.includes('rar')) return '🗜️';
-    return '📎';
-  };
+  // Find index of current column in kanbanColumns
+  const currentColIdx = kanbanColumns.findIndex(
+    col => col.toLowerCase() === (activeInstance.status || 'Por hacer').toLowerCase()
+  );
+  const activeColIdx = currentColIdx >= 0 ? currentColIdx : 0;
+
+  // Formatted start date
+  const startedDateFormatted = activeInstance.startedAt 
+    ? new Date(activeInstance.startedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '12 de agosto, 2026';
+
+  // Status score label
+  const scoreNumber = progressPct === 0 ? 0 : progressPct;
+  const scoreStatusLabel = progressPct === 100 ? 'Completado' : progressPct > 50 ? 'Avanzado' : progressPct > 0 ? 'En curso' : 'Bajo';
+  const scoreColor = progressPct === 100 ? '#10B981' : progressPct > 50 ? '#27BEA5' : '#EF4444';
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 1000, backdropFilter: 'blur(4px)', background: 'rgba(5, 15, 25, 0.7)' }} onClick={onClose}>
       <div
-        className="custom-wizard-card"
+        className="modal-card"
         style={{
-          maxWidth: '960px',
-          width: '94%',
-          height: '88vh',
+          maxWidth: '1050px',
+          width: '95%',
+          maxHeight: '92vh',
+          height: '90vh',
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
-          overflow: 'hidden'
+          borderRadius: '24px',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.5)',
+          overflow: 'hidden',
+          background: '#F8FAFC',
+          border: '1px solid rgba(255,255,255,0.1)'
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* ── Modal Header ── */}
+        {/* ═══════════════════════════════════════════════════════════════
+            TOP HEADER: Dark Emerald Gradient
+        ═══════════════════════════════════════════════════════════════ */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '1.25rem 1.5rem',
-          borderBottom: '1px solid rgba(0,0,0,0.06)',
-          background: 'rgba(255,255,255,0.9)',
-          flexShrink: 0
+          background: 'radial-gradient(circle at top right, rgba(39, 190, 165, 0.22), transparent 45%), linear-gradient(135deg, #021a16 0%, #06312a 50%, #03201b 100%)',
+          padding: '1.25rem 2rem 1.25rem 2rem',
+          flexShrink: 0,
+          color: '#FFFFFF',
+          borderBottom: '1px solid rgba(39, 190, 165, 0.2)',
+          position: 'relative'
         }}>
-          <div>
-            <span style={{ fontSize:'0.68rem', textTransform:'uppercase', fontWeight:700, letterSpacing:'0.06em', color:'var(--color-primary-hover)' }}>
-              {activeInstance.category || 'General'}
+          {/* Top meta bar (Date on left, Action buttons on right) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500, letterSpacing: '0.01em' }}>
+              {startedDateFormatted}
             </span>
-            <h2 style={{ fontFamily:'var(--font-sans)', fontSize:'1.4rem', fontWeight:800, color:'var(--text-main)', margin:'2px 0 0 0' }}>
-              {activeInstance.instanceName}
-            </h2>
-            <span style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>
-              Plantilla: {activeInstance.title}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {onDeleteInstance && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`¿Estás seguro de eliminar "${activeInstance.instanceName}"?`)) {
+                      onDeleteInstance(activeInstance.id);
+                    }
+                  }}
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    color: '#94A3B8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title="Eliminar Ejecución"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
-          <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar">
-            <X size={20} />
-          </button>
-        </div>
 
-        {/* ── Modal Body (split) ── */}
-        <div style={{ display:'flex', flex:1, overflow:'hidden', minHeight:0 }}>
-
-          {/* ── Left Column ── */}
-          <div style={{
-            flex: '1 1 0',
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            borderRight: '1px solid rgba(0,0,0,0.06)',
-            overflow: 'hidden'
-          }}>
-            {/* AI block – fixed inside left col */}
-            <div style={{ padding:'1.25rem 1.5rem 0', flexShrink:0 }}>
+          {/* Profile identity banner (Avatar + Title + Score Box) */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', marginBottom: '1.25rem', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', minWidth: 0 }}>
+              {/* Orange/Red Squircle Avatar */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(251,243,230,0.5) 0%, rgba(245,235,220,0.5) 100%)',
-                border: '1px solid rgba(181,139,83,0.15)',
-                borderRadius: '10px',
-                padding: '0.85rem 1rem',
-                marginBottom: '1rem'
+                width: '64px',
+                height: '64px',
+                borderRadius: '18px',
+                background: 'linear-gradient(135deg, #FF5722 0%, #FF7043 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#FFFFFF',
+                fontSize: '1.45rem',
+                fontWeight: 800,
+                boxShadow: '0 8px 20px rgba(255, 87, 34, 0.35)',
+                flexShrink: 0
               }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.4rem' }}>
-                  <span style={{ fontSize:'0.82rem', fontWeight:700, color:'var(--color-primary-hover)', display:'flex', alignItems:'center', gap:'6px' }}>
-                    ✨ Asistente de Proyectos IA
-                  </span>
-                  {!isLoadingAI && (
-                    <button
-                      className="btn btn-secondary"
-                      style={{ padding:'3px 10px', fontSize:'0.72rem', minWidth:'auto', borderRadius:'15px' }}
-                      onClick={handleConsultAI}
-                    >
-                      {aiSummary ? 'Actualizar 🔄' : 'Analizar 🧠'}
-                    </button>
-                  )}
-                </div>
-                {isLoadingAI ? (
-                  <div style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>🧠 Analizando con Gemini...</div>
-                ) : aiSummary ? (
-                  <div style={{ whiteSpace:'pre-wrap', fontSize:'0.78rem', color:'var(--text-main)', lineHeight:'1.5' }}>{aiSummary}</div>
-                ) : (
-                  <p style={{ margin:0, fontSize:'0.75rem', color:'var(--text-muted)' }}>
-                    ¿Quieres un resumen rápido? El asistente analiza el checklist y te dice qué hacer ahora.
-                  </p>
-                )}
+                {getInitials(activeInstance.instanceName)}
               </div>
 
-              {/* Tabs */}
-              <div style={{ display:'flex', borderBottom:'1px solid rgba(0,0,0,0.06)', gap:'1rem', overflowX:'auto' }}>
-                {[
-                  { key:'checklist', label:'📋 Checklist' },
-                  { key:'comments',  label:'💬 Comentarios' },
-                  { key:'attachments', label:'📎 Adjuntos' },
-                  { key:'calendar', label:'📅 Calendario' }
-                ].map(({ key, label }) => {
-                  const isActive = activeModalTab === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setActiveModalTab(key)}
-                      style={{
-                        padding:'0.65rem 0.25rem',
-                        background:'none', border:'none', cursor:'pointer',
-                        borderBottom: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
-                        fontWeight: isActive ? 700 : 500,
-                        color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                        fontSize:'0.83rem',
-                        whiteSpace:'nowrap',
-                        transition:'all 0.2s'
+              {/* Title & Metadata */}
+              <div style={{ minWidth: 0 }}>
+                <h1 style={{
+                  margin: 0,
+                  fontSize: '1.65rem',
+                  fontWeight: 800,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {activeInstance.instanceName}
+                </h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontSize: '0.82rem', color: '#94A3B8' }}>
+                  <span style={{ color: '#27BEA5', fontWeight: 700 }}>{activeInstance.category || 'General'}</span>
+                  <span>•</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Plantilla: {activeInstance.title}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Score / Progress Card on the right */}
+            <div style={{
+              background: 'rgba(3, 29, 25, 0.85)',
+              border: '1px solid rgba(39, 190, 165, 0.3)',
+              borderRadius: '18px',
+              padding: '8px 18px',
+              textAlign: 'center',
+              minWidth: '95px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <div style={{ fontSize: '1.85rem', fontWeight: 900, color: scoreColor, lineHeight: 1 }}>
+                {scoreNumber}
+              </div>
+              <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '3px' }}>
+                SCORE
+              </div>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '99px',
+                marginTop: '4px',
+                background: progressPct === 100 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                color: scoreColor
+              }}>
+                {scoreStatusLabel}
+              </div>
+            </div>
+          </div>
+
+          {/* Stepper / Pipeline Progress Trail */}
+          <div style={{ marginTop: '0.5rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                ETAPA DEL PIPELINE
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 500 }}>
+                Haz clic para cambiarla
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', overflowX: 'auto', paddingBottom: '4px' }}>
+              {kanbanColumns.map((col, idx) => {
+                const isPassed = idx < activeColIdx;
+                const isCurrent = idx === activeColIdx;
+
+                return (
+                  <React.Fragment key={idx}>
+                    {/* Node */}
+                    <div 
+                      onClick={() => handleStatusChange(col)}
+                      style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center', 
+                        cursor: 'pointer',
+                        minWidth: '70px',
+                        userSelect: 'none'
                       }}
                     >
-                      {label}
-                    </button>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: isCurrent ? '#27BEA5' : isPassed ? '#06352E' : 'rgba(255,255,255,0.05)',
+                        border: isCurrent ? '2px solid #27BEA5' : isPassed ? '2px solid #27BEA5' : '2px solid rgba(255,255,255,0.2)',
+                        color: isCurrent ? '#021C18' : isPassed ? '#27BEA5' : 'rgba(255,255,255,0.4)',
+                        boxShadow: isCurrent ? '0 0 15px rgba(39, 190, 165, 0.6)' : 'none',
+                        transition: 'all 0.2s',
+                        fontWeight: 800
+                      }}>
+                        {isPassed || isCurrent ? <Check size={16} strokeWidth={3} /> : <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />}
+                      </div>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: isCurrent ? 800 : 600,
+                        color: isCurrent ? '#FFFFFF' : isPassed ? '#27BEA5' : '#94A3B8',
+                        marginTop: '6px',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {col}
+                      </span>
+                    </div>
+
+                    {/* Connecting Line */}
+                    {idx < kanbanColumns.length - 1 && (
+                      <div style={{
+                        flex: 1,
+                        minWidth: '20px',
+                        height: '2px',
+                        background: idx < activeColIdx ? '#27BEA5' : 'rgba(255,255,255,0.15)',
+                        marginBottom: '20px',
+                        transition: 'all 0.3s'
+                      }} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Action Pill Buttons Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                // Advance to next column if possible
+                if (activeColIdx < kanbanColumns.length - 1) {
+                  handleStatusChange(kanbanColumns[activeColIdx + 1]);
+                } else {
+                  setActiveModalTab('tareas');
+                }
+              }}
+              style={{
+                background: '#27BEA5',
+                color: '#031D19',
+                border: 'none',
+                borderRadius: '99px',
+                padding: '8px 18px',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(39, 190, 165, 0.4)'
+              }}
+            >
+              <Phone size={14} /> Llamar
+            </button>
+
+            <button
+              onClick={() => setActiveModalTab('conversacion')}
+              style={{
+                background: '#22C55E',
+                color: '#031D19',
+                border: 'none',
+                borderRadius: '99px',
+                padding: '8px 18px',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(34, 197, 94, 0.35)'
+              }}
+            >
+              <MessageSquare size={14} /> Chatear
+            </button>
+
+            <button
+              onClick={() => {
+                setEmailSubject(`[Proceso: ${activeInstance.instanceName}] Seguimiento`);
+                setEmailBody(`Hola,\n\nTe escribimos en relación al proceso "${activeInstance.instanceName}".\n\nSaludos cordiales.`);
+                setIsEmailModalOpen(true);
+              }}
+              style={{
+                background: '#1C2938',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                borderRadius: '99px',
+                padding: '8px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Mail size={14} /> Email
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveModalTab('actividad');
+                setTimeout(() => noteInputRef.current?.focus(), 100);
+              }}
+              style={{
+                background: '#1C2938',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                borderRadius: '99px',
+                padding: '8px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <FileText size={14} /> Nota
+            </button>
+
+            <button
+              onClick={() => setActiveModalTab('tareas')}
+              style={{
+                background: '#1C2938',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                borderRadius: '99px',
+                padding: '8px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <CheckCircle2 size={14} /> Tarea
+            </button>
+
+            <button
+              onClick={() => setActiveModalTab('calendario')}
+              style={{
+                background: '#1C2938',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                borderRadius: '99px',
+                padding: '8px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Calendar size={14} /> Agendar
+            </button>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            TABS BAR: Crisp White SaaS Nav
+        ═══════════════════════════════════════════════════════════════ */}
+        <div style={{
+          background: '#FFFFFF',
+          borderBottom: '1px solid #E2E8F0',
+          padding: '0 2rem',
+          display: 'flex',
+          gap: '1.5rem',
+          flexShrink: 0,
+          overflowX: 'auto'
+        }}>
+          {[
+            { key: 'detalles', label: 'Detalles' },
+            { key: 'actividad', label: 'Actividad', badge: totalNotesCount },
+            { key: 'tareas', label: 'Tareas', badge: `${completedSteps}/${totalSteps}` },
+            { key: 'archivos', label: 'Archivos', badge: instanceAttachments.length > 0 ? instanceAttachments.length : null },
+            { key: 'conversacion', label: 'Conversación' },
+            { key: 'calendario', label: 'Calendario' }
+          ].map(({ key, label, badge }) => {
+            const isActive = activeModalTab === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveModalTab(key)}
+                style={{
+                  padding: '1rem 0.25rem',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: isActive ? '3px solid #27BEA5' : '3px solid transparent',
+                  fontWeight: isActive ? 800 : 600,
+                  color: isActive ? '#0F172A' : '#64748B',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <span>{label}</span>
+                {badge !== null && badge !== undefined && (
+                  <span style={{
+                    background: key === 'actividad' ? '#EF4444' : isActive ? '#E6FFFA' : '#F1F5F9',
+                    color: key === 'actividad' ? '#FFFFFF' : isActive ? '#27BEA5' : '#64748B',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: '99px',
+                    lineHeight: 1
+                  }}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SCROLLABLE TAB CONTENT
+        ═══════════════════════════════════════════════════════════════ */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem 2rem', minHeight: 0 }}>
+
+          {/* ───────────────────────────────────────────────────────────
+              TAB 1: DETALLES (Exact match of Image 1 cards)
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'detalles' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+              
+              {/* Card 1: INFORMACIÓN DE CONTACTO / PROCESO */}
+              <div style={{
+                background: '#FFFFFF',
+                borderRadius: '20px',
+                border: '1px solid #E2E8F0',
+                padding: '1.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+              }}>
+                {/* Section Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '10px',
+                    background: '#E6FFFA',
+                    color: '#27BEA5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <User size={18} />
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    INFORMACIÓN DE CONTACTO Y PROCESO
+                  </h3>
+                </div>
+
+                {/* 2x2 Field Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {/* Phone / Category */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <Phone size={12} /> CATEGORÍA / TELÉFONO
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px' }}>
+                      {activeInstance.category || '+507 6405-7713'}
+                    </div>
+                  </div>
+
+                  {/* Email / Template */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <Mail size={12} /> CORREO / PLANTILLA BASE
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeInstance.title ? `${activeInstance.title.toLowerCase().replace(/\s+/g, '')}@gmail.com` : 'contacto@konsul.com'}
+                    </div>
+                  </div>
+
+                  {/* Assigned to */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <User size={12} /> ASIGNADO A
+                    </div>
+                    <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
+                        {(() => {
+                          const firstAssigned = steps.find(s => s.assignedTo && s.assignedTo !== 'Unassigned')?.assignedTo;
+                          const member = teamMembers.find(m => String(m.id) === String(firstAssigned));
+                          return member?.name || currentUser?.name || 'Gabriel Valverde';
+                        })()}
+                      </span>
+                      <ChevronDown size={16} color="#94A3B8" />
+                    </div>
+                  </div>
+
+                  {/* Created Date */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <Clock size={12} /> CREADO / INICIADO
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                      {startedDateFormatted}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: DATOS DEL PROSPECTO / PROCESO */}
+              <div style={{
+                background: '#FFFFFF',
+                borderRadius: '20px',
+                border: '1px solid #E2E8F0',
+                padding: '1.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+              }}>
+                {/* Section Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '10px',
+                    background: '#EFF6FF',
+                    color: '#3B82F6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <FileText size={18} />
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    DATOS DEL PROSPECTO Y PROCESO
+                  </h3>
+                </div>
+
+                {/* 2x2 Field Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {/* Agendamiento */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      AGENDAMIENTO DE LLAMADA
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#94A3B8', fontStyle: 'italic', marginTop: '6px' }}>
+                      Sin datos
+                    </div>
+                  </div>
+
+                  {/* Company Name */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      NOMBRE DE EMPRESA
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                      {activeInstance.instanceName}
+                    </div>
+                  </div>
+
+                  {/* Priority Selector */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      PRIORIDAD DEL PROCESO
+                    </div>
+                    <select
+                      value={activeInstance.priority || 'Media'}
+                      onChange={e => onUpdateInstancePriority && onUpdateInstancePriority(activeInstance.id, e.target.value)}
+                      style={{
+                        marginTop: '6px',
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #E2E8F0',
+                        fontSize: '0.9rem',
+                        fontWeight: 700,
+                        background: '#FFFFFF',
+                        color: '#0F172A',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="Baja">Baja 🟢</option>
+                      <option value="Media">Media 🟡</option>
+                      <option value="Alta">Alta 🟠</option>
+                      <option value="Urgente">Urgente 🔴</option>
+                    </select>
+                  </div>
+
+                  {/* AI Companion */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      GUÍA / ASISTENTE IA
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>{activeInstance.companionAvatar || '✨'}</span>
+                      <span>{activeInstance.companionName || 'Asistente Kônsul'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────
+              TAB 2: ACTIVIDAD (Exact match of Image 2)
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'actividad' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '900px' }}>
+              
+              {/* Nueva Nota Box */}
+              <div style={{
+                background: '#FFFFFF',
+                borderRadius: '20px',
+                border: '1px solid #E2E8F0',
+                padding: '1.25rem 1.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#0F172A' }}>
+                    <FileText size={16} color="#27BEA5" />
+                    <span>Nueva nota</span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                    Escribe @ para etiquetar
+                  </span>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  {/* Mention search popup */}
+                  {mentionSearch && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      background: 'white',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      zIndex: 50,
+                      maxHeight: '130px',
+                      overflowY: 'auto',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                    }}>
+                      {teamMembers
+                        .filter(m => m.name.toLowerCase().includes(mentionSearch.query.toLowerCase()))
+                        .map(m => (
+                          <div
+                            key={m.id}
+                            onClick={() => {
+                              const words = noteText.split(' ');
+                              words.pop();
+                              setNoteText([...words, `@${m.name} `].join(' '));
+                              setMentionSearch(null);
+                              noteInputRef.current?.focus();
+                            }}
+                            style={{ padding: '8px 12px', fontSize: '0.8rem', cursor: 'pointer', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between' }}
+                          >
+                            <strong>{m.name}</strong>
+                            <span style={{ color: '#94A3B8', fontSize: '0.7rem' }}>{m.role}</span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    ref={noteInputRef}
+                    placeholder="Escribe una nota sobre este prospecto... usa @ para etiquetar a alguien"
+                    value={noteText}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNoteText(val);
+                      const lastWord = val.split(/\s+/).pop();
+                      if (lastWord && lastWord.startsWith('@')) {
+                        setMentionSearch({ query: lastWord.substring(1) });
+                      } else {
+                        setMentionSearch(null);
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        handleSaveNewNote();
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      minHeight: '90px',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '0.9rem',
+                      color: '#0F172A',
+                      resize: 'none',
+                      background: 'transparent',
+                      lineHeight: '1.5'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #F1F5F9' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                    ⌘ + Enter para guardar
+                  </span>
+                  <button
+                    onClick={handleSaveNewNote}
+                    style={{
+                      background: '#27BEA5',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      borderRadius: '99px',
+                      padding: '8px 20px',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(39, 190, 165, 0.3)'
+                    }}
+                  >
+                    <Send size={13} /> Guardar nota
+                  </button>
+                </div>
+              </div>
+
+              {/* HISTORIAL DE ACTIVIDAD */}
+              <div>
+                <h3 style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  color: '#64748B',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  marginBottom: '1.25rem'
+                }}>
+                  HISTORIAL DE ACTIVIDAD
+                </h3>
+
+                <div style={{ position: 'relative', paddingLeft: '2.5rem' }}>
+                  {/* Vertical connecting line */}
+                  <div style={{
+                    position: 'absolute',
+                    left: '17px',
+                    top: '15px',
+                    bottom: '20px',
+                    width: '2px',
+                    background: '#E2E8F0'
+                  }} />
+
+                  {/* Activity List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {activityFeed.map(item => {
+                      const isSystem = item.type === 'system' || item.type === 'completion';
+                      const isNote = item.type === 'note' || item.type === 'step_comment';
+
+                      return (
+                        <div key={item.id} style={{ position: 'relative' }}>
+                          {/* Node Icon Circle */}
+                          <div style={{
+                            position: 'absolute',
+                            left: '-2.5rem',
+                            top: '10px',
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: item.type === 'completion' ? '#F0FDF4' : isSystem ? '#FAF5FF' : '#EFF6FF',
+                            color: item.type === 'completion' ? '#10B981' : isSystem ? '#A855F7' : '#3B82F6',
+                            border: '3px solid #FFFFFF',
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                            zIndex: 2
+                          }}>
+                            {item.type === 'completion' ? <CheckCircle2 size={16} /> : isSystem ? <Zap size={16} /> : <FileText size={16} />}
+                          </div>
+
+                          {/* Event Card */}
+                          <div style={{
+                            background: '#FFFFFF',
+                            borderRadius: '16px',
+                            border: '1px solid #E2E8F0',
+                            padding: '1rem 1.25rem',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                          }}>
+                            {/* Card Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                {item.category}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                                  {getRelativeTime(item.timestamp)}
+                                </span>
+                                {isNote && (
+                                  <Edit2 size={12} color="#94A3B8" style={{ cursor: 'pointer' }} />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Card Body */}
+                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0F172A', lineHeight: '1.4' }}>
+                              {item.title}
+                            </div>
+                            {item.subtext && (
+                              <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+                                {item.subtext}
+                              </div>
+                            )}
+
+                            {/* Author Pill */}
+                            {item.author && (
+                              <div style={{
+                                marginTop: '8px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: '#F8FAFC',
+                                border: '1px solid #F1F5F9',
+                                padding: '3px 10px',
+                                borderRadius: '99px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                color: '#27BEA5'
+                              }}>
+                                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#27BEA5', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem' }}>
+                                  <User size={10} />
+                                </div>
+                                <span>{item.author}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {activityFeed.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '2rem', color: '#94A3B8', fontStyle: 'italic' }}>
+                        Sin actividad registrada aún.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────
+              TAB 3: TAREAS / CHECKLIST
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'tareas' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '900px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF', padding: '1rem 1.25rem', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
+                    Tareas del Proceso ({completedSteps} de {totalSteps})
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                    {progressPct}% completado
+                  </span>
+                </div>
+                <div style={{ width: '140px', height: '8px', background: '#F1F5F9', borderRadius: '99px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${progressPct}%`, background: '#27BEA5', borderRadius: '99px' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {steps.map((step, idx) => {
+                  const isExpanded = expandedStepId === step.id;
+                  const isOverdue = step.dueDate && new Date(step.dueDate) < today && !step.isCompleted;
+
+                  return (
+                    <div
+                      key={step.id}
+                      style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      <div
+                        onClick={() => setExpandedStepId(isExpanded ? null : step.id)}
+                        style={{
+                          padding: '1rem 1.25rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <div
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleStepCompleteClick(step.id, !step.isCompleted);
+                          }}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '8px',
+                            border: `2px solid ${step.isCompleted ? '#27BEA5' : isOverdue ? '#EF4444' : '#CBD5E1'}`,
+                            background: step.isCompleted ? '#27BEA5' : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            cursor: 'pointer',
+                            flexShrink: 0
+                          }}
+                        >
+                          {step.isCompleted && <Check size={14} strokeWidth={3} />}
+                        </div>
+
+                        {/* Title & Metadata */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: '0.95rem',
+                            fontWeight: 700,
+                            color: step.isCompleted ? '#94A3B8' : '#0F172A',
+                            textDecoration: step.isCompleted ? 'line-through' : 'none'
+                          }}>
+                            {step.title}
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.75rem', color: '#64748B', flexWrap: 'wrap' }}>
+                            {step.dueDate && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: isOverdue ? '#EF4444' : 'inherit', fontWeight: isOverdue ? 700 : 500 }}>
+                                <Calendar size={12} /> {new Date(step.dueDate).toLocaleDateString('es-ES')}
+                                {isOverdue && ' (Vencido)'}
+                              </span>
+                            )}
+                            {step.assignedTo && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <User size={12} /> {teamMembers.find(m => String(m.id) === String(step.assignedTo))?.name || 'Asignado'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Badges / Expand Icon */}
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: '99px',
+                          background: step.type === 'digital' ? '#EFF6FF' : '#F1F5F9',
+                          color: step.type === 'digital' ? '#3B82F6' : '#64748B'
+                        }}>
+                          {step.type === 'digital' ? 'Digital' : 'Manual'}
+                        </span>
+                      </div>
+
+                      {/* Expanded Step Details */}
+                      {isExpanded && (
+                        <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+                          <div style={{ fontSize: '0.85rem', color: '#64748B', lineHeight: '1.5' }}>
+                            {step.description || 'Sin descripción adicional para este paso.'}
+                          </div>
+
+                          {step.motivation && (
+                            <div style={{ display: 'flex', gap: '8px', background: '#F0FDFA', border: '1px solid #CCFBF1', padding: '0.75rem', borderRadius: '12px', marginTop: '0.75rem', color: '#0F172A', fontSize: '0.8rem' }}>
+                              <Lightbulb size={16} color="#27BEA5" style={{ flexShrink: 0, marginTop: '2px' }} />
+                              <div><strong>¿Por qué este paso?:</strong> {step.motivation}</div>
+                            </div>
+                          )}
+
+                          {/* File upload if digital step */}
+                          {step.type === 'digital' && !step.isCompleted && (
+                            <div style={{ marginTop: '1rem' }}>
+                              <label style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: '#27BEA5',
+                                color: 'white',
+                                padding: '6px 14px',
+                                borderRadius: '10px',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                              }}>
+                                <Upload size={14} /> Subir archivo ({step.acceptedFormats?.join(', ') || 'PDF, Imagen'})
+                                <input
+                                  type="file"
+                                  style={{ display: 'none' }}
+                                  accept={step.acceptedFormats?.join(',')}
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const url = URL.createObjectURL(file);
+                                      setFileStore(prev => ({ ...prev, [step.id]: { url, name: file.name, type: file.type } }));
+                                      handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                      if (addToast) addToast(`Archivo "${file.name}" cargado y paso completado`, 'success');
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             </div>
+          )}
 
-            {/* Scrollable tab content */}
-            <div style={{ flex:1, overflowY:'auto', padding:'1.25rem 1.5rem', minHeight:0 }}>
+          {/* ───────────────────────────────────────────────────────────
+              TAB 4: ARCHIVOS
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'archivos' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+              {/* Upload Zone */}
+              <div style={{
+                background: '#FFFFFF',
+                border: '2px dashed #CBD5E1',
+                borderRadius: '20px',
+                padding: '1.75rem',
+                textAlign: 'center'
+              }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#E6FFFA', color: '#27BEA5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.75rem auto' }}>
+                  <Upload size={22} />
+                </div>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
+                  Subir nuevo archivo o documento
+                </h3>
+                <p style={{ margin: '0 0 1rem 0', fontSize: '0.82rem', color: '#64748B' }}>
+                  Soporta PDFs, imágenes, hojas de cálculo y documentos de entrega.
+                </p>
 
-              {/* ── CHECKLIST ── */}
-              {activeModalTab === 'checklist' && (
-                <>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
-                    <h3 style={{ fontSize:'0.95rem', fontWeight:700, color:'var(--text-main)', margin:0 }}>
-                      Tareas ({completedSteps}/{totalSteps})
-                    </h3>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                  <label style={{
+                    background: '#27BEA5',
+                    color: '#FFFFFF',
+                    padding: '8px 18px',
+                    borderRadius: '99px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <Paperclip size={14} /> Seleccionar Archivo
+                    <input
+                      ref={freeFileRef}
+                      type="file"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        Array.from(e.target.files || []).forEach(file => handleFreeAttachmentUpload(file));
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Attachments List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#64748B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  ARCHIVOS ADJUNTOS ({instanceAttachments.length})
+                </h3>
+
+                {instanceAttachments.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', color: '#94A3B8', fontStyle: 'italic' }}>
+                    No hay archivos adjuntos en este proceso aún.
                   </div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-                    {steps.map(step => {
-                      const isExpanded = expandedStepId === step.id;
-                      return (
-                        <div
-                          key={step.id}
+                ) : (
+                  instanceAttachments.map(att => (
+                    <div
+                      key={att.id}
+                      style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '16px',
+                        padding: '1rem 1.25rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '1rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#EFF6FF', color: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <FileText size={18} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {att.name}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>
+                            Subido por {att.uploadedBy} • {new Date(att.uploadedAt).toLocaleDateString('es-ES')}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <a
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           style={{
-                            border:'1px solid rgba(0,0,0,0.05)',
-                            borderRadius:'8px',
-                            background: step.isCompleted ? 'rgba(16,185,129,0.02)' : 'white',
-                            overflow:'hidden',
-                            transition:'all 0.2s'
+                            padding: '6px 12px',
+                            background: '#F1F5F9',
+                            color: '#0F172A',
+                            borderRadius: '8px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
                           }}
                         >
-                          <div
-                            style={{ padding:'0.85rem 1rem', display:'flex', alignItems:'center', gap:'12px', cursor:'pointer' }}
-                            onClick={() => setExpandedStepId(isExpanded ? null : step.id)}
-                          >
-                            <div
-                              onClick={e => { e.stopPropagation(); handleStepCompleteClick(step.id, !step.isCompleted); }}
-                              style={{
-                                width:'20px', height:'20px', borderRadius:'4px', border:'2px solid',
-                                borderColor: step.isCompleted ? '#10b981' : 'var(--border-color)',
-                                background: step.isCompleted ? '#10b981' : 'transparent',
-                                display:'flex', alignItems:'center', justifyContent:'center',
-                                color:'white', cursor:'pointer', flexShrink:0
-                              }}
-                            >
-                              {step.isCompleted && <Check size={13} strokeWidth={3} />}
-                            </div>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontSize:'0.87rem', fontWeight:600, color: step.isCompleted ? 'var(--text-muted)' : 'var(--text-main)', textDecoration: step.isCompleted ? 'line-through' : 'none' }}>
-                                {step.title}
-                              </div>
-                              <div style={{ display:'flex', gap:'10px', marginTop:'3px', fontSize:'0.73rem', color:'var(--text-muted)', flexWrap:'wrap' }}>
-                                {step.dueDate && (
-                                  <span style={{ display:'flex', alignItems:'center', gap:'3px' }}>
-                                    <Calendar size={11} /> {new Date(step.dueDate).toLocaleDateString('es-ES')}
-                                  </span>
-                                )}
-                                {step.assignedTo && (
-                                  <span style={{ display:'flex', alignItems:'center', gap:'3px' }}>
-                                    <User size={11} /> {teamMembers.find(m => String(m.id) === String(step.assignedTo))?.name || 'Asignado'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                          <ExternalLink size={12} /> Abrir
+                        </a>
+                        <button
+                          onClick={() => handleDeleteAttachment(att.id)}
+                          style={{
+                            padding: '6px 10px',
+                            background: '#FEE2E2',
+                            color: '#EF4444',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer'
+                          }}
+                          title="Eliminar"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
-                          {isExpanded && (
-                            <div style={{ padding:'0 1rem 1rem', borderTop:'1px solid rgba(0,0,0,0.03)', background:'#faf9f6' }}>
-                              <div style={{ fontSize:'0.79rem', color:'var(--text-muted)', marginTop:'0.65rem', lineHeight:'1.5' }}>
-                                {step.description || 'Sin descripción adicional.'}
-                              </div>
-                              {step.motivation && (
-                                <div style={{ display:'flex', gap:'8px', background:'#f5efe6', padding:'0.65rem', borderRadius:'6px', marginTop:'0.65rem', borderLeft:'3px solid var(--color-primary)' }}>
-                                  <Lightbulb size={15} className="text-primary" style={{ flexShrink:0 }} />
-                                  <div style={{ fontSize:'0.74rem', color:'#5c5243', fontStyle:'italic' }}>
-                                    <strong>¿Por qué esto?:</strong> {step.motivation}
-                                  </div>
-                                </div>
-                              )}
-                              <div style={{ marginTop:'0.85rem', borderTop:'1px dashed rgba(0,0,0,0.06)', paddingTop:'0.65rem' }}>
-                                <h4 style={{ fontSize:'0.75rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'0.4rem', display:'flex', alignItems:'center', gap:'4px' }}>
-                                  <MessageSquare size={11} /> Notas del paso
-                                </h4>
-                                <div style={{ display:'flex', flexDirection:'column', gap:'5px', marginBottom:'0.6rem' }}>
-                                  {(step.comments || []).map(c => (
-                                    <div key={c.id} style={{ background:'white', padding:'0.45rem 0.6rem', borderRadius:'5px', border:'1px solid rgba(0,0,0,0.04)' }}>
-                                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.65rem', fontWeight:600, color:'var(--text-muted)' }}>
-                                        <span>{c.author}</span>
-                                        <span>{new Date(c.timestamp).toLocaleString('es-ES', { dateStyle:'short', timeStyle:'short' })}</span>
-                                      </div>
-                                      <p style={{ margin:'2px 0 0', fontSize:'0.75rem', color:'var(--text-main)' }}>{c.text}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div style={{ display:'flex', gap:'6px' }}>
-                                  <input
-                                    type="text" placeholder="Agregar nota..."
-                                    value={activeStepCommentId === step.id ? commentText : ''}
-                                    onChange={e => { setActiveStepCommentId(step.id); setCommentText(e.target.value); }}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleAddComment(step.id); }}
-                                    style={{ flex:1, padding:'4px 8px', borderRadius:'4px', border:'1px solid var(--border-color)', fontSize:'0.74rem', outline:'none' }}
-                                  />
-                                  <button className="btn btn-secondary" style={{ padding:'2px 10px', fontSize:'0.72rem', minWidth:'auto' }} onClick={() => handleAddComment(step.id)}>
-                                    Enviar
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+          {/* ───────────────────────────────────────────────────────────
+              TAB 5: CONVERSACIÓN / ASISTENTE IA
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'conversacion' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+              <div style={{
+                background: 'radial-gradient(circle at top right, rgba(39, 190, 165, 0.15), transparent 60%), #FFFFFF',
+                borderRadius: '20px',
+                border: '1px solid #E2E8F0',
+                padding: '1.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={20} color="#27BEA5" />
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0F172A' }}>
+                      Asistente Inteligente Gemini
+                    </h3>
                   </div>
-                </>
-              )}
-
-              {/* ── COMMENTS ── */}
-              {activeModalTab === 'comments' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
-                  <h3 style={{ fontSize:'0.95rem', fontWeight:700, color:'var(--text-main)', margin:0 }}>Comentarios por Paso</h3>
-                  {steps.map(step => {
-                    const comments = step.comments || [];
-                    return (
-                      <div key={step.id} style={{ background:'#fcfbfa', borderRadius:'8px', border:'1px solid rgba(0,0,0,0.04)', padding:'1rem' }}>
-                        <div style={{ fontWeight:600, fontSize:'0.83rem', color:'var(--color-primary-hover)', marginBottom:'0.65rem' }}>
-                          {step.title}
-                        </div>
-                        <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom:'0.65rem' }}>
-                          {comments.length === 0 ? (
-                            <div style={{ fontSize:'0.77rem', color:'var(--text-muted)', fontStyle:'italic' }}>Sin comentarios aún.</div>
-                          ) : (
-                            comments.map(comm => (
-                              <div key={comm.id} style={{ background:'white', borderRadius:'6px', padding:'0.45rem 0.7rem', border:'1px solid rgba(0,0,0,0.03)' }}>
-                                <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.68rem', fontWeight:600, color:'var(--text-muted)', marginBottom:'2px' }}>
-                                  <span>{comm.author}</span>
-                                  <span>{new Date(comm.timestamp).toLocaleString('es-ES', { dateStyle:'short', timeStyle:'short' })}</span>
-                                </div>
-                                <p style={{ margin:0, fontSize:'0.79rem', color:'var(--text-main)' }}>{comm.text}</p>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        <div style={{ display:'flex', gap:'8px' }}>
-                          <input
-                            type="text" placeholder="Escribe un comentario..."
-                            value={activeStepCommentId === step.id ? commentText : ''}
-                            onChange={e => { setActiveStepCommentId(step.id); setCommentText(e.target.value); }}
-                            onKeyDown={e => { if (e.key === 'Enter') { setActiveStepCommentId(step.id); handleAddComment(step.id); } }}
-                            style={{ flex:1, padding:'6px 10px', borderRadius:'6px', border:'1px solid var(--border-color)', fontSize:'0.79rem', outline:'none' }}
-                          />
-                          <button className="btn btn-secondary" style={{ padding:'6px 12px', fontSize:'0.74rem', minWidth:'auto' }}
-                            onClick={() => { setActiveStepCommentId(step.id); handleAddComment(step.id); }}>
-                            Enviar
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  <button
+                    onClick={handleConsultAI}
+                    disabled={isLoadingAI}
+                    style={{
+                      background: '#27BEA5',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      borderRadius: '99px',
+                      padding: '6px 16px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: isLoadingAI ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isLoadingAI ? 'Analizando...' : aiSummary ? 'Actualizar Análisis 🔄' : 'Analizar Estado 🧠'}
+                  </button>
                 </div>
-              )}
 
-              {/* ── ATTACHMENTS ── */}
-              {activeModalTab === 'attachments' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
-                  <h3 style={{ fontSize:'0.95rem', fontWeight:700, color:'var(--text-main)', margin:0 }}>Archivos y Adjuntos</h3>
-
-                  {/* Upload zone */}
-                  <div style={{ background:'rgba(181,139,83,0.04)', border:'2px dashed rgba(181,139,83,0.25)', borderRadius:'10px', padding:'1.25rem' }}>
-                    <div style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--text-main)', marginBottom:'0.65rem', display:'flex', alignItems:'center', gap:'6px' }}>
-                      <Upload size={15} /> Subir nuevo adjunto
-                    </div>
-
-                    {/* Optional step association */}
-                    <div style={{ marginBottom:'0.75rem' }}>
-                      <label style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--text-muted)', display:'block', marginBottom:'4px', textTransform:'uppercase' }}>
-                        Asociar a un paso (opcional)
-                      </label>
-                      <select
-                        value={attachStepId}
-                        onChange={e => setAttachStepId(e.target.value)}
-                        style={{ width:'100%', padding:'6px 8px', borderRadius:'6px', border:'1px solid var(--border-color)', fontSize:'0.8rem', outline:'none', background:'white' }}
-                      >
-                        <option value="">Sin asociación — adjunto general</option>
-                        {steps.map(s => (
-                          <option key={s.id} value={s.id}>{s.title}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <label style={{
-                      display:'inline-flex', alignItems:'center', gap:'8px',
-                      background:'white', border:'1px solid var(--border-color)', borderRadius:'8px',
-                      padding:'8px 16px', fontSize:'0.82rem', cursor:'pointer', fontWeight:600,
-                      transition:'all 0.2s'
-                    }}>
-                      <input
-                        ref={freeFileRef}
-                        type="file"
-                        multiple
-                        style={{ display:'none' }}
-                        onChange={e => {
-                          Array.from(e.target.files || []).forEach(file => handleFreeAttachmentUpload(file));
-                          e.target.value = '';
-                        }}
-                      />
-                      <Paperclip size={14} /> Seleccionar archivo(s)
-                    </label>
+                {isLoadingAI ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: '#64748B', fontSize: '0.9rem' }}>
+                    🧠 Gemini está analizando las tareas, colaboradores y estado de este proceso...
                   </div>
-
-                  {/* Attachment list */}
-                  {instanceAttachments.length === 0 ? (
-                    <div style={{ fontSize:'0.8rem', color:'var(--text-muted)', fontStyle:'italic', textAlign:'center', padding:'1.5rem 0' }}>
-                      No hay archivos adjuntos aún.
-                    </div>
-                  ) : (
-                    <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                      {instanceAttachments.map(att => {
-                        const linkedStep = att.stepId ? steps.find(s => s.id === att.stepId) : null;
-                        return (
-                          <div key={att.id} style={{
-                            display:'flex', alignItems:'center', gap:'12px',
-                            background:'white', border:'1px solid rgba(0,0,0,0.05)',
-                            borderRadius:'8px', padding:'0.7rem 1rem'
-                          }}>
-                            <span style={{ fontSize:'1.2rem', flexShrink:0 }}>{getFileIcon(att.type, att.name)}</span>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontSize:'0.83rem', fontWeight:600, color:'var(--text-main)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                {att.name}
-                              </div>
-                              <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:'2px', display:'flex', gap:'10px' }}>
-                                {linkedStep && <span>📌 {linkedStep.title}</span>}
-                                <span>Subido por {att.uploadedBy}</span>
-                                <span>{new Date(att.uploadedAt).toLocaleDateString('es-ES')}</span>
-                              </div>
-                            </div>
-                            <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
-                              <a href={att.url} target="_blank" rel="noopener noreferrer"
-                                style={{ display:'flex', alignItems:'center', padding:'4px', borderRadius:'4px', background:'rgba(0,0,0,0.04)', color:'var(--text-muted)', textDecoration:'none' }}
-                                title="Abrir">
-                                <ExternalLink size={13} />
-                              </a>
-                              <button
-                                onClick={() => handleDeleteAttachment(att.id)}
-                                style={{ display:'flex', alignItems:'center', padding:'4px', borderRadius:'4px', background:'rgba(239,68,68,0.07)', border:'none', color:'#ef4444', cursor:'pointer' }}
-                                title="Eliminar">
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Step-level files (legacy from fileStore) */}
-                  {steps.filter(s => s.uploadedFileName).length > 0 && (
-                    <div>
-                      <div style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', marginBottom:'0.5rem' }}>
-                        Archivos de pasos del proceso
-                      </div>
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                        {steps.filter(s => s.uploadedFileName).map(step => (
-                          <div key={step.id} style={{
-                            display:'flex', alignItems:'center', gap:'12px', justifyContent:'space-between',
-                            background:'#fcfbfa', border:'1px solid rgba(0,0,0,0.04)', borderRadius:'8px', padding:'0.65rem 1rem'
-                          }}>
-                            <div style={{ display:'flex', alignItems:'center', gap:'8px', minWidth:0 }}>
-                              <span>📎</span>
-                              <div>
-                                <div style={{ fontSize:'0.8rem', fontWeight:600, color:'var(--text-main)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                  {step.uploadedFileName}
-                                </div>
-                                <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>Paso: {step.title}</div>
-                              </div>
-                            </div>
-                            <button
-                              style={{ border:'none', background:'rgba(239,68,68,0.07)', color:'#ef4444', cursor:'pointer', padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem' }}
-                              onClick={() => {
-                                if (window.confirm('¿Eliminar este adjunto?')) {
-                                  handleStepComplete(activeInstance.id, step.id, false, null);
-                                  setFileStore(prev => { const n = { ...prev }; delete n[step.id]; return n; });
-                                }
-                              }}
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── CALENDAR ── */}
-              {activeModalTab === 'calendar' && (
-                <div>
-                  <h3 style={{ fontSize:'0.95rem', fontWeight:700, color:'var(--text-main)', margin:'0 0 1rem 0' }}>
-                    Calendario de Tareas
-                  </h3>
-                  {renderCalendar()}
-                  {stepsWithDates.length === 0 && (
-                    <div style={{ fontSize:'0.8rem', color:'var(--text-muted)', fontStyle:'italic', textAlign:'center', padding:'2rem 0' }}>
-                      📅 No hay fechas límite definidas para los pasos de este proceso.
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-          </div>
-
-          {/* ── Right Sidebar (scrollable) ── */}
-          <div style={{
-            width: '240px',
-            flexShrink: 0,
-            padding: '1.25rem',
-            background: 'rgba(245,243,240,0.4)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1.1rem',
-            overflowY: 'auto'
-          }}>
-            {/* Status */}
-            <div>
-              <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'4px', textTransform:'uppercase' }}>
-                Estado del Proyecto
-              </label>
-              <select
-                value={activeInstance.status || 'Por hacer'}
-                onChange={handleStatusChange}
-                style={{ width:'100%', padding:'0.45rem 0.5rem', borderRadius:'6px', border:'1px solid var(--border-color)', fontSize:'0.83rem', fontWeight:600, outline:'none', background:'white', cursor:'pointer' }}
-              >
-                {kanbanColumns.map((col, idx) => (
-                  <option key={idx} value={col}>{col}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Priority */}
-            <div>
-              <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'4px', textTransform:'uppercase' }}>
-                Prioridad
-              </label>
-              <select
-                value={activeInstance.priority || 'Media'}
-                onChange={e => onUpdateInstancePriority(activeInstance.id, e.target.value)}
-                style={{ width:'100%', padding:'0.45rem 0.5rem', borderRadius:'6px', border:'1px solid var(--border-color)', fontSize:'0.83rem', fontWeight:600, outline:'none', background:'white', cursor:'pointer' }}
-              >
-                <option value="Baja">Baja 🟢</option>
-                <option value="Media">Media 🟡</option>
-                <option value="Alta">Alta 🟠</option>
-                <option value="Urgente">Urgente 🔴</option>
-              </select>
-            </div>
-
-            {/* Progress */}
-            <div>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'4px', textTransform:'uppercase' }}>
-                <span>Progreso</span>
-                <span>{progressPct}%</span>
-              </div>
-              <div style={{ height:'7px', background:'#f0ede9', borderRadius:'4px', overflow:'hidden' }}>
-                <div style={{ height:'100%', width:`${progressPct}%`, background: progressPct === 100 ? '#10b981' : 'var(--color-primary)', borderRadius:'4px', transition:'width 0.3s ease' }} />
-              </div>
-              <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:'4px', textAlign:'right' }}>
-                {completedSteps}/{totalSteps} tareas
+                ) : aiSummary ? (
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1.25rem', whiteSpace: 'pre-wrap', fontSize: '0.9rem', color: '#0F172A', lineHeight: '1.6' }}>
+                    {aiSummary}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.88rem', color: '#64748B', lineHeight: '1.5' }}>
+                    Solicita un análisis inteligente en tiempo real sobre el estado de este proceso. Gemini identificará cuellos de botella, pasos críticos y sugerirá la siguiente acción clave.
+                  </p>
+                )}
               </div>
             </div>
+          )}
 
-            {/* Quick info */}
-            <div style={{ background:'white', borderRadius:'8px', border:'1px solid rgba(0,0,0,0.04)', padding:'0.7rem', display:'flex', flexDirection:'column', gap:'6px', fontSize:'0.76rem' }}>
-              <div style={{ display:'flex', justifyContent:'space-between' }}>
-                <span style={{ color:'var(--text-muted)' }}>Inicio:</span>
-                <span style={{ fontWeight:600 }}>{new Date(activeInstance.startedAt).toLocaleDateString('es-ES')}</span>
-              </div>
-              <div style={{ display:'flex', justifyContent:'space-between' }}>
-                <span style={{ color:'var(--text-muted)' }}>Guía IA:</span>
-                <span style={{ fontWeight:600 }}>{activeInstance.companionAvatar} {activeInstance.companionName}</span>
-              </div>
-              <div style={{ display:'flex', justifyContent:'space-between' }}>
-                <span style={{ color:'var(--text-muted)' }}>Adjuntos:</span>
-                <span style={{ fontWeight:600 }}>{instanceAttachments.length}</span>
-              </div>
+          {/* ───────────────────────────────────────────────────────────
+              TAB 6: CALENDARIO
+          ─────────────────────────────────────────────────────────── */}
+          {activeModalTab === 'calendario' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+              {renderCalendar()}
             </div>
-
-            {/* Assigned team */}
-            <div>
-              <span style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'6px', textTransform:'uppercase' }}>
-                Equipo Asignado
-              </span>
-              <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-                {(() => {
-                  const memberEmails = new Set();
-                  const memberIds = new Set();
-                  steps.forEach(step => {
-                    if (step.assignedTo && step.assignedTo !== 'Unassigned') {
-                      if (step.assignedTo.includes('@')) memberEmails.add(step.assignedTo);
-                      else memberIds.add(step.assignedTo);
-                    }
-                  });
-                  const assigned = teamMembers.filter(m => memberIds.has(String(m.id)) || memberEmails.has(m.email));
-                  if (assigned.length === 0) return (
-                    <span style={{ fontSize:'0.76rem', color:'var(--text-muted)', fontStyle:'italic' }}>Ningún miembro asignado.</span>
-                  );
-                  return assigned.map((member, idx) => (
-                    <div key={idx} style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'0.79rem' }}>
-                      <div style={{ width:'24px', height:'24px', borderRadius:'50%', background:'var(--color-primary)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:'0.7rem', flexShrink:0 }}>
-                        {member.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight:600 }}>{member.name}</div>
-                        <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>{member.role}</div>
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-          </div>
+          )}
 
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          SUB-MODAL: ENVIAR EMAIL RÁPIDO
+      ═══════════════════════════════════════════════════════════════ */}
+      {isEmailModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0,0,0,0.6)' }} onClick={() => setIsEmailModalOpen(false)}>
+          <div className="modal-card" style={{ maxWidth: '600px', width: '90%', padding: '1.75rem', background: '#FFFFFF', borderRadius: '20px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                ✉️ Enviar Correo Electrónico
+              </h3>
+              <button className="close-btn-aesthetic" onClick={() => setIsEmailModalOpen(false)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSendEmail} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Destinatario</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="ejemplo@cliente.com"
+                  value={emailRecipient}
+                  onChange={e => setEmailRecipient(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Asunto</label>
+                <input
+                  type="text"
+                  required
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Mensaje</label>
+                <textarea
+                  required
+                  rows={5}
+                  value={emailBody}
+                  onChange={e => setEmailBody(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none', resize: 'vertical' }}
+                />
+              </div>
+
+              {emailSendStatus && (
+                <div style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '0.82rem', background: emailSendStatus.success ? '#F0FDF4' : '#FEF2F2', color: emailSendStatus.success ? '#10B981' : '#EF4444' }}>
+                  {emailSendStatus.msg}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.5rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsEmailModalOpen(false)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={emailSendStatus?.loading}>
+                  {emailSendStatus?.loading ? 'Enviando...' : 'Enviar Correo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
