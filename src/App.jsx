@@ -56,7 +56,7 @@ import {
   Mic,
   Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
   Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid,
-  Copy, RefreshCw, Database, ExternalLink, Download
+  Copy, RefreshCw, Database, ExternalLink, Download, Layers, Target, BookOpen
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -3047,15 +3047,15 @@ const handleDeleteMember = async (id) => {
                   <div style={{ display: 'inline-flex', background: '#f5f3f0', borderRadius: '20px', padding: '3px', marginLeft: '12px' }}>
                     <button
                       onClick={() => setDashboardViewMode('focus')}
-                      style={{ border: 'none', background: dashboardViewMode === 'focus' ? 'white' : 'transparent', color: dashboardViewMode === 'focus' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: dashboardViewMode === 'focus' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                      style={{ border: 'none', background: dashboardViewMode === 'focus' ? 'white' : 'transparent', color: dashboardViewMode === 'focus' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'focus' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
                     >
-                      Enfoque 🔍
+                      <Eye size={13} /> Enfoque
                     </button>
                     <button
                       onClick={() => setDashboardViewMode('birds-eye')}
-                      style={{ border: 'none', background: dashboardViewMode === 'birds-eye' ? 'white' : 'transparent', color: dashboardViewMode === 'birds-eye' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: dashboardViewMode === 'birds-eye' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                      style={{ border: 'none', background: dashboardViewMode === 'birds-eye' ? 'white' : 'transparent', color: dashboardViewMode === 'birds-eye' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'birds-eye' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
                     >
-                      Vista de Pájaro 🦅
+                      <Layers size={13} /> Vista Completa
                     </button>
                   </div>
                 </div>
@@ -3103,7 +3103,9 @@ const handleDeleteMember = async (id) => {
                   return (
                     <div className="my-moment-container" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '1.5rem', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
-                        <span style={{ fontSize: '1.5rem' }}>🎯</span>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#F0FDFA', color: '#0F766E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Target size={16} />
+                        </div>
                         <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>Mi Momento (Tus Pendientes de Hoy)</h3>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -3124,8 +3126,8 @@ const handleDeleteMember = async (id) => {
                               <span className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>
                                 Vence: {new Date(item.step.dueDate).toLocaleDateString()}
                               </span>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 700 }}>
-                                Toca tu turno ➡️
+                              <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                Tu turno <ArrowRight size={12} />
                               </span>
                             </div>
                           </div>
@@ -3319,7 +3321,7 @@ const handleDeleteMember = async (id) => {
                       <div className="template-card-body" style={{ paddingTop: '2rem' }}>
                         <div className="template-card-meta">
                           <div className="template-card-meta-left">
-                            <span>⏱️ {temp.durationDays} {temp.durationDays === 1 ? 'día' : 'días'}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={13} /> {temp.durationDays} {temp.durationDays === 1 ? 'día' : 'días'}</span>
                             <span>•</span>
                             <span className="status-dot" style={{ backgroundColor: temp.status === 'approved' ? '#4caf50' : temp.status === 'rejected' ? '#f44336' : '#ff9800' }}></span>
                             <span>{temp.status === 'approved' ? 'Activo' : temp.status === 'rejected' ? 'Rechazado' : 'Pendiente'}</span>
@@ -3435,7 +3437,7 @@ const handleDeleteMember = async (id) => {
                               }}
                               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(211,47,47,0.1)', color: '#d32f2f' }}
                             >
-                              🗑️
+                              <Trash2 size={15} />
                             </button>
                           </div>
                         </div>
@@ -5193,7 +5195,7 @@ const handleDeleteMember = async (id) => {
               ) : (
                 <>
                   <div style={{ padding: '0.5rem 1.25rem', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', fontSize: '0.75rem', color: 'var(--color-primary-hover)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📖 {templates.find(t => t.id === chatTemplateId)?.title}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><BookOpen size={14} /> {templates.find(t => t.id === chatTemplateId)?.title}</span>
                     <button onClick={() => setChatTemplateId('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.7rem', textDecoration: 'underline' }}>Cambiar</button>
                   </div>
                   {/* Chat Thread */}

@@ -7,7 +7,8 @@ import {
   Trash2, 
   Check, 
   X, 
-  Clock 
+  Clock,
+  Sparkles
 } from 'lucide-react';
 import './KanbanBoard.css';
 
@@ -343,8 +344,8 @@ export const KanbanBoard = ({
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           {/* Companion Icon */}
-                          <div className="kanban-card-companion-circle" title={`Guía: ${inst.companionName}`}>
-                            {inst.companionAvatar || '✨'}
+                          <div className="kanban-card-companion-circle" title={`Guía: ${inst.companionName || 'Asistente Kônsul'}`}>
+                            {typeof inst.companionAvatar === 'object' && inst.companionAvatar ? inst.companionAvatar : <Sparkles size={13} color="var(--color-primary)" />}
                           </div>
 
                           {/* Member Avatars */}

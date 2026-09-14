@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers } from 'lucide-react';
 
 export const ActiveExecutionModal = ({
   isOpen,
@@ -296,9 +296,9 @@ export const ActiveExecutionModal = ({
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
              <button
                onClick={() => setIsFocusMode(!isFocusMode)}
-               style={{ border: 'none', background: isFocusMode ? '#e8f7f5' : '#f5f3f0', color: isFocusMode ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+               style={{ border: 'none', background: isFocusMode ? '#e8f7f5' : '#f5f3f0', color: isFocusMode ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '5px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
              >
-               {isFocusMode ? 'Modo Enfoque 🔍' : 'Modo Completo 📋'}
+               {isFocusMode ? <><Eye size={13} /> Modo Enfoque</> : <><Layers size={13} /> Modo Completo</>}
              </button>
              <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
            </div>
@@ -582,7 +582,15 @@ export const ActiveExecutionModal = ({
                                         {(() => {
                                           const nextStep = activeInstance.steps[item.index + 1];
                                           const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
-                                          return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
+                                          return nextAssignee ? (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                              Pasar a {nextAssignee.name} <ArrowRight size={14} />
+                                            </span>
+                                          ) : (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                              Completar Paso <Check size={14} />
+                                            </span>
+                                          );
                                         })()}
                                       </button>
                                       <button
@@ -593,7 +601,7 @@ export const ActiveExecutionModal = ({
                                           display: 'flex', 
                                           alignItems: 'center', 
                                           justifyContent: 'center', 
-                                          gap: '4px', 
+                                          gap: '5px', 
                                           width: '100%', 
                                           fontSize: '0.75rem', 
                                           padding: '0.4rem', 
@@ -629,7 +637,15 @@ export const ActiveExecutionModal = ({
                                           }
                                         }}
                                       >
-                                        {step.helpRequested ? '🤝 Ayuda Solicitada' : '🙋‍♂️ Pedir una mano'}
+                                        {step.helpRequested ? (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <HelpCircle size={13} /> Ayuda Solicitada
+                                          </span>
+                                        ) : (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <AlertCircle size={13} /> Solicitar Apoyo
+                                          </span>
+                                        )}
                                       </button>
                                     </>
                                   )}
@@ -732,7 +748,15 @@ export const ActiveExecutionModal = ({
                                           }
                                         }}
                                       >
-                                        {step.helpRequested ? '🤝 Ayuda Solicitada' : '🙋‍♂️ Pedir una mano'}
+                                        {step.helpRequested ? (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <HelpCircle size={13} /> Ayuda Solicitada
+                                          </span>
+                                        ) : (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <AlertCircle size={13} /> Solicitar Apoyo
+                                          </span>
+                                        )}
                                       </button>
                                     </>
                                   )}
@@ -1065,137 +1089,149 @@ export const ActiveExecutionModal = ({
                                      </div>
                                    ) : (
                                      <>
-                                       <button
-                                         type="button"
-                                         className="btn btn-primary"
-                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
-                                         onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
-                                       >
-                                         {(() => {
-                                           const nextStep = activeInstance.steps[idx + 1];
-                                           const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
-                                           return nextAssignee ? `Pasar a ${nextAssignee.name} ➡️` : 'Completar Paso ✔️';
-                                         })()}
-                                       </button>
-                                       <button
-                                         type="button"
-                                         className="btn btn-secondary"
-                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
-                                         onClick={async (e) => {
-                                           e.stopPropagation();
-                                           const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                           try {
-                                             await fetch('/api/notifications', {
-                                               method: 'POST',
-                                               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                               body: JSON.stringify({
-                                                 id: `help-${step.id}-${Date.now()}`,
-                                                 instanceId: activeInstance.id,
-                                                 stepId: step.id,
-                                                 instanceName: activeInstance.instanceName,
-                                                 stepTitle: step.title,
-                                                 message: helpMsg,
-                                                 type: 'alert'
-                                               })
-                                             });
-                                          window.dispatchEvent(new Event('notifications-updated'));
-                                             if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                           } catch (err) {
-                                             console.error("Error al pedir ayuda:", err);
-                                           }
-                                         }}
-                                       >
-                                         🙋‍♂️ Pedir una mano
-                                       </button>
-                                     </>
-                                   )}
-                                 </div>
-                               ) : (
-                                  <div style={{ width: '100%' }}>
-                                   {step.isCompleted || step.uploadedFileName ? (
-                                     <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                         <FileCheck size={14} />
-                                         <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-                                           {step.uploadedFileName || 'Cargado'}
-                                         </span>
-                                       </div>
-                                       <button
-                                         type="button"
-                                         onClick={() => {
-                                           const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
-                                           setPreviewFile(fileStore[step.id] || { 
-                                             name: step.uploadedFileName || 'Documento.pdf', 
-                                             url: url,
-                                             type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
-                                             mock: !url
-                                           });
-                                         }}
-                                         className="close-btn-aesthetic"
-                                         style={{ width: '24px', height: '24px', padding: 0 }}
-                                         title="Previsualizar archivo"
-                                       >
-                                         <Eye size={12} />
-                                       </button>
-                                     </div>
-                                   ) : (
-                                     <>
-                                       <label className="step-file-upload">
-                                         <input 
-                                           type="file" 
-                                           style={{ display: 'none' }}
-                                           accept={step.acceptedFormats?.join(',')}
-                                           onChange={(e) => {
-                                             const file = e.target.files?.[0];
-                                             if (file) {
-                                               const fileUrl = URL.createObjectURL(file);
-                                               setFileStore(prev => ({
-                                                 ...prev,
-                                                 [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                               }));
-                                               handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                             }
-                                           }}
-                                         />
-                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                           <Upload size={16} className="text-primary" />
-                                           <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
-                                         </div>
-                                       </label>
-                                       <button
-                                         type="button"
-                                         className="btn btn-secondary"
-                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
-                                         onClick={async (e) => {
-                                           e.stopPropagation();
-                                           const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                           try {
-                                             await fetch('/api/notifications', {
-                                               method: 'POST',
-                                               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                               body: JSON.stringify({
-                                                 id: `help-${step.id}-${Date.now()}`,
-                                                 instanceId: activeInstance.id,
-                                                 stepId: step.id,
-                                                 instanceName: activeInstance.instanceName,
-                                                 stepTitle: step.title,
-                                                 message: helpMsg,
-                                                 type: 'alert'
-                                               })
-                                             });
-                                          window.dispatchEvent(new Event('notifications-updated'));
-                                             if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                           } catch (err) {
-                                             console.error("Error al pedir ayuda:", err);
-                                           }
-                                         }}
-                                       >
-                                         🙋‍♂️ Pedir una mano
-                                       </button>
-                                     </>
-                                   )}
-                                 </div>
-                               )}
+                                        <button
+                                          type="button"
+                                          className="btn btn-primary"
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
+                                          onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
+                                        >
+                                          {(() => {
+                                            const nextStep = activeInstance.steps[idx + 1];
+                                            const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                            return nextAssignee ? (
+                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                Pasar a {nextAssignee.name} <ArrowRight size={14} />
+                                              </span>
+                                            ) : (
+                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                Completar Paso <Check size={14} />
+                                              </span>
+                                            );
+                                          })()}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary"
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                            try {
+                                              await fetch('/api/notifications', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                                body: JSON.stringify({
+                                                  id: `help-${step.id}-${Date.now()}`,
+                                                  instanceId: activeInstance.id,
+                                                  stepId: step.id,
+                                                  instanceName: activeInstance.instanceName,
+                                                  stepTitle: step.title,
+                                                  message: helpMsg,
+                                                  type: 'alert'
+                                                })
+                                              });
+                                           window.dispatchEvent(new Event('notifications-updated'));
+                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
+                                            } catch (err) {
+                                              console.error("Error al pedir ayuda:", err);
+                                            }
+                                          }}
+                                        >
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <AlertCircle size={13} /> Solicitar Apoyo
+                                          </span>
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                ) : (
+                                   <div style={{ width: '100%' }}>
+                                    {step.isCompleted || step.uploadedFileName ? (
+                                      <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <FileCheck size={14} />
+                                          <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                            {step.uploadedFileName || 'Cargado'}
+                                          </span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
+                                            setPreviewFile(fileStore[step.id] || { 
+                                              name: step.uploadedFileName || 'Documento.pdf', 
+                                              url: url,
+                                              type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
+                                              mock: !url
+                                            });
+                                          }}
+                                          className="close-btn-aesthetic"
+                                          style={{ width: '24px', height: '24px', padding: 0 }}
+                                          title="Previsualizar archivo"
+                                        >
+                                          <Eye size={12} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <label className="step-file-upload">
+                                          <input 
+                                            type="file" 
+                                            style={{ display: 'none' }}
+                                            accept={step.acceptedFormats?.join(',')}
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                const fileUrl = URL.createObjectURL(file);
+                                                setFileStore(prev => ({
+                                                  ...prev,
+                                                  [step.id]: { url: fileUrl, name: file.name, type: file.type }
+                                                }));
+                                                handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                              }
+                                            }}
+                                          />
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Upload size={16} className="text-primary" />
+                                            <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
+                                          </div>
+                                        </label>
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary"
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                            try {
+                                              await fetch('/api/notifications', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                                body: JSON.stringify({
+                                                  id: `help-${step.id}-${Date.now()}`,
+                                                  instanceId: activeInstance.id,
+                                                  stepId: step.id,
+                                                  instanceName: activeInstance.instanceName,
+                                                  stepTitle: step.title,
+                                                  message: helpMsg,
+                                                  type: 'alert'
+                                                })
+                                              });
+                                           window.dispatchEvent(new Event('notifications-updated'));
+                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
+                                            } catch (err) {
+                                              console.error("Error al pedir ayuda:", err);
+                                            }
+                                          }}
+                                        >
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <AlertCircle size={13} /> Solicitar Apoyo
+                                          </span>
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                              </div>
                            )}
                         </div>

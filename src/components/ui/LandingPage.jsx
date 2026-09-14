@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check, Star, Heart } from 'lucide-react';
 import './LandingPage.css';
 
 export function LandingPage({ onLoginClick, onStartFree }) {
@@ -97,8 +97,9 @@ export function LandingPage({ onLoginClick, onStartFree }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <button type="submit" className="btn-submit-hero">
-                🚀 Comenzar Ahora Mismo
+              <button type="submit" className="btn-submit-hero" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <span>Comenzar Ahora Mismo</span>
+                <ArrowRight size={16} />
               </button>
             </form>
 
@@ -114,7 +115,17 @@ export function LandingPage({ onLoginClick, onStartFree }) {
                 <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80" alt="User 4" />
                 <img src="https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=100&q=80" alt="User 5" />
               </div>
-              <span className="rating-text">4.5/5 ⭐⭐⭐⭐⭐ DE SATISFACCIÓN EN NUESTROS CLIENTES</span>
+              <span className="rating-text" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                4.5/5
+                <span style={{ display: 'inline-flex', gap: '2px', color: '#F59E0B' }}>
+                  <Star size={13} fill="#F59E0B" />
+                  <Star size={13} fill="#F59E0B" />
+                  <Star size={13} fill="#F59E0B" />
+                  <Star size={13} fill="#F59E0B" />
+                  <Star size={13} fill="#F59E0B" />
+                </span>
+                DE SATISFACCIÓN EN NUESTROS CLIENTES
+              </span>
             </div>
           </div>
 
@@ -274,7 +285,9 @@ export function LandingPage({ onLoginClick, onStartFree }) {
 
         <div className="footer-bottom">
           <span>© 2026 ReactiveLeads by Kônsul. Todos los derechos reservados.</span>
-          <span>Made with ❤️ by Kônsul Digital</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            Desarrollado con <Heart size={12} fill="#EF4444" color="#EF4444" /> por Kônsul Digital
+          </span>
         </div>
       </footer>
     </div>
