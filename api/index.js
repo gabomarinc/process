@@ -2699,6 +2699,12 @@ app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
       if (!templateVars.includes('Fecha de Inicio')) {
         templateVars.push('Fecha de Inicio');
       }
+      if (!templateVars.includes('Documento Adjunto (URL)')) {
+        templateVars.push('Documento Adjunto (URL)');
+      }
+      if (!templateVars.includes('Notas / Resumen')) {
+        templateVars.push('Notas / Resumen');
+      }
 
       return {
         id: row.id,
@@ -2777,10 +2783,24 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
       }
     }
 
+    // Resolve attached document from variables
+    const attachedDocUrl = variables?.['Documento Adjunto (URL)'] 
+      || variables?.['Documento Adjunto (URL / PDF)']
+      || variables?.['Documento Adjunto'] 
+      || variables?.['documento_url']
+      || variables?.['receipt_url']
+      || variables?.['archivo_url'];
+
+    const attachedDocName = variables?.['Nombre del Documento'] 
+      || (variables?.['ID de Factura / Documento'] ? `Factura_${variables['ID de Factura / Documento']}.pdf` : null)
+      || (attachedDocUrl ? 'Documento_Factura.pdf' : null);
+
     const stepsWithDates = (template.steps || []).map((step, idx) => {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || 1));
       
+      const shouldAttach = (step.requiresAttachment || idx === 0) && !!attachedDocUrl;
+
       return {
         ...step,
         id: step.id || `step_run_${idx}_${Date.now()}`,
@@ -2788,11 +2808,12 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
         description: replaceVariables(step.description, variables) || '',
         motivation: replaceVariables(step.motivation, variables) || '',
         assignedTo: (step.assignedTo && step.assignedTo !== 'Unassigned') ? step.assignedTo : (targetEmail || 'Unassigned'),
-        isCompleted: false,
-        completedAt: null,
-        completedBy: null,
+        isCompleted: shouldAttach ? true : false,
+        completedAt: shouldAttach ? new Date().toISOString() : null,
+        completedBy: shouldAttach ? 'Kônsul Automations' : null,
         dueDate: dueDate.toISOString(),
-        uploadedFileName: null
+        uploadedFileName: shouldAttach ? (attachedDocName || 'Documento_Factura.pdf') : (step.uploadedFileName || null),
+        uploadedFileUrl: shouldAttach ? attachedDocUrl : (step.uploadedFileUrl || null)
       };
     });
 

@@ -483,7 +483,7 @@ export const ActiveExecutionModal = ({
                                 </div>
                               ) : (
                                 <div style={{ width: '100%' }}>
-                                  {step.isCompleted ? (
+                                  {step.isCompleted || step.uploadedFileName ? (
                                     <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <FileCheck size={14} />
@@ -493,7 +493,15 @@ export const ActiveExecutionModal = ({
                                       </div>
                                       <button
                                         type="button"
-                                        onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
+                                        onClick={() => {
+                                          const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
+                                          setPreviewFile(fileStore[step.id] || { 
+                                            name: step.uploadedFileName || 'Documento.pdf', 
+                                            url: url,
+                                            type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
+                                            mock: !url
+                                          });
+                                        }}
                                         className="close-btn-aesthetic"
                                         style={{ width: '24px', height: '24px', padding: 0 }}
                                         title="Previsualizar archivo"
@@ -950,21 +958,31 @@ export const ActiveExecutionModal = ({
                                    )}
                                  </div>
                                ) : (
-                                 <div style={{ width: '100%' }}>
-                                   {step.isCompleted ? (
+                                  <div style={{ width: '100%' }}>
+                                   {step.isCompleted || step.uploadedFileName ? (
                                      <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                         <FileCheck size={16} />
-                                         <span>{step.uploadedFileName || 'Archivo cargado'}</span>
+                                         <FileCheck size={14} />
+                                         <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                           {step.uploadedFileName || 'Cargado'}
+                                         </span>
                                        </div>
                                        <button
                                          type="button"
-                                         onClick={() => setPreviewFile(fileStore[step.id] || { name: step.uploadedFileName, mock: true })}
+                                         onClick={() => {
+                                           const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
+                                           setPreviewFile(fileStore[step.id] || { 
+                                             name: step.uploadedFileName || 'Documento.pdf', 
+                                             url: url,
+                                             type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
+                                             mock: !url
+                                           });
+                                         }}
                                          className="close-btn-aesthetic"
-                                         style={{ width: '28px', height: '28px', padding: 0 }}
+                                         style={{ width: '24px', height: '24px', padding: 0 }}
                                          title="Previsualizar archivo"
                                        >
-                                         <Eye size={14} />
+                                         <Eye size={12} />
                                        </button>
                                      </div>
                                    ) : (
