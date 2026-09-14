@@ -3,8 +3,8 @@ import {
   X, 
   Check, 
   Calendar, 
-  MessageSquare, 
   User, 
+  Users,
   Upload, 
   Lightbulb,
   ChevronLeft,
@@ -12,7 +12,6 @@ import {
   Paperclip,
   Trash2,
   ExternalLink,
-  Phone,
   Mail,
   FileText,
   Clock,
@@ -22,8 +21,13 @@ import {
   Zap,
   Edit2,
   AlertCircle,
-  Eye,
-  Building,
+  AlertTriangle,
+  ListChecks,
+  Layers,
+  ArrowRight,
+  Tag,
+  Sliders,
+  RefreshCw,
   ChevronDown
 } from 'lucide-react';
 
@@ -61,9 +65,6 @@ export const ProjectDetailsModal = ({
   const [emailBody, setEmailBody] = useState('');
   const [emailSendStatus, setEmailSendStatus] = useState(null);
 
-  // Preview file sub-modal
-  const [previewFile, setPreviewFile] = useState(null);
-
   // Calendar state
   const today = new Date();
   const [calMonth, setCalMonth] = useState(today.getMonth());
@@ -91,9 +92,37 @@ export const ProjectDetailsModal = ({
   const instanceAttachments = activeInstance.attachments || [];
   const instanceNotes = activeInstance.notes || [];
 
+  // Get unique assigned members across all steps
+  const assignedMemberIds = new Set();
+  steps.forEach(step => {
+    if (step.assignedTo && step.assignedTo !== 'Unassigned') {
+      if (Array.isArray(step.assignedTo)) {
+        step.assignedTo.forEach(id => assignedMemberIds.add(String(id)));
+      } else {
+        assignedMemberIds.add(String(step.assignedTo));
+      }
+    }
+  });
+
+  const involvedMembers = teamMembers.filter(m => 
+    assignedMemberIds.has(String(m.id)) || assignedMemberIds.has(m.email)
+  );
+
+  // Calculate target final date from steps
+  let finalDueDate = null;
+  let hasOverdueSteps = false;
+  if (steps.length > 0) {
+    const dates = steps.filter(s => s.dueDate).map(s => new Date(s.dueDate).getTime());
+    if (dates.length > 0) {
+      finalDueDate = new Date(Math.max(...dates));
+      const todayTime = new Date().setHours(0,0,0,0);
+      hasOverdueSteps = steps.some(s => !s.isCompleted && s.dueDate && new Date(s.dueDate).getTime() < todayTime);
+    }
+  }
+
   // Helper for initial letters avatar
   const getInitials = (name = '') => {
-    if (!name) return 'KP';
+    if (!name) return 'PR';
     const parts = name.trim().split(' ').filter(Boolean);
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -101,7 +130,7 @@ export const ProjectDetailsModal = ({
     return name.substring(0, 2).toUpperCase();
   };
 
-  // Helper for relative time formatting (e.g. "hace 28 días", "hace 5 min", "hace alrededor de 1 mes")
+  // Helper for relative time formatting
   const getRelativeTime = (dateStr) => {
     if (!dateStr) return 'Reciente';
     const now = new Date();
@@ -128,7 +157,7 @@ export const ProjectDetailsModal = ({
     return 'hace unos momentos';
   };
 
-  // Compile full activity feed (notes + step comments + step completions + start event)
+  // Compile real activity feed
   const activityFeed = [];
 
   // 1. Start event
@@ -153,7 +182,6 @@ export const ProjectDetailsModal = ({
       title: note.text,
       timestamp: note.timestamp,
       author: note.author || 'Usuario',
-      authorAvatar: note.authorAvatar || null,
       icon: 'file-text'
     });
   });
@@ -166,7 +194,7 @@ export const ProjectDetailsModal = ({
         type: 'step_comment',
         category: 'NOTA',
         title: comm.text,
-        subtext: `En paso: "${step.title}"`,
+        subtext: `En el paso: "${step.title}"`,
         timestamp: comm.timestamp,
         author: comm.author || comm.userName || 'Colaborador',
         icon: 'file-text'
@@ -182,9 +210,9 @@ export const ProjectDetailsModal = ({
         id: `step_done_${step.id}`,
         type: 'completion',
         category: 'SISTEMA',
-        title: `Tarea completada: "${step.title}"`,
-        timestamp: step.dueDate || activeInstance.startedAt,
-        author: assignedMember?.name || currentUser?.name || 'Gabriel Valverde',
+        title: `Paso completado: "${step.title}"`,
+        timestamp: step.completedAt || step.dueDate || activeInstance.startedAt,
+        author: assignedMember?.name || currentUser?.name || 'Equipo Kônsul',
         icon: 'check'
       });
     }
@@ -212,7 +240,7 @@ export const ProjectDetailsModal = ({
     const newNote = {
       id: `note_${Date.now()}`,
       text: noteText.trim(),
-      author: currentUser?.name || 'Gabriel Valverde',
+      author: currentUser?.name || 'Usuario',
       timestamp: new Date().toISOString()
     };
 
@@ -222,7 +250,7 @@ export const ProjectDetailsModal = ({
     }
     setNoteText('');
     setMentionSearch(null);
-    if (addToast) addToast('Nota guardada en el historial de actividad', 'success');
+    if (addToast) addToast('Nota registrada en el historial', 'success');
   };
 
   const handleConsultAI = async () => {
@@ -232,7 +260,7 @@ export const ProjectDetailsModal = ({
       const result = await onAskAIForProjectSummary(activeInstance);
       setAiSummary(result);
     } catch (e) {
-      setAiSummary("No se pudo generar el análisis de IA en este momento.");
+      setAiSummary("No se pudo generar el análisis en este momento.");
     } finally {
       setIsLoadingAI(false);
     }
@@ -249,7 +277,7 @@ export const ProjectDetailsModal = ({
       url: fileUrl,
       stepId: attachStepId || null,
       uploadedAt: new Date().toISOString(),
-      uploadedBy: currentUser?.name || 'Gabriel Valverde'
+      uploadedBy: currentUser?.name || 'Usuario'
     };
     const updated = [...instanceAttachments, newAttachment];
     if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, updated);
@@ -429,12 +457,12 @@ export const ProjectDetailsModal = ({
   // Formatted start date
   const startedDateFormatted = activeInstance.startedAt 
     ? new Date(activeInstance.startedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '12 de agosto, 2026';
+    : 'Fecha no registrada';
 
   // Status score label
-  const scoreNumber = progressPct === 0 ? 0 : progressPct;
-  const scoreStatusLabel = progressPct === 100 ? 'Completado' : progressPct > 50 ? 'Avanzado' : progressPct > 0 ? 'En curso' : 'Bajo';
-  const scoreColor = progressPct === 100 ? '#10B981' : progressPct > 50 ? '#27BEA5' : '#EF4444';
+  const scoreNumber = progressPct;
+  const scoreStatusLabel = progressPct === 100 ? 'Completado' : hasOverdueSteps ? 'Con Atraso' : progressPct > 0 ? 'En curso' : 'Por Iniciar';
+  const scoreColor = progressPct === 100 ? '#10B981' : hasOverdueSteps ? '#EF4444' : '#27BEA5';
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000, backdropFilter: 'blur(4px)', background: 'rgba(5, 15, 25, 0.7)' }} onClick={onClose}>
@@ -467,16 +495,16 @@ export const ProjectDetailsModal = ({
           borderBottom: '1px solid rgba(39, 190, 165, 0.2)',
           position: 'relative'
         }}>
-          {/* Top meta bar (Date on left, Action buttons on right) */}
+          {/* Top meta bar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500, letterSpacing: '0.01em' }}>
-              {startedDateFormatted}
+              Iniciado el {startedDateFormatted}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {onDeleteInstance && (
                 <button
                   onClick={() => {
-                    if (window.confirm(`¿Estás seguro de eliminar "${activeInstance.instanceName}"?`)) {
+                    if (window.confirm(`¿Estás seguro de eliminar el proceso "${activeInstance.instanceName}"?`)) {
                       onDeleteInstance(activeInstance.id);
                     }
                   }}
@@ -493,7 +521,7 @@ export const ProjectDetailsModal = ({
                     cursor: 'pointer',
                     transition: 'all 0.2s'
                   }}
-                  title="Eliminar Ejecución"
+                  title="Eliminar Proceso"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -520,10 +548,10 @@ export const ProjectDetailsModal = ({
             </div>
           </div>
 
-          {/* Profile identity banner (Avatar + Title + Score Box) */}
+          {/* Profile identity banner */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', marginBottom: '1.25rem', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', minWidth: 0 }}>
-              {/* Orange/Red Squircle Avatar */}
+              {/* Vibrant Squircle Avatar */}
               <div style={{
                 width: '64px',
                 height: '64px',
@@ -566,7 +594,7 @@ export const ProjectDetailsModal = ({
               </div>
             </div>
 
-            {/* Score / Progress Card on the right */}
+            {/* Progress / Score Card on the right */}
             <div style={{
               background: 'rgba(3, 29, 25, 0.85)',
               border: '1px solid rgba(39, 190, 165, 0.3)',
@@ -581,10 +609,10 @@ export const ProjectDetailsModal = ({
               flexShrink: 0
             }}>
               <div style={{ fontSize: '1.85rem', fontWeight: 900, color: scoreColor, lineHeight: 1 }}>
-                {scoreNumber}
+                {scoreNumber}%
               </div>
               <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '3px' }}>
-                SCORE
+                PROGRESO
               </div>
               <div style={{
                 fontSize: '0.68rem',
@@ -592,7 +620,7 @@ export const ProjectDetailsModal = ({
                 padding: '2px 8px',
                 borderRadius: '99px',
                 marginTop: '4px',
-                background: progressPct === 100 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                background: progressPct === 100 ? 'rgba(16, 185, 129, 0.2)' : hasOverdueSteps ? 'rgba(239, 68, 68, 0.2)' : 'rgba(39, 190, 165, 0.2)',
                 color: scoreColor
               }}>
                 {scoreStatusLabel}
@@ -607,7 +635,7 @@ export const ProjectDetailsModal = ({
                 ETAPA DEL PIPELINE
               </span>
               <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 500 }}>
-                Haz clic para cambiarla
+                Haz clic para cambiar de estado
               </span>
             </div>
 
@@ -675,11 +703,10 @@ export const ProjectDetailsModal = ({
             </div>
           </div>
 
-          {/* Quick Action Pill Buttons Bar */}
+          {/* Quick Action Pill Buttons Bar (Sober & Universal Lucide Icons) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <button
               onClick={() => {
-                // Advance to next column if possible
                 if (activeColIdx < kanbanColumns.length - 1) {
                   handleStatusChange(kanbanColumns[activeColIdx + 1]);
                 } else {
@@ -701,35 +728,11 @@ export const ProjectDetailsModal = ({
                 boxShadow: '0 4px 15px rgba(39, 190, 165, 0.4)'
               }}
             >
-              <Phone size={14} /> Llamar
+              <ArrowRight size={14} /> Avanzar Etapa
             </button>
 
             <button
               onClick={() => setActiveModalTab('conversacion')}
-              style={{
-                background: '#22C55E',
-                color: '#031D19',
-                border: 'none',
-                borderRadius: '99px',
-                padding: '8px 18px',
-                fontSize: '0.82rem',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 15px rgba(34, 197, 94, 0.35)'
-              }}
-            >
-              <MessageSquare size={14} /> Chatear
-            </button>
-
-            <button
-              onClick={() => {
-                setEmailSubject(`[Proceso: ${activeInstance.instanceName}] Seguimiento`);
-                setEmailBody(`Hola,\n\nTe escribimos en relación al proceso "${activeInstance.instanceName}".\n\nSaludos cordiales.`);
-                setIsEmailModalOpen(true);
-              }}
               style={{
                 background: '#1C2938',
                 border: '1px solid rgba(255,255,255,0.1)',
@@ -744,7 +747,7 @@ export const ProjectDetailsModal = ({
                 cursor: 'pointer'
               }}
             >
-              <Mail size={14} /> Email
+              <Sparkles size={14} color="#27BEA5" /> Asistente IA
             </button>
 
             <button
@@ -766,7 +769,7 @@ export const ProjectDetailsModal = ({
                 cursor: 'pointer'
               }}
             >
-              <FileText size={14} /> Nota
+              <FileText size={14} /> Nueva Nota
             </button>
 
             <button
@@ -785,7 +788,30 @@ export const ProjectDetailsModal = ({
                 cursor: 'pointer'
               }}
             >
-              <CheckCircle2 size={14} /> Tarea
+              <ListChecks size={14} /> Checklist ({completedSteps}/{totalSteps})
+            </button>
+
+            <button
+              onClick={() => {
+                setEmailSubject(`[Proceso: ${activeInstance.instanceName}] Notificación de Seguimiento`);
+                setEmailBody(`Hola,\n\nTe informamos que el proceso "${activeInstance.instanceName}" se encuentra actualmente en la etapa "${activeInstance.status || 'Por hacer'}" con un avance del ${progressPct}%.\n\nSaludos cordiales.`);
+                setIsEmailModalOpen(true);
+              }}
+              style={{
+                background: '#1C2938',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                borderRadius: '99px',
+                padding: '8px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Mail size={14} /> Notificar por Email
             </button>
 
             <button
@@ -804,13 +830,13 @@ export const ProjectDetailsModal = ({
                 cursor: 'pointer'
               }}
             >
-              <Calendar size={14} /> Agendar
+              <Calendar size={14} /> Calendario
             </button>
           </div>
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════
-            TABS BAR: Crisp White SaaS Nav
+            TABS BAR: Crisp SaaS Nav
         ═══════════════════════════════════════════════════════════════ */}
         <div style={{
           background: '#FFFFFF',
@@ -826,7 +852,7 @@ export const ProjectDetailsModal = ({
             { key: 'actividad', label: 'Actividad', badge: totalNotesCount },
             { key: 'tareas', label: 'Tareas', badge: `${completedSteps}/${totalSteps}` },
             { key: 'archivos', label: 'Archivos', badge: instanceAttachments.length > 0 ? instanceAttachments.length : null },
-            { key: 'conversacion', label: 'Conversación' },
+            { key: 'conversacion', label: 'Asistente IA' },
             { key: 'calendario', label: 'Calendario' }
           ].map(({ key, label, badge }) => {
             const isActive = activeModalTab === key;
@@ -875,12 +901,12 @@ export const ProjectDetailsModal = ({
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem 2rem', minHeight: 0 }}>
 
           {/* ───────────────────────────────────────────────────────────
-              TAB 1: DETALLES (Exact match of Image 1 cards)
+              TAB 1: DETALLES (Real Process & Workflow data)
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'detalles' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '920px' }}>
               
-              {/* Card 1: INFORMACIÓN DE CONTACTO / PROCESO */}
+              {/* Card 1: INFORMACIÓN DEL PROCESO */}
               <div style={{
                 background: '#FFFFFF',
                 borderRadius: '20px',
@@ -900,65 +926,115 @@ export const ProjectDetailsModal = ({
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
-                    <User size={18} />
+                    <Layers size={18} />
                   </div>
                   <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    INFORMACIÓN DE CONTACTO Y PROCESO
+                    INFORMACIÓN DEL PROCESO
                   </h3>
                 </div>
 
-                {/* 2x2 Field Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-                  {/* Phone / Category */}
+                {/* 2x3 Field Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                  {/* Process Name */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <Phone size={12} /> CATEGORÍA / TELÉFONO
+                      <FileText size={12} /> NOMBRE DE LA EJECUCIÓN
                     </div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px' }}>
-                      {activeInstance.category || '+507 6405-7713'}
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeInstance.instanceName}
                     </div>
                   </div>
 
-                  {/* Email / Template */}
+                  {/* Template Base */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <Mail size={12} /> CORREO / PLANTILLA BASE
+                      <Sliders size={12} /> PLANTILLA BASE
                     </div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {activeInstance.title ? `${activeInstance.title.toLowerCase().replace(/\s+/g, '')}@gmail.com` : 'contacto@konsul.com'}
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeInstance.title}
                     </div>
                   </div>
 
-                  {/* Assigned to */}
+                  {/* Category */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <User size={12} /> ASIGNADO A
+                      <Tag size={12} /> CATEGORÍA
                     </div>
-                    <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
-                        {(() => {
-                          const firstAssigned = steps.find(s => s.assignedTo && s.assignedTo !== 'Unassigned')?.assignedTo;
-                          const member = teamMembers.find(m => String(m.id) === String(firstAssigned));
-                          return member?.name || currentUser?.name || 'Gabriel Valverde';
-                        })()}
-                      </span>
-                      <ChevronDown size={16} color="#94A3B8" />
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                      {activeInstance.category || 'Operaciones'}
                     </div>
                   </div>
 
-                  {/* Created Date */}
+                  {/* Started At */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <Clock size={12} /> CREADO / INICIADO
+                      <Clock size={12} /> FECHA DE INICIO
                     </div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
                       {startedDateFormatted}
                     </div>
+                  </div>
+
+                  {/* Pipeline Status Selector */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      ESTADO ACTUAL
+                    </div>
+                    <select
+                      value={activeInstance.status || 'Por hacer'}
+                      onChange={e => handleStatusChange(e.target.value)}
+                      style={{
+                        marginTop: '6px',
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        background: '#FFFFFF',
+                        color: '#0F172A',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {kanbanColumns.map((col, idx) => (
+                        <option key={idx} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Priority Selector */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      PRIORIDAD
+                    </div>
+                    <select
+                      value={activeInstance.priority || 'Media'}
+                      onChange={e => onUpdateInstancePriority && onUpdateInstancePriority(activeInstance.id, e.target.value)}
+                      style={{
+                        marginTop: '6px',
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        background: '#FFFFFF',
+                        color: '#0F172A',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="Baja">Baja</option>
+                      <option value="Media">Media</option>
+                      <option value="Alta">Alta</option>
+                      <option value="Urgente">Urgente</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* Card 2: DATOS DEL PROSPECTO / PROCESO */}
+              {/* Card 2: EQUIPO Y SEGUIMIENTO */}
               <div style={{
                 background: '#FFFFFF',
                 borderRadius: '20px',
@@ -978,72 +1054,64 @@ export const ProjectDetailsModal = ({
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
-                    <FileText size={18} />
+                    <Users size={18} />
                   </div>
                   <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    DATOS DEL PROSPECTO Y PROCESO
+                    EQUIPO Y SEGUIMIENTO DEL PROCESO
                   </h3>
                 </div>
 
-                {/* 2x2 Field Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-                  {/* Agendamiento */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                  {/* Involved Members */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
-                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      AGENDAMIENTO DE LLAMADA
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                      COLABORADORES INVOLUCRADOS ({involvedMembers.length})
                     </div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#94A3B8', fontStyle: 'italic', marginTop: '6px' }}>
-                      Sin datos
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {involvedMembers.map((m, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#FFFFFF', border: '1px solid #E2E8F0', padding: '4px 10px', borderRadius: '99px', fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>
+                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#27BEA5', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem' }}>
+                            <User size={10} />
+                          </div>
+                          <span>{m.name}</span>
+                        </div>
+                      ))}
+                      {involvedMembers.length === 0 && (
+                        <span style={{ fontSize: '0.8rem', color: '#94A3B8', fontStyle: 'italic' }}>Sin miembros asignados a los pasos aún</span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Company Name */}
+                  {/* AI Companion Guide */}
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
                     <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      NOMBRE DE EMPRESA
-                    </div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
-                      {activeInstance.instanceName}
-                    </div>
-                  </div>
-
-                  {/* Priority Selector */}
-                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
-                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      PRIORIDAD DEL PROCESO
-                    </div>
-                    <select
-                      value={activeInstance.priority || 'Media'}
-                      onChange={e => onUpdateInstancePriority && onUpdateInstancePriority(activeInstance.id, e.target.value)}
-                      style={{
-                        marginTop: '6px',
-                        width: '100%',
-                        padding: '6px 10px',
-                        borderRadius: '10px',
-                        border: '1px solid #E2E8F0',
-                        fontSize: '0.9rem',
-                        fontWeight: 700,
-                        background: '#FFFFFF',
-                        color: '#0F172A',
-                        outline: 'none',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="Baja">Baja 🟢</option>
-                      <option value="Media">Media 🟡</option>
-                      <option value="Alta">Alta 🟠</option>
-                      <option value="Urgente">Urgente 🔴</option>
-                    </select>
-                  </div>
-
-                  {/* AI Companion */}
-                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
-                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      GUÍA / ASISTENTE IA
+                      GUÍA / ASISTENTE VIRTUAL
                     </div>
                     <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>{activeInstance.companionAvatar || '✨'}</span>
-                      <span>{activeInstance.companionName || 'Asistente Kônsul'}</span>
+                      <Sparkles size={16} color="#27BEA5" />
+                      <span>{activeInstance.companionName || 'Asistente de Procesos Kônsul'}</span>
+                    </div>
+                  </div>
+
+                  {/* Final target date */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      FECHA ESTIMADA DE FINALIZACIÓN
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: hasOverdueSteps ? '#EF4444' : '#0F172A', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Calendar size={14} color={hasOverdueSteps ? '#EF4444' : '#64748B'} />
+                      <span>{finalDueDate ? finalDueDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin fecha límite'}</span>
+                      {hasOverdueSteps && <span style={{ fontSize: '0.7rem', color: '#EF4444', fontWeight: 700 }}>(Pasos vencidos)</span>}
+                    </div>
+                  </div>
+
+                  {/* Overall progress */}
+                  <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1rem' }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      AVANCE TOTAL
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#27BEA5', marginTop: '6px' }}>
+                      {completedSteps} de {totalSteps} pasos ({progressPct}%)
                     </div>
                   </div>
                 </div>
@@ -1053,10 +1121,10 @@ export const ProjectDetailsModal = ({
           )}
 
           {/* ───────────────────────────────────────────────────────────
-              TAB 2: ACTIVIDAD (Exact match of Image 2)
+              TAB 2: ACTIVIDAD (Real Activity Timeline & Notes)
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'actividad' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '920px' }}>
               
               {/* Nueva Nota Box */}
               <div style={{
@@ -1072,12 +1140,11 @@ export const ProjectDetailsModal = ({
                     <span>Nueva nota</span>
                   </div>
                   <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-                    Escribe @ para etiquetar
+                    Escribe @ para etiquetar a un compañero
                   </span>
                 </div>
 
                 <div style={{ position: 'relative' }}>
-                  {/* Mention search popup */}
                   {mentionSearch && (
                     <div style={{
                       position: 'absolute',
@@ -1115,7 +1182,7 @@ export const ProjectDetailsModal = ({
 
                   <textarea
                     ref={noteInputRef}
-                    placeholder="Escribe una nota sobre este prospecto... usa @ para etiquetar a alguien"
+                    placeholder="Escribe una nota o actualización sobre este proceso... usa @ para etiquetar a alguien"
                     value={noteText}
                     onChange={e => {
                       const val = e.target.value;
@@ -1241,9 +1308,6 @@ export const ProjectDetailsModal = ({
                                 <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
                                   {getRelativeTime(item.timestamp)}
                                 </span>
-                                {isNote && (
-                                  <Edit2 size={12} color="#94A3B8" style={{ cursor: 'pointer' }} />
-                                )}
                               </div>
                             </div>
 
@@ -1299,11 +1363,11 @@ export const ProjectDetailsModal = ({
               TAB 3: TAREAS / CHECKLIST
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'tareas' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '920px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF', padding: '1rem 1.25rem', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
-                    Tareas del Proceso ({completedSteps} de {totalSteps})
+                    Pasos del Proceso ({completedSteps} de {totalSteps})
                   </h3>
                   <span style={{ fontSize: '0.8rem', color: '#64748B' }}>
                     {progressPct}% completado
@@ -1315,7 +1379,7 @@ export const ProjectDetailsModal = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {steps.map((step, idx) => {
+                {steps.map(step => {
                   const isExpanded = expandedStepId === step.id;
                   const isOverdue = step.dueDate && new Date(step.dueDate) < today && !step.isCompleted;
 
@@ -1389,7 +1453,7 @@ export const ProjectDetailsModal = ({
                           </div>
                         </div>
 
-                        {/* Badges / Expand Icon */}
+                        {/* Badges / Expand */}
                         <span style={{
                           fontSize: '0.7rem',
                           fontWeight: 700,
@@ -1398,7 +1462,7 @@ export const ProjectDetailsModal = ({
                           background: step.type === 'digital' ? '#EFF6FF' : '#F1F5F9',
                           color: step.type === 'digital' ? '#3B82F6' : '#64748B'
                         }}>
-                          {step.type === 'digital' ? 'Digital' : 'Manual'}
+                          {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
                         </span>
                       </div>
 
@@ -1462,7 +1526,7 @@ export const ProjectDetailsModal = ({
               TAB 4: ARCHIVOS
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'archivos' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '920px' }}>
               {/* Upload Zone */}
               <div style={{
                 background: '#FFFFFF',
@@ -1475,10 +1539,10 @@ export const ProjectDetailsModal = ({
                   <Upload size={22} />
                 </div>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
-                  Subir nuevo archivo o documento
+                  Subir nuevo archivo o entregable
                 </h3>
                 <p style={{ margin: '0 0 1rem 0', fontSize: '0.82rem', color: '#64748B' }}>
-                  Soporta PDFs, imágenes, hojas de cálculo y documentos de entrega.
+                  Soporta PDFs, imágenes, hojas de cálculo y documentos del proceso.
                 </p>
 
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
@@ -1512,7 +1576,7 @@ export const ProjectDetailsModal = ({
               {/* Attachments List */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <h3 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 800, color: '#64748B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  ARCHIVOS ADJUNTOS ({instanceAttachments.length})
+                  DOCUMENTOS Y ADJUNTOS ({instanceAttachments.length})
                 </h3>
 
                 {instanceAttachments.length === 0 ? (
@@ -1591,10 +1655,10 @@ export const ProjectDetailsModal = ({
           )}
 
           {/* ───────────────────────────────────────────────────────────
-              TAB 5: CONVERSACIÓN / ASISTENTE IA
+              TAB 5: ASISTENTE IA (Gemini)
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'conversacion' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '920px' }}>
               <div style={{
                 background: 'radial-gradient(circle at top right, rgba(39, 190, 165, 0.15), transparent 60%), #FFFFFF',
                 borderRadius: '20px',
@@ -1620,16 +1684,20 @@ export const ProjectDetailsModal = ({
                       padding: '6px 16px',
                       fontSize: '0.8rem',
                       fontWeight: 700,
-                      cursor: isLoadingAI ? 'not-allowed' : 'pointer'
+                      cursor: isLoadingAI ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}
                   >
-                    {isLoadingAI ? 'Analizando...' : aiSummary ? 'Actualizar Análisis 🔄' : 'Analizar Estado 🧠'}
+                    <RefreshCw size={13} className={isLoadingAI ? 'animate-spin' : ''} />
+                    {isLoadingAI ? 'Analizando...' : aiSummary ? 'Actualizar Análisis' : 'Analizar Estado'}
                   </button>
                 </div>
 
                 {isLoadingAI ? (
                   <div style={{ textAlign: 'center', padding: '2rem', color: '#64748B', fontSize: '0.9rem' }}>
-                    🧠 Gemini está analizando las tareas, colaboradores y estado de este proceso...
+                    Gemini está analizando los pasos, colaboradores y plazos de este proceso...
                   </div>
                 ) : aiSummary ? (
                   <div style={{ background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '16px', padding: '1.25rem', whiteSpace: 'pre-wrap', fontSize: '0.9rem', color: '#0F172A', lineHeight: '1.6' }}>
@@ -1637,7 +1705,7 @@ export const ProjectDetailsModal = ({
                   </div>
                 ) : (
                   <p style={{ margin: 0, fontSize: '0.88rem', color: '#64748B', lineHeight: '1.5' }}>
-                    Solicita un análisis inteligente en tiempo real sobre el estado de este proceso. Gemini identificará cuellos de botella, pasos críticos y sugerirá la siguiente acción clave.
+                    Solicita un análisis inteligente en tiempo real sobre el estado de este proceso. Gemini identificará cuellos de botella, pasos críticos y sugerirá la siguiente acción clave para el equipo.
                   </p>
                 )}
               </div>
@@ -1648,7 +1716,7 @@ export const ProjectDetailsModal = ({
               TAB 6: CALENDARIO
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'calendario' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '920px' }}>
               {renderCalendar()}
             </div>
           )}
@@ -1657,15 +1725,18 @@ export const ProjectDetailsModal = ({
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
-          SUB-MODAL: ENVIAR EMAIL RÁPIDO
+          SUB-MODAL: ENVIAR EMAIL DE NOTIFICACIÓN
       ═══════════════════════════════════════════════════════════════ */}
       {isEmailModalOpen && (
         <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0,0,0,0.6)' }} onClick={() => setIsEmailModalOpen(false)}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '90%', padding: '1.75rem', background: '#FFFFFF', borderRadius: '20px' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
-                ✉️ Enviar Correo Electrónico
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Mail size={18} color="#27BEA5" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                  Enviar Correo de Notificación
+                </h3>
+              </div>
               <button className="close-btn-aesthetic" onClick={() => setIsEmailModalOpen(false)}><X size={18} /></button>
             </div>
 
@@ -1675,7 +1746,7 @@ export const ProjectDetailsModal = ({
                 <input
                   type="email"
                   required
-                  placeholder="ejemplo@cliente.com"
+                  placeholder="destinatario@correo.com"
                   value={emailRecipient}
                   onChange={e => setEmailRecipient(e.target.value)}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
@@ -1713,7 +1784,7 @@ export const ProjectDetailsModal = ({
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.5rem' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setIsEmailModalOpen(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary" disabled={emailSendStatus?.loading}>
-                  {emailSendStatus?.loading ? 'Enviando...' : 'Enviar Correo'}
+                  {emailSendStatus?.loading ? 'Enviando...' : 'Enviar Notificación'}
                 </button>
               </div>
             </form>
