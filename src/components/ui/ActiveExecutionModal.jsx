@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink } from 'lucide-react';
 
 export const ActiveExecutionModal = ({
   isOpen,
@@ -24,6 +24,7 @@ export const ActiveExecutionModal = ({
   const [focusedIndex, setFocusedIndex] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
   const [showMotivationStepId, setShowMotivationStepId] = useState(null);
+  const [showAttachmentsDropdown, setShowAttachmentsDropdown] = useState(false);
 
   const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null) => {
     handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName);
@@ -222,12 +223,76 @@ export const ActiveExecutionModal = ({
     }
   }
 
+  // Aggregate all attached files (instance level + step level + fileStore)
+  const allAttachments = [];
+  (activeInstance.attachments || []).forEach(att => {
+    allAttachments.push({
+      id: att.id,
+      name: att.name,
+      url: att.url,
+      type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+      uploadedAt: att.uploadedAt,
+      uploadedBy: att.uploadedBy,
+      source: 'Adjunto General'
+    });
+  });
+
+  (activeInstance.steps || []).forEach(step => {
+    const fileFromStore = fileStore?.[step.id];
+    if (step.uploadedFileName || step.uploadedFileUrl || fileFromStore) {
+      allAttachments.push({
+        id: `step_${step.id}`,
+        name: step.uploadedFileName || fileFromStore?.name || 'Documento adjunto',
+        url: step.uploadedFileUrl || fileFromStore?.url || null,
+        type: fileFromStore?.type || (step.uploadedFileName?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+        stepTitle: step.title,
+        source: `Paso: ${step.title}`
+      });
+    }
+  });
+
+  const uniqueAttachments = [];
+  const seenKeys = new Set();
+  allAttachments.forEach(att => {
+    const key = att.url || att.name;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueAttachments.push(att);
+    }
+  });
+
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
       <div className="modal-card" style={{ maxWidth: '1200px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: 'var(--radius-lg)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Fixed Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
-           <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.15rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+             <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>
+             {uniqueAttachments.length > 0 && (
+               <button
+                 onClick={() => setShowAttachmentsDropdown(!showAttachmentsDropdown)}
+                 style={{
+                   border: '1px solid #E2E8F0',
+                   background: showAttachmentsDropdown ? '#E6FFFA' : '#F8FAFC',
+                   color: showAttachmentsDropdown ? '#0D9488' : '#475569',
+                   padding: '4px 10px',
+                   borderRadius: '20px',
+                   fontSize: '0.75rem',
+                   fontWeight: 700,
+                   cursor: 'pointer',
+                   display: 'inline-flex',
+                   alignItems: 'center',
+                   gap: '5px',
+                   transition: 'all 0.15s ease'
+                 }}
+                 title="Ver archivos adjuntos"
+               >
+                 <Paperclip size={13} color={showAttachmentsDropdown ? '#0D9488' : '#64748B'} />
+                 <span>Adjuntos ({uniqueAttachments.length})</span>
+                 <ChevronDown size={13} style={{ transform: showAttachmentsDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+               </button>
+             )}
+           </div>
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
              <button
                onClick={() => setIsFocusMode(!isFocusMode)}
@@ -238,6 +303,94 @@ export const ActiveExecutionModal = ({
              <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
            </div>
         </div>
+
+        {/* Collapsible Top Attachments Drawer */}
+        {showAttachmentsDropdown && uniqueAttachments.length > 0 && (
+          <div style={{
+            background: '#F8FAFC',
+            borderBottom: '1px solid #E2E8F0',
+            padding: '0.85rem 2rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            animation: 'fadeIn 0.2s ease-in-out',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748B', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                Documentos y Archivos Adjuntos ({uniqueAttachments.length})
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {uniqueAttachments.map((att, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '6px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  <FileText size={14} color="#27BEA5" />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {att.name}
+                    </span>
+                    <span style={{ fontSize: '0.65rem', color: '#94A3B8' }}>
+                      {att.source}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                    <button
+                      onClick={() => setPreviewFile({ url: att.url, name: att.name, type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : null) })}
+                      style={{
+                        background: '#F1F5F9',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                        color: '#0F172A',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                      title="Previsualizar"
+                    >
+                      <Eye size={12} /> Ver
+                    </button>
+                    {att.url && (
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={att.name}
+                        style={{
+                          background: '#F1F5F9',
+                          borderRadius: '6px',
+                          padding: '3px 6px',
+                          color: '#64748B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          textDecoration: 'none'
+                        }}
+                        title="Abrir o descargar"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Scrollable Content Container */}
         <div style={{ padding: '0.75rem 2rem 2rem 2rem', overflowY: 'auto', flex: 1 }}>

@@ -28,7 +28,8 @@ import {
   Tag,
   Sliders,
   RefreshCw,
-  ChevronDown
+  ChevronDown,
+  Eye
 } from 'lucide-react';
 
 export const ProjectDetailsModal = ({
@@ -57,6 +58,8 @@ export const ProjectDetailsModal = ({
   const [mentionSearch, setMentionSearch] = useState(null);
   const [aiSummary, setAiSummary] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [showTopAttachments, setShowTopAttachments] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
 
   // Email sub-modal state
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -80,6 +83,8 @@ export const ProjectDetailsModal = ({
       setAiSummary('');
       setActiveModalTab('detalles');
       setNoteText('');
+      setShowTopAttachments(false);
+      setPreviewFile(null);
     }
   }, [activeInstance?.id]);
 
@@ -91,6 +96,46 @@ export const ProjectDetailsModal = ({
   const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
   const instanceAttachments = activeInstance.attachments || [];
   const instanceNotes = activeInstance.notes || [];
+
+  // Aggregate all attached files
+  const allAttachments = [];
+  instanceAttachments.forEach(att => {
+    allAttachments.push({
+      id: att.id,
+      name: att.name,
+      url: att.url,
+      type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+      uploadedAt: att.uploadedAt,
+      uploadedBy: att.uploadedBy,
+      source: 'Adjunto General'
+    });
+  });
+
+  steps.forEach(step => {
+    const fileFromStore = fileStore?.[step.id];
+    if (step.uploadedFileName || step.uploadedFileUrl || fileFromStore) {
+      allAttachments.push({
+        id: `step_${step.id}`,
+        name: step.uploadedFileName || fileFromStore?.name || 'Documento adjunto',
+        url: step.uploadedFileUrl || fileFromStore?.url || null,
+        type: fileFromStore?.type || (step.uploadedFileName?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+        uploadedAt: step.completedAt || step.dueDate || activeInstance.startedAt,
+        uploadedBy: step.completedBy || 'Sistema / Paso',
+        stepTitle: step.title,
+        source: `Paso: ${step.title}`
+      });
+    }
+  });
+
+  const uniqueAttachments = [];
+  const seenAttachmentKeys = new Set();
+  allAttachments.forEach(att => {
+    const key = att.url || att.name;
+    if (!seenAttachmentKeys.has(key)) {
+      seenAttachmentKeys.add(key);
+      uniqueAttachments.push(att);
+    }
+  });
 
   // Get unique assigned members across all steps
   const assignedMemberIds = new Set();
@@ -497,9 +542,35 @@ export const ProjectDetailsModal = ({
         }}>
           {/* Top meta bar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500, letterSpacing: '0.01em' }}>
-              Iniciado el {startedDateFormatted}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500, letterSpacing: '0.01em' }}>
+                Iniciado el {startedDateFormatted}
+              </span>
+              {uniqueAttachments.length > 0 && (
+                <button
+                  onClick={() => setShowTopAttachments(!showTopAttachments)}
+                  style={{
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    background: showTopAttachments ? '#27BEA5' : 'rgba(255, 255, 255, 0.08)',
+                    color: showTopAttachments ? '#031D19' : '#E2E8F0',
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Ver archivos adjuntos del proceso"
+                >
+                  <Paperclip size={12} color={showTopAttachments ? '#031D19' : '#27BEA5'} />
+                  <span>Adjuntos ({uniqueAttachments.length})</span>
+                  <ChevronDown size={12} style={{ transform: showTopAttachments ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {onDeleteInstance && (
                 <button
@@ -834,6 +905,94 @@ export const ProjectDetailsModal = ({
             </button>
           </div>
         </div>
+
+        {/* Collapsible Top Attachments Drawer */}
+        {showTopAttachments && uniqueAttachments.length > 0 && (
+          <div style={{
+            background: '#F8FAFC',
+            borderBottom: '1px solid #E2E8F0',
+            padding: '0.85rem 2rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            animation: 'fadeIn 0.2s ease-in-out',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748B', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                Documentos y Archivos Adjuntos ({uniqueAttachments.length})
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {uniqueAttachments.map((att, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '6px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  <FileText size={14} color="#27BEA5" />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {att.name}
+                    </span>
+                    <span style={{ fontSize: '0.65rem', color: '#94A3B8' }}>
+                      {att.source}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                    <button
+                      onClick={() => setPreviewFile({ url: att.url, name: att.name, type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : null) })}
+                      style={{
+                        background: '#F1F5F9',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                        color: '#0F172A',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                      title="Previsualizar"
+                    >
+                      <Eye size={12} /> Ver
+                    </button>
+                    {att.url && (
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={att.name}
+                        style={{
+                          background: '#F1F5F9',
+                          borderRadius: '6px',
+                          padding: '3px 6px',
+                          color: '#64748B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          textDecoration: 'none'
+                        }}
+                        title="Abrir o descargar"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ═══════════════════════════════════════════════════════════════
             TABS BAR: Crisp SaaS Nav
@@ -1788,6 +1947,99 @@ export const ProjectDetailsModal = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════
+          SUB-MODAL: PREVIEW DE ARCHIVO / DOCUMENTO
+      ═══════════════════════════════════════════════════════════════ */}
+      {previewFile && (
+        <div className="modal-overlay" style={{ zIndex: 1150, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)' }} onClick={() => setPreviewFile(null)}>
+          <div className="modal-card" style={{ maxWidth: '750px', width: '92%', padding: '1.5rem', background: '#FFFFFF', borderRadius: '20px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #F1F5F9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={18} color="#27BEA5" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0F172A' }}>
+                  Previsualización del Archivo
+                </h3>
+              </div>
+              <button className="close-btn-aesthetic" onClick={() => setPreviewFile(null)}><X size={18} /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '0.5rem 0' }}>
+              {previewFile.url ? (
+                previewFile.type && previewFile.type.startsWith('image/') ? (
+                  <img 
+                    src={previewFile.url} 
+                    alt={previewFile.name} 
+                    style={{ maxWidth: '100%', maxHeight: '420px', borderRadius: '12px', objectFit: 'contain', border: '1px solid #E2E8F0' }} 
+                  />
+                ) : (previewFile.type === 'application/pdf' || previewFile.name?.toLowerCase().endsWith('.pdf') || previewFile.url?.toLowerCase().includes('.pdf')) ? (
+                  <iframe 
+                    src={previewFile.url} 
+                    title={previewFile.name} 
+                    style={{ width: '100%', height: '420px', borderRadius: '12px', border: '1px solid #E2E8F0' }} 
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '2.5rem 1.5rem', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0', width: '100%' }}>
+                    <FileText size={48} color="#27BEA5" style={{ margin: '0 auto 0.75rem' }} />
+                    <h4 style={{ margin: '0 0 0.5rem 0', wordBreak: 'break-all', fontSize: '1rem', color: '#0F172A' }}>{previewFile.name}</h4>
+                    <span style={{ fontSize: '0.75rem', background: '#E2E8F0', padding: '3px 10px', borderRadius: '99px', fontWeight: 700 }}>
+                      {previewFile.type || 'Documento adjunto'}
+                    </span>
+                  </div>
+                )
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem 1.5rem', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0', width: '100%' }}>
+                  <FileText size={48} color="#27BEA5" style={{ margin: '0 auto 0.75rem' }} />
+                  <h4 style={{ margin: '0 0 0.5rem 0', wordBreak: 'break-all', fontSize: '1rem', color: '#0F172A' }}>{previewFile.name}</h4>
+                  <span style={{ fontSize: '0.75rem', background: '#E2E8F0', padding: '3px 10px', borderRadius: '99px', fontWeight: 700 }}>
+                    Archivo cargado correctamente
+                  </span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                {previewFile.url && (
+                  <a 
+                    href={previewFile.url} 
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download={previewFile.name} 
+                    style={{
+                      textDecoration: 'none',
+                      background: '#27BEA5',
+                      color: '#fff',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <ExternalLink size={13} /> Abrir / Descargar
+                  </a>
+                )}
+                <button 
+                  onClick={() => setPreviewFile(null)}
+                  style={{
+                    background: '#F1F5F9',
+                    border: 'none',
+                    color: '#0F172A',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
