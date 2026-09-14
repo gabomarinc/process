@@ -231,13 +231,13 @@ export default function Notifications({
                         }
                         markAsRead(e, n.id);
                       }}
-                      style={{ background: '#e8f7f5', color: '#27bea7', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}
+                      style={{ background: '#E6FFFA', color: '#0D9488', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
                     >
                       Sí, listo
                     </button>
                     <button 
                       onClick={(e) => requestHelp(e, n)}
-                      style={{ background: '#fdf3f2', color: '#b58b53', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}
+                      style={{ background: '#FEF2F2', color: '#DC2626', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
                     >
                       No, necesito ayuda
                     </button>

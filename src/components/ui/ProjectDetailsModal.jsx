@@ -310,7 +310,7 @@ export const ProjectDetailsModal = ({
             <span style={{ fontSize:'0.68rem', textTransform:'uppercase', fontWeight:700, letterSpacing:'0.06em', color:'var(--color-primary-hover)' }}>
               {activeInstance.category || 'General'}
             </span>
-            <h2 style={{ fontFamily:'var(--font-serif)', fontSize:'1.4rem', fontWeight:700, color:'var(--text-main)', margin:'2px 0 0 0' }}>
+            <h2 style={{ fontFamily:'var(--font-sans)', fontSize:'1.4rem', fontWeight:800, color:'var(--text-main)', margin:'2px 0 0 0' }}>
               {activeInstance.instanceName}
             </h2>
             <span style={{ fontSize:'0.78rem', color:'var(--text-muted)' }}>

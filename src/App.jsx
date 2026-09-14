@@ -3028,7 +3028,7 @@ const handleDeleteMember = async (id) => {
               {/* Focus vs Bird's Eye View Mode Toggle */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>Ejecuciones Activas</h2>
+                  <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>Ejecuciones Activas</h2>
                   <div style={{ display: 'inline-flex', background: '#f5f3f0', borderRadius: '20px', padding: '3px', marginLeft: '12px' }}>
                     <button
                       onClick={() => setDashboardViewMode('focus')}
@@ -3086,19 +3086,19 @@ const handleDeleteMember = async (id) => {
 
                 if (dashboardViewMode === 'focus' && myMomentSteps.length > 0) {
                   return (
-                    <div className="my-moment-container" style={{ background: 'linear-gradient(135deg, #fdfbf7 0%, #FAF8F5 100%)', border: '1px solid #ebd8c0', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)' }}>
+                    <div className="my-moment-container" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '1.5rem', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
                         <span style={{ fontSize: '1.5rem' }}>🎯</span>
-                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#664d2d' }}>Mi Momento (Tus Pendientes de Hoy)</h3>
+                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>Mi Momento (Tus Pendientes de Hoy)</h3>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {myMomentSteps.map(item => (
-                          <div key={item.step.id} onClick={() => setSelectedInstanceId(item.instance.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', border: '1px solid #ebd8c0', borderRadius: '12px', padding: '1rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} className="hover-lift-subtle">
+                          <div key={item.step.id} onClick={() => setSelectedInstanceId(item.instance.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '1rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} className="hover-lift-subtle">
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary-hover)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-primary-hover)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                 {item.instance.instanceName}
                               </span>
-                              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                              <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>
                                 {item.step.title}
                               </span>
                               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -3109,7 +3109,7 @@ const handleDeleteMember = async (id) => {
                               <span className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>
                                 Vence: {new Date(item.step.dueDate).toLocaleDateString()}
                               </span>
-                              <span style={{ fontSize: '0.75rem', color: '#b58b53', fontWeight: 600 }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 700 }}>
                                 Toca tu turno ➡️
                               </span>
                             </div>
@@ -3150,7 +3150,7 @@ const handleDeleteMember = async (id) => {
                   return (
                     <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', color: 'var(--color-primary)' }}><Rocket size={64} /></div>
-                      <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
+                      <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.5rem', marginBottom: '0.5rem' }}>No hay ejecuciones activas</h3>
                       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Selecciona una plantilla e iníciala para comenzar a seguir un proceso en tiempo real.</p>
                       {user?.role !== 'guest' && (
                         <button
@@ -3275,7 +3275,7 @@ const handleDeleteMember = async (id) => {
             /* Templates View Grid & Popup details Modal */
             <div>
               <div className="section-title">
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)' }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)' }}>
                   Plantillas de Procesos
                 </h2>
                 <span className="badge primary">{templates.length} Plantillas</span>
@@ -3460,7 +3460,7 @@ const handleDeleteMember = async (id) => {
           ) : activeTab === 'clients' ? (
             <div>
               <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
                   Clientes
                 </h2>
               </div>
@@ -3503,7 +3503,7 @@ const handleDeleteMember = async (id) => {
             /* Team Tab View */
             <div>
               <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
                   Equipo de Trabajo
                 </h2>
                 <button className="btn btn-primary" onClick={() => {
@@ -3618,7 +3618,7 @@ const handleDeleteMember = async (id) => {
           ) : activeTab === 'ecosystem' ? (
             <div>
               <div className="section-title">
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
                   Ecosistema de Aplicaciones
                 </h2>
               </div>
@@ -4023,7 +4023,7 @@ const handleDeleteMember = async (id) => {
             /* Settings Tab View (activeTab === 'settings') */
             <div>
               <div className="section-title" style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
                   <Settings size={22} style={{ marginRight: '6px', display: 'inline-block', verticalAlign: 'middle' }} /> Configuración del Sistema
                 </h2>
               </div>
@@ -5127,23 +5127,24 @@ const handleDeleteMember = async (id) => {
           </div>
 
           {/* The Chat Panel */}
+          {/* The Chat Panel */}
           {isChatModalOpen && (
             <div style={{
               position: 'fixed', bottom: '110px', right: '30px', zIndex: 9998,
-              background: 'linear-gradient(135deg, #ffffff 0%, #FAF8F5 100%)',
-              borderRadius: '16px', width: '380px', maxHeight: '550px',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.15)', border: '1px solid rgba(181, 139, 83, 0.25)',
+              background: '#FFFFFF',
+              borderRadius: '20px', width: '380px', maxHeight: '550px',
+              boxShadow: 'var(--shadow-card)', border: '1px solid #E2E8F0',
               display: 'flex', flexDirection: 'column', overflow: 'hidden'
             }} onClick={e => e.stopPropagation()}>
               
               {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px dashed rgba(181, 139, 83, 0.15)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.1rem 1.25rem', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ background: '#FFF7ED', color: 'var(--color-primary)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ background: '#E6FFFA', color: 'var(--color-primary)', width: '34px', height: '34px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Sparkles size={16} />
                   </div>
                   <div>
-                    <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', margin: 0, fontWeight: 'bold', color: 'var(--text-main)' }}>Asistente Kônsul</h3>
+                    <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.05rem', margin: 0, fontWeight: 800, color: 'var(--text-main)' }}>Asistente Kônsul</h3>
                   </div>
                 </div>
               </div>
@@ -5165,7 +5166,7 @@ const handleDeleteMember = async (id) => {
                         setChatMessages([]);
                       }
                     }}
-                    style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '8px', border: '1px solid #ebd8c0', fontSize: '0.85rem', outline: 'none', background: 'white', cursor: 'pointer' }}
+                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: '0.85rem', outline: 'none', background: '#F8FAFC', cursor: 'pointer' }}
                   >
                     <option value="">-- Seleccionar Proceso --</option>
                     {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
@@ -5173,27 +5174,27 @@ const handleDeleteMember = async (id) => {
                 </div>
               ) : (
                 <>
-                  <div style={{ padding: '0.5rem 1.25rem', background: 'rgba(255,255,255,0.5)', borderBottom: '1px solid rgba(181,139,83,0.1)', fontSize: '0.75rem', color: 'var(--color-primary-hover)', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ padding: '0.5rem 1.25rem', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', fontSize: '0.75rem', color: 'var(--color-primary-hover)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>📖 {templates.find(t => t.id === chatTemplateId)?.title}</span>
                     <button onClick={() => setChatTemplateId('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.7rem', textDecoration: 'underline' }}>Cambiar</button>
                   </div>
                   {/* Chat Thread */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', height: '300px', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(255, 255, 255, 0.4)' }}>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', height: '300px', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#F8FAFC' }}>
                     {chatMessages.map((msg, idx) => (
                       <div key={idx} style={{
                         padding: '10px 14px', borderRadius: msg.sender === 'user' ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
                         fontSize: '0.85rem', maxWidth: '85%', lineHeight: 1.4,
                         alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                        background: msg.sender === 'user' ? 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)' : 'white',
+                        background: msg.sender === 'user' ? '#27BEA5' : 'white',
                         color: msg.sender === 'user' ? 'white' : 'var(--text-main)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: msg.sender === 'user' ? 'none' : '1px solid rgba(181,139,83,0.1)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: msg.sender === 'user' ? 'none' : '1px solid #E2E8F0',
                         whiteSpace: 'pre-wrap', textAlign: 'left'
                       }}>
                         {msg.text}
                       </div>
                     ))}
                     {isChatLoading && (
-                      <div style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '16px 16px 16px 2px', background: 'white', border: '1px solid rgba(181,139,83,0.1)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '16px 16px 16px 2px', background: 'white', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
                         <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite 0.2s' }} />
                         <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite 0.4s' }} />
@@ -5201,13 +5202,13 @@ const handleDeleteMember = async (id) => {
                     )}
                   </div>
                   {/* Footer Form */}
-                  <form onSubmit={handleSendChatMessage} style={{ padding: '1rem 1.25rem', borderTop: '1px dashed rgba(181, 139, 83, 0.15)', display: 'flex', gap: '8px' }}>
+                  <form onSubmit={handleSendChatMessage} style={{ padding: '1rem 1.25rem', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '8px', background: '#FFFFFF' }}>
                     <input
                       type="text" placeholder="Pregúntale a la IA..." value={chatInput} onChange={e => setChatInput(e.target.value)}
                       disabled={isChatLoading || !apiKey}
-                      style={{ flex: 1, padding: '0.6rem 0.8rem', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid #ebd8c0', outline: 'none', background: 'white' }}
+                      style={{ flex: 1, padding: '0.65rem 0.85rem', fontSize: '0.85rem', borderRadius: '12px', border: '1px solid #E2E8F0', outline: 'none', background: '#F8FAFC' }}
                     />
-                    <button type="submit" className="btn btn-primary" disabled={isChatLoading || !apiKey} style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', borderRadius: '8px', fontWeight: 600 }}>
+                    <button type="submit" className="btn btn-primary" disabled={isChatLoading || !apiKey} style={{ padding: '0.65rem 1.15rem', fontSize: '0.85rem', borderRadius: '12px', fontWeight: 700 }}>
                       Enviar
                     </button>
                   </form>

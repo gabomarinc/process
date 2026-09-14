@@ -245,7 +245,7 @@ export const ActiveExecutionModal = ({
             {/* Header info */}
             <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <div>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', marginBottom: '4px' }}>
                   {activeInstance.instanceName}
                 </h2>
                 <div style={{ fontSize: '1.1rem', color: 'var(--color-primary)', fontWeight: 'bold', marginBottom: '8px' }}>
@@ -446,8 +446,8 @@ export const ActiveExecutionModal = ({
                                           padding: '0.4rem', 
                                           marginTop: '0.5rem', 
                                           background: step.helpRequested ? '#f5f5f5' : 'transparent', 
-                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #ebd8c0', 
-                                          color: step.helpRequested ? '#9e9e9e' : '#b58b53', 
+                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #CBD5E1', 
+                                          color: step.helpRequested ? '#9e9e9e' : 'var(--color-primary)', 
                                           borderRadius: '8px',
                                           cursor: step.helpRequested ? 'not-allowed' : 'pointer'
                                         }}
@@ -541,8 +541,8 @@ export const ActiveExecutionModal = ({
                                           padding: '0.4rem', 
                                           marginTop: '0.5rem', 
                                           background: step.helpRequested ? '#f5f5f5' : 'transparent', 
-                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #ebd8c0', 
-                                          color: step.helpRequested ? '#9e9e9e' : '#b58b53', 
+                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #CBD5E1', 
+                                          color: step.helpRequested ? '#9e9e9e' : 'var(--color-primary)', 
                                           borderRadius: '8px',
                                           cursor: step.helpRequested ? 'not-allowed' : 'pointer'
                                         }}
@@ -616,8 +616,8 @@ export const ActiveExecutionModal = ({
 
                             {/* Notas / Comentarios */}
                             {(commentingStepId === step.id || isCenter) && (
-                              <div style={{ background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '10px', padding: '0.75rem', textAlign: 'left' }}>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.75rem', textAlign: 'left' }}>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span>Notas de Relevo / Colaboración</span>
                                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
                                 </div>
@@ -654,11 +654,11 @@ export const ActiveExecutionModal = ({
                                     const matches = teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.query.toLowerCase()));
                                     if (matches.length === 0) return null;
                                     return (
-                                      <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ebd8c0', borderRadius: '8px', zIndex: 50, display: 'flex', flexDirection: 'column', maxHeight: '120px', overflowY: 'auto', boxShadow: '0 -4px 10px rgba(0,0,0,0.08)' }}>
+                                      <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'white', border: '1px solid #E2E8F0', borderRadius: '12px', zIndex: 50, display: 'flex', flexDirection: 'column', maxHeight: '120px', overflowY: 'auto', boxShadow: 'var(--shadow-card)' }}>
                                         {matches.map(m => (
                                           <div 
                                             key={m.id} 
-                                            style={{ padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #f5f3f0', textAlign: 'left' }}
+                                            style={{ padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}
                                             onClick={() => {
                                               const words = commentText.split(' ');
                                               words.pop(); // Remove @query
@@ -687,9 +687,9 @@ export const ActiveExecutionModal = ({
                                         setMentionSearch(null);
                                       }
                                     }}
-                                    style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
+                                    style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #E2E8F0', outline: 'none' }}
                                   />
-                                  <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
+                                  <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem', borderRadius: '8px' }}>
                                     Guardar
                                   </button>
                                 </form>
@@ -807,8 +807,8 @@ export const ActiveExecutionModal = ({
 
                           {/* Steps List Comments Block */}
                           {commentingStepId === step.id && (
-                            <div style={{ marginTop: '1rem', background: '#FAF8F5', border: '1px solid #ebd8c0', borderRadius: '8px', padding: '0.75rem', textAlign: 'left' }}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ marginTop: '1rem', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.75rem', textAlign: 'left' }}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span>Notas de Relevo</span>
                                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({step.comments?.length || 0})</span>
                               </div>
@@ -844,9 +844,9 @@ export const ActiveExecutionModal = ({
                                   placeholder="Nota..."
                                   value={commentText}
                                   onChange={e => setCommentText(e.target.value)}
-                                  style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #ebd8c0', outline: 'none' }}
+                                  style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #E2E8F0', outline: 'none' }}
                                 />
-                                <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>
+                                <button type="submit" className="btn btn-primary" style={{ padding: '2px 8px', fontSize: '0.7rem', borderRadius: '8px' }}>
                                   Guardar
                                 </button>
                               </form>
@@ -919,7 +919,7 @@ export const ActiveExecutionModal = ({
                                        <button
                                          type="button"
                                          className="btn btn-secondary"
-                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
                                          onClick={async (e) => {
                                            e.stopPropagation();
                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
@@ -994,7 +994,7 @@ export const ActiveExecutionModal = ({
                                        <button
                                          type="button"
                                          className="btn btn-secondary"
-                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #ebd8c0', color: '#b58b53' }}
+                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
                                          onClick={async (e) => {
                                            e.stopPropagation();
                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;

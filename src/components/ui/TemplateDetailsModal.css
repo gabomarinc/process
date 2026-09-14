@@ -44,10 +44,10 @@
 
 .tdm-header-title {
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 800;
   color: #0f172a;
   margin: 0;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans);
 }
 
 .tdm-header-desc {
