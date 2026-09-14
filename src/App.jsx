@@ -55,7 +55,8 @@ import {
   Save,
   Mic,
   Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
-  Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid
+  Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid,
+  Copy, RefreshCw, Database, ExternalLink, Download
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -328,6 +329,35 @@ function App() {
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
   const [kanbanColumns, setKanbanColumns] = useState(["Por hacer", "En curso", "Terminado"]);
   const [selectedKanbanInstanceId, setSelectedKanbanInstanceId] = useState("");
+  const [settingsTab, setSettingsTab] = useState('general'); // 'general' or 'api'
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [copiedField, setCopiedField] = useState(null);
+
+  const handleCopy = (text, field) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleRegenerateApiKey = async () => {
+    if (window.confirm("¿Estás seguro de que deseas regenerar tu API Key? Las herramientas conectadas actualmente usando esta clave perderán el acceso hasta que las actualices.")) {
+      try {
+        const res = await fetch('/api/developer/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Kônsul Suite Key' })
+        });
+        if (res.ok) {
+          fetchApiTokens();
+          addToast('API Key regenerada con éxito', 'success');
+        }
+      } catch (err) {
+        console.error('Error al regenerar API Key:', err);
+        addToast('Error al regenerar API Key', 'error');
+      }
+    }
+  };
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -486,8 +516,12 @@ function App() {
         setActiveTab('team');
       } else if (hash === '#/ecosistema') {
         setActiveTab('ecosystem');
-      } else if (hash === '#/ajustes') {
+      } else if (hash === '#/ajustes/api') {
         setActiveTab('settings');
+        setSettingsTab('api');
+      } else if (hash === '#/ajustes' || hash === '#/ajustes/general') {
+        setActiveTab('settings');
+        setSettingsTab('general');
       }
     };
 
@@ -524,13 +558,13 @@ function App() {
     } else if (activeTab === 'ecosystem') {
       targetHash = '#/ecosistema';
     } else if (activeTab === 'settings') {
-      targetHash = '#/ajustes';
+      targetHash = settingsTab === 'api' ? '#/ajustes/api' : '#/ajustes';
     }
 
     if (window.location.hash !== targetHash) {
       window.history.pushState(null, document.title, targetHash);
     }
-  }, [activeTab, selectedInstanceId, selectedTemplateId, user]);
+  }, [activeTab, selectedInstanceId, selectedTemplateId, settingsTab, user]);
 
 
   // Fetch initial data from database (Optimized Bootstrapping)
@@ -3988,463 +4022,918 @@ const handleDeleteMember = async (id) => {
           ) : (
             /* Settings Tab View (activeTab === 'settings') */
             <div>
-              <div className="section-title">
+              <div className="section-title" style={{ marginBottom: '1.5rem' }}>
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>
-                  <Settings size={20} style={{marginRight:'4px', display:'inline-block'}}/> Configuración del Sistema
+                  <Settings size={22} style={{ marginRight: '6px', display: 'inline-block', verticalAlign: 'middle' }} /> Configuración del Sistema
                 </h2>
               </div>
-              <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
-                Administra los detalles de tu cuenta personal, la información general de la empresa y la gestión de usuarios con sus respectivos roles de acceso.
-              </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
-                
-                {/* Form 1: Profile Details */}
-                <div id="profile-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Mi Perfil</h3>
-                  <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre Completo</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        value={profileFormData.name} 
-                        onChange={(e) => setProfileFormData({ ...profileFormData, name: e.target.value })} 
-                        required 
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Correo Electrónico</label>
-                      <input 
-                        type="email" 
-                        className="form-input" 
-                        value={profileFormData.email} 
-                        onChange={(e) => setProfileFormData({ ...profileFormData, email: e.target.value })} 
-                        required 
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nueva Contraseña (dejar vacío para mantener actual)</label>
-                      <input 
-                        type="password" 
-                        className="form-input" 
-                        placeholder="••••••••" 
-                        value={profileFormData.password} 
-                        onChange={(e) => setProfileFormData({ ...profileFormData, password: e.target.value })} 
-                      />
-                    </div>
-                    {user?.role === 'admin' && (
-                      <>
-                        <div className="form-group">
-                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre del Acompañante/Guía por Defecto</label>
-                          <input 
-                            type="text" 
-                            className="form-input" 
-                            placeholder="Ej. Kônsul Bot" 
-                            value={profileFormData.companionName} 
-                            onChange={(e) => setProfileFormData({ ...profileFormData, companionName: e.target.value })} 
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Emoji del Acompañante/Guía (Avatar)</label>
-                          <input 
-                            type="text" 
-                            className="form-input" 
-                            placeholder="Ej. Avatar URL" 
-                            value={profileFormData.companionAvatar} 
-                            onChange={(e) => setProfileFormData({ ...profileFormData, companionAvatar: e.target.value })} 
-                          />
-                        </div>
-                      </>
-                    )}
-                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                      Actualizar Perfil
-                    </button>
-                  </form>
-                </div>
-
-                {/* Form: Email Settings (SMTP & IMAP/POP) */}
-                <div id="email-settings-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-main)' }}>Conexión de Correo</h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Conecta tus credenciales (IMAP/POP y SMTP) para enviar correos desde las ejecuciones.</p>
-                  
-                  <form onSubmit={handleSaveEmailSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px' }}>Envío (SMTP)</div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <div className="form-group" style={{ flex: 2 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host SMTP</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="smtp.gmail.com"
-                          value={smtpSettings.smtpHost} 
-                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} 
-                          required 
-                        />
-                      </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto SMTP</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="465"
-                          value={smtpSettings.smtpPort} 
-                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPort: e.target.value })} 
-                          required 
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Usuario SMTP</label>
-                        <input 
-                          type="email" 
-                          className="form-input" 
-                          placeholder="usuario@correo.com"
-                          value={smtpSettings.smtpUser} 
-                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} 
-                          required 
-                        />
-                      </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Contraseña SMTP</label>
-                        <input 
-                          type="password" 
-                          className="form-input" 
-                          placeholder="••••••••"
-                          value={smtpSettings.smtpPass} 
-                          onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPass: e.target.value })} 
-                          required 
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px', marginTop: '0.5rem' }}>Recepción (IMAP/POP)</div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <div className="form-group" style={{ flex: 2 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host IMAP/POP</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="imap.gmail.com"
-                          value={imapSettings.imapHost} 
-                          onChange={(e) => setImapSettings({ ...imapSettings, imapHost: e.target.value })} 
-                        />
-                      </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="993"
-                          value={imapSettings.imapPort} 
-                          onChange={(e) => setImapSettings({ ...imapSettings, imapPort: e.target.value })} 
-                        />
-                      </div>
-                    </div>
-                    <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '6px' }}>
-                      <input 
-                        type="checkbox"
-                        id="imapSecure"
-                        checked={imapSettings.imapSecure}
-                        onChange={(e) => setImapSettings({ ...imapSettings, imapSecure: e.target.checked })}
-                      />
-                      <label htmlFor="imapSecure" style={{ fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>Conexión Segura (SSL/TLS)</label>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <button 
-                        type="button" 
-                        onClick={handleTestEmailConnection} 
-                        className="btn btn-secondary" 
-                        disabled={emailTestStatus?.loading}
-                        style={{ flex: 1, padding: '0.65rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}
-                      >
-                        {emailTestStatus?.loading ? 'Probando...' : 'Probar Conexión'}
-                      </button>
-                      <button 
-                        type="submit" 
-                        className="btn btn-primary" 
-                        style={{ flex: 1 }}
-                      >
-                        Guardar Correo
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                {/* Form 2: Organization Name */}
-                {user?.role === 'admin' && (
-                  <div id="company-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
-                    <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <div className="form-group">
-                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre de la Organización</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          value={orgFormData.name} 
-                          onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} 
-                          required 
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Descripción de la Empresa</label>
-                        <textarea 
-                          className="form-input" 
-                          placeholder="Breve descripción de los servicios, misión o visión de la empresa..."
-                          value={orgFormData.description || ''} 
-                          onChange={(e) => setOrgFormData({ ...orgFormData, description: e.target.value })} 
-                          rows={3}
-                          style={{ resize: 'vertical' }}
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Departamentos o Áreas</label>
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                          <input 
-                            type="text" 
-                            className="form-input" 
-                            placeholder="Ej. Ventas, Soporte, TI..."
-                            value={newDeptInput}
-                            onChange={(e) => setNewDeptInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const val = newDeptInput.trim();
-                                if (val && !orgFormData.departments?.includes(val)) {
-                                  setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
-                                  setNewDeptInput('');
-                                }
-                              }
-                            }}
-                          />
-                          <button 
-                            type="button" 
-                            className="btn btn-secondary" 
-                            onClick={() => {
-                              const val = newDeptInput.trim();
-                              if (val && !orgFormData.departments?.includes(val)) {
-                                setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
-                                setNewDeptInput('');
-                              }
-                            }}
-                          >
-                            Agregar
-                          </button>
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {(orgFormData.departments || []).map((dept, idx) => (
-                            <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'var(--color-primary-light)', color: 'var(--color-primary-hover)', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
-                              {dept}
-                              <button 
-                                type="button" 
-                                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
-                                onClick={() => setOrgFormData({ ...orgFormData, departments: orgFormData.departments.filter(d => d !== dept) })}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-                          {(!orgFormData.departments || orgFormData.departments.length === 0) && (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No hay departamentos agregados.</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-                        Actualizar Empresa
-                      </button>
-                    </form>
-                    <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
-                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Resumen de Roles de la Cuenta:</h4>
-                      <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        <li><strong>Admin:</strong> Control total, ve todos los procesos, plantillas y configuraciones.</li>
-                        <li><strong>Agente:</strong> Colabora en el equipo, ve procesos y plantillas, pero no modifica configuraciones.</li>
-                        <li><strong>Invitado:</strong> Clientes o proveedores. Límite de 10 por empresa. Solo ven ejecuciones en las que participan.</li>
-                      </ul>
-                    </div>
-                  </div>
-                )}
-
+              {/* MODERN TAB SWITCHER (General vs API & Integración LeadsHUB) */}
+              <div style={{ display: 'flex', gap: '1.5rem', borderBottom: '1px solid #e2e8f0', marginBottom: '2rem', paddingBottom: '0.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setSettingsTab('general')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: settingsTab === 'general' ? '2px solid #27bea5' : '2px solid transparent',
+                    color: settingsTab === 'general' ? '#1c2938' : '#94a3b8',
+                    paddingBottom: '0.85rem',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  General
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsTab('api');
+                    if (apiTokens.length === 0 && user?.role === 'admin') {
+                      fetch('/api/developer/tokens', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: 'Kônsul Suite Key' })
+                      }).then(res => {
+                        if (res.ok) fetchApiTokens();
+                      }).catch(console.error);
+                    }
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: settingsTab === 'api' ? '2px solid #27bea5' : '2px solid transparent',
+                    color: settingsTab === 'api' ? '#1c2938' : '#94a3b8',
+                    paddingBottom: '0.85rem',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  API & Integración LeadsHUB
+                  <span style={{
+                    display: 'inline-block',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: '#27bea5',
+                    marginLeft: '4px',
+                    boxShadow: '0 0 0 3px rgba(39, 190, 165, 0.25)'
+                  }}></span>
+                </button>
               </div>
 
-
-              {/* User management list */}
-              {user?.role === 'admin' && (
-                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div>
-                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Gestión de Usuarios</h3>
-                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Administradores, Agentes e Invitados registrados.
-                      </p>
-                    </div>
-                    <button 
-                      className="btn btn-primary" 
-                      onClick={() => {
-                        setAddUserError('');
-                        setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
-                        setShowAddUserModal(true);
-                      }}
-                    >
-                      <Plus size={18} style={{marginRight:'4px', display:'inline-block'}}/> Invitar / Registrar Usuario
-                    </button>
-                  </div>
-
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)', color: 'var(--text-muted)' }}>
-                          <th style={{ padding: '0.75rem 1rem' }}>Nombre</th>
-                          <th style={{ padding: '0.75rem 1rem' }}>Email</th>
-                          <th style={{ padding: '0.75rem 1rem' }}>Rol</th>
-                          <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {orgUsers.map(u => (
-                          <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                            <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
-                            <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
-                            <td style={{ padding: '1rem' }}>
-                              {u.id === user?.id ? (
-                                <span 
-                                  className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'gerente' ? 'warning' : u.role === 'agent' ? 'info' : 'success'}`} 
-                                  style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
-                                >
-                                  {u.role === 'admin' ? 'Administrador' : u.role === 'gerente' ? 'Gerente' : u.role === 'agent' ? 'Agente' : 'Invitado'}
-                                </span>
-                              ) : (
-                                <select
-                                  value={u.role}
-                                  onChange={(e) => handleUpdateUserRole(u.id, e.target.value)}
-                                  style={{
-                                    fontSize: '0.8rem',
-                                    padding: '0.2rem 0.5rem',
-                                    borderRadius: '6px',
-                                    border: '1px solid rgba(0,0,0,0.1)',
-                                    backgroundColor: 'white',
-                                    cursor: 'pointer',
-                                    fontWeight: 600,
-                                    outline: 'none'
-                                  }}
-                                >
-                                  <option value="admin">Administrador</option>
-                                  <option value="gerente">Gerente</option>
-                                  <option value="agent">Agente</option>
-                                  <option value="guest">Invitado</option>
-                                </select>
-                              )}
-                            </td>
-                            <td style={{ padding: '1rem', textAlign: 'right' }}>
-                              {u.id === user?.id ? (
-                                <span style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-muted)' }}>Tú</span>
-                              ) : (
-                                <button 
-                                  className="btn btn-danger" 
-                                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', color: '#d32f2f' }}
-                                  onClick={() => handleDeleteOrgUser(u.id)}
-                                >
-                                  Eliminar
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
-                    {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
-                      <span style={{ color: '#d32f2f', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={14} /> Límite de invitados alcanzado</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Developer API Tokens Management */}
-              {user?.role === 'admin' && (
-                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Desarrollador / Integración de API</h3>
-                  <p style={{ margin: '0.25rem 0 1.5rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Crea y administra llaves de API para conectar Kônsul Process con otras aplicaciones de tu suite.
+              {settingsTab === 'general' ? (
+                /* GENERAL TAB */
+                <div>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
+                    Administra los detalles de tu cuenta personal, la información general de la empresa y la gestión de usuarios con sus respectivos roles de acceso.
                   </p>
 
-                  <form onSubmit={handleCreateApiToken} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="Nombre de la aplicación (ej. LeadsHUB, Facturación)" 
-                      value={newTokenName}
-                      onChange={(e) => setNewTokenName(e.target.value)}
-                      required
-                      style={{ flex: 1 }}
-                    />
-                    <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 1.5rem' }}>
-                      Generar Llave
-                    </button>
-                  </form>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                    
+                    {/* Form 1: Profile Details */}
+                    <div id="profile-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Mi Perfil</h3>
+                      <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre Completo</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            value={profileFormData.name} 
+                            onChange={(e) => setProfileFormData({ ...profileFormData, name: e.target.value })} 
+                            required 
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Correo Electrónico</label>
+                          <input 
+                            type="email" 
+                            className="form-input" 
+                            value={profileFormData.email} 
+                            onChange={(e) => setProfileFormData({ ...profileFormData, email: e.target.value })} 
+                            required 
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nueva Contraseña (dejar vacío para mantener actual)</label>
+                          <input 
+                            type="password" 
+                            className="form-input" 
+                            placeholder="••••••••" 
+                            value={profileFormData.password} 
+                            onChange={(e) => setProfileFormData({ ...profileFormData, password: e.target.value })} 
+                          />
+                        </div>
+                        {user?.role === 'admin' && (
+                          <>
+                            <div className="form-group">
+                              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre del Acompañante/Guía por Defecto</label>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                placeholder="Ej. Kônsul Bot" 
+                                value={profileFormData.companionName} 
+                                onChange={(e) => setProfileFormData({ ...profileFormData, companionName: e.target.value })} 
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Emoji del Acompañante/Guía (Avatar)</label>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                placeholder="Ej. Avatar URL" 
+                                value={profileFormData.companionAvatar} 
+                                onChange={(e) => setProfileFormData({ ...profileFormData, companionAvatar: e.target.value })} 
+                              />
+                            </div>
+                          </>
+                        )}
+                        <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                          Actualizar Perfil
+                        </button>
+                      </form>
+                    </div>
 
-                  {apiTokens.length === 0 ? (
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: '1rem 0' }}>
-                      No tienes llaves de API generadas.
-                    </p>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table className="team-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '2px solid #edf2f7', textAlign: 'left' }}>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Nombre</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Llave API (Token)</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Creado</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Último Uso</th>
-                            <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {apiTokens.map((t) => (
-                            <tr key={t.id} style={{ borderBottom: '1px solid #edf2f7' }}>
-                              <td style={{ padding: '0.75rem 0.5rem', fontWeight: 600 }}>{t.name}</td>
-                              <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'monospace', color: 'var(--color-primary)' }}>
-                                {t.token}
-                              </td>
-                              <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)' }}>
-                                {new Date(t.created_at).toLocaleDateString()}
-                              </td>
-                              <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)' }}>
-                                {t.last_used_at ? new Date(t.last_used_at).toLocaleString() : 'Nunca'}
-                              </td>
-                              <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
-                                <button 
-                                  className="btn btn-secondary" 
-                                  onClick={() => handleRevokeApiToken(t.id)}
-                                  style={{ padding: '2px 8px', fontSize: '0.75rem', borderColor: '#e53e3e', color: '#e53e3e' }}
-                                >
-                                  Revocar
-                                </button>
-                              </td>
+                    {/* Form: Email Settings (SMTP & IMAP/POP) */}
+                    <div id="email-settings-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-main)' }}>Conexión de Correo</h3>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Conecta tus credenciales (IMAP/POP y SMTP) para enviar correos desde las ejecuciones.</p>
+                      
+                      <form onSubmit={handleSaveEmailSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px' }}>Envío (SMTP)</div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="form-group" style={{ flex: 2 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host SMTP</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="smtp.gmail.com"
+                              value={smtpSettings.smtpHost} 
+                              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto SMTP</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="465"
+                              value={smtpSettings.smtpPort} 
+                              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPort: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Usuario SMTP</label>
+                            <input 
+                              type="email" 
+                              className="form-input" 
+                              placeholder="usuario@correo.com"
+                              value={smtpSettings.smtpUser} 
+                              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpUser: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Contraseña SMTP</label>
+                            <input 
+                              type="password" 
+                              className="form-input" 
+                              placeholder="••••••••" 
+                              value={smtpSettings.smtpPass} 
+                              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPass: e.target.value })} 
+                              required 
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-primary)', borderBottom: '1px dashed #e2e8f0', paddingBottom: '4px', marginTop: '0.5rem' }}>Recepción (IMAP/POP)</div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="form-group" style={{ flex: 2 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Host IMAP/POP</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="imap.gmail.com"
+                              value={imapSettings.imapHost} 
+                              onChange={(e) => setImapSettings({ ...imapSettings, imapHost: e.target.value })} 
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.75rem' }}>Puerto</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="993"
+                              value={imapSettings.imapPort} 
+                              onChange={(e) => setImapSettings({ ...imapSettings, imapPort: e.target.value })} 
+                            />
+                          </div>
+                        </div>
+                        <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '6px' }}>
+                          <input 
+                            type="checkbox"
+                            id="imapSecure"
+                            checked={imapSettings.imapSecure}
+                            onChange={(e) => setImapSettings({ ...imapSettings, imapSecure: e.target.checked })}
+                          />
+                          <label htmlFor="imapSecure" style={{ fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>Conexión Segura (SSL/TLS)</label>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                          <button 
+                            type="button" 
+                            onClick={handleTestEmailConnection} 
+                            className="btn btn-secondary" 
+                            disabled={emailTestStatus?.loading}
+                            style={{ flex: 1, padding: '0.65rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}
+                          >
+                            {emailTestStatus?.loading ? 'Probando...' : 'Probar Conexión'}
+                          </button>
+                          <button 
+                            type="submit" 
+                            className="btn btn-primary" 
+                            style={{ flex: 1 }}
+                          >
+                            Guardar Correo
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Form 2: Organization Name */}
+                    {user?.role === 'admin' && (
+                      <div id="company-form-section" style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                        <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-main)' }}>Detalles de la Empresa</h3>
+                        <form onSubmit={handleUpdateOrg} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          <div className="form-group">
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre de la Organización</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              value={orgFormData.name} 
+                              onChange={(e) => setOrgFormData({ ...orgFormData, name: e.target.value })} 
+                              required 
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Descripción de la Empresa</label>
+                            <textarea 
+                              className="form-input" 
+                              placeholder="Breve descripción de los servicios, misión o visión de la empresa..."
+                              value={orgFormData.description || ''} 
+                              onChange={(e) => setOrgFormData({ ...orgFormData, description: e.target.value })} 
+                              rows={3}
+                              style={{ resize: 'vertical' }}
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Departamentos o Áreas</label>
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                placeholder="Ej. Ventas, Soporte, TI..."
+                                value={newDeptInput}
+                                onChange={(e) => setNewDeptInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const val = newDeptInput.trim();
+                                    if (val && !orgFormData.departments?.includes(val)) {
+                                      setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
+                                      setNewDeptInput('');
+                                    }
+                                  }
+                                }}
+                              />
+                              <button 
+                                type="button" 
+                                className="btn btn-secondary" 
+                                onClick={() => {
+                                  const val = newDeptInput.trim();
+                                  if (val && !orgFormData.departments?.includes(val)) {
+                                    setOrgFormData({ ...orgFormData, departments: [...(orgFormData.departments || []), val] });
+                                    setNewDeptInput('');
+                                  }
+                                }}
+                              >
+                                Agregar
+                              </button>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {(orgFormData.departments || []).map((dept, idx) => (
+                                <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', background: 'var(--color-primary-light)', color: 'var(--color-primary-hover)', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                  {dept}
+                                  <button 
+                                    type="button" 
+                                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                    onClick={() => setOrgFormData({ ...orgFormData, departments: orgFormData.departments.filter(d => d !== dept) })}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                              {(!orgFormData.departments || orgFormData.departments.length === 0) && (
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No hay departamentos agregados.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
+                            Actualizar Empresa
+                          </button>
+                        </form>
+                        <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
+                          <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Resumen de Roles de la Cuenta:</h4>
+                          <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            <li><strong>Admin:</strong> Control total, ve todos los procesos, plantillas y configuraciones.</li>
+                            <li><strong>Agente:</strong> Colabora en el equipo, ve procesos y plantillas, pero no modifica configuraciones.</li>
+                            <li><strong>Invitado:</strong> Clientes o proveedores. Límite de 10 por empresa. Solo ven ejecuciones en las que participan.</li>
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+
+                  {/* User management list */}
+                  {user?.role === 'admin' && (
+                    <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-sm)', marginTop: '2rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                        <div>
+                          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Gestión de Usuarios</h3>
+                          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            Administradores, Agentes e Invitados registrados.
+                          </p>
+                        </div>
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={() => {
+                            setAddUserError('');
+                            setNewUserFormData({ name: '', email: '', password: '', role: 'agent' });
+                            setShowAddUserModal(true);
+                          }}
+                        >
+                          <Plus size={18} style={{marginRight:'4px', display:'inline-block'}}/> Invitar / Registrar Usuario
+                        </button>
+                      </div>
+
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)', color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '0.75rem 1rem' }}>Nombre</th>
+                              <th style={{ padding: '0.75rem 1rem' }}>Email</th>
+                              <th style={{ padding: '0.75rem 1rem' }}>Rol</th>
+                              <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Acciones</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {orgUsers.map(u => (
+                              <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                                <td style={{ padding: '1rem', fontWeight: 600 }}>{u.name}</td>
+                                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{u.email}</td>
+                                <td style={{ padding: '1rem' }}>
+                                  {u.id === user?.id ? (
+                                    <span 
+                                      className={`badge ${u.role === 'admin' ? 'primary' : u.role === 'gerente' ? 'warning' : u.role === 'agent' ? 'info' : 'success'}`} 
+                                      style={{ textTransform: 'capitalize', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                                    >
+                                      {u.role === 'admin' ? 'Administrador' : u.role === 'gerente' ? 'Gerente' : u.role === 'agent' ? 'Agente' : 'Invitado'}
+                                    </span>
+                                  ) : (
+                                    <select
+                                      value={u.role}
+                                      onChange={(e) => handleUpdateUserRole(u.id, e.target.value)}
+                                      style={{
+                                        fontSize: '0.8rem',
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '6px',
+                                        border: '1px solid rgba(0,0,0,0.1)',
+                                        backgroundColor: 'white',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                      }}
+                                    >
+                                      <option value="admin">Administrador</option>
+                                      <option value="gerente">Gerente</option>
+                                      <option value="agent">Agente</option>
+                                      <option value="guest">Invitado</option>
+                                    </select>
+                                  )}
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                  {u.id === user?.id ? (
+                                    <span style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-muted)' }}>Tú</span>
+                                  ) : (
+                                    <button 
+                                      className="btn btn-danger" 
+                                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', color: '#d32f2f' }}
+                                      onClick={() => handleDeleteOrgUser(u.id)}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <span>Total Invitados: <strong>{orgUsers.filter(u => u.role === 'guest').length} / 10</strong></span>
+                        {orgUsers.filter(u => u.role === 'guest').length >= 10 && (
+                          <span style={{ color: '#d32f2f', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={14} /> Límite de invitados alcanzado</span>
+                        )}
+                      </div>
                     </div>
                   )}
+                </div>
+              ) : (
+                /* API & LEASDHUB INTEGRATION TAB (EXACT VISUAL DESIGN FROM BILLS) */
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem' }}>
+                  
+                  {/* LEFT COLUMN: CREDENTIALS & AI TOOL SCHEMA */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', gridColumn: 'span 2' }}>
+                    
+                    {/* CARD 1: CREDENCIALES DE API */}
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '2rem',
+                      padding: '2rem',
+                      border: '1px solid #f1f5f9',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '6px',
+                        height: '100%',
+                        backgroundColor: '#27bea5',
+                        borderTopLeftRadius: '2rem',
+                        borderBottomLeftRadius: '2rem'
+                      }}></div>
 
-                  <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f9f9fb', borderRadius: '8px', border: '1px solid #eef' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Guía rápida de integración:</h4>
-                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                      Envía las peticiones HTTPS con la cabecera <code>x-api-key: [Tu Llave API]</code> o <code>Authorization: Bearer [Tu Llave API]</code>. <br />
-                      <strong>Listar Plantillas (GET):</strong> <code>/api/v1/templates</code> <br />
-                      <strong>Iniciar Proceso (POST):</strong> <code>/api/v1/executions</code> (body: <code>{`{ "templateId": "...", "instanceName": "..." }`}</code>) <br />
-                      <strong>Ver Estado (GET):</strong> <code>/api/v1/executions/[id]</code>
-                    </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '1.25rem' }}>
+                        <div style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '14px',
+                          backgroundColor: '#f8fafc',
+                          color: '#27bea5',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Key size={22} />
+                        </div>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#1c2938' }}>
+                          Credenciales de API
+                        </h3>
+                      </div>
+
+                      <p style={{ fontSize: '0.875rem', color: '#64748b', lineHeight: 1.6, margin: '0 0 1.75rem 0' }}>
+                        Usa estas credenciales para conectar Kônsul Process con LeadsHUB o cualquier otra herramienta de tu suite. Mantén esta clave segura; otorga acceso completo a la ejecución y gestión de procesos.
+                      </p>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                        
+                        {/* API KEY FIELD */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            API KEY (X-API-KEY)
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <div style={{ position: 'relative', flex: '1 1 240px' }}>
+                              <input 
+                                type={showApiKey ? 'text' : 'password'}
+                                value={apiTokens.length > 0 ? apiTokens[0].token : 'Generando clave...'}
+                                readOnly
+                                style={{
+                                  width: '100%',
+                                  backgroundColor: '#f8fafc',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '16px',
+                                  padding: '0.85rem 3rem 0.85rem 1rem',
+                                  fontSize: '0.9rem',
+                                  fontFamily: 'monospace',
+                                  color: '#1c2938',
+                                  outline: 'none',
+                                  boxSizing: 'border-box'
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                                style={{
+                                  position: 'absolute',
+                                  right: '0.85rem',
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#94a3b8',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  padding: 0
+                                }}
+                              >
+                                {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(apiTokens.length > 0 ? apiTokens[0].token : '', 'api_key')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0.85rem 1.25rem',
+                                backgroundColor: '#f1f5f9',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                fontWeight: 700,
+                                fontSize: '0.85rem',
+                                color: '#475569',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {copiedField === 'api_key' ? <Check size={16} color="#16a34a" /> : <Copy size={16} />}
+                              {copiedField === 'api_key' ? 'Copiado' : 'Copiar'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleRegenerateApiKey}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0.85rem 1.25rem',
+                                backgroundColor: '#f1f5f9',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                fontWeight: 700,
+                                fontSize: '0.85rem',
+                                color: '#475569',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              <RefreshCw size={16} />
+                              Regenerar
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* URL BASE DEL ENDPOINT */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            URL BASE DEL ENDPOINT
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <input 
+                              type="text"
+                              value={`${window.location.origin}/api/v1`}
+                              readOnly
+                              style={{
+                                flex: '1 1 240px',
+                                backgroundColor: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                padding: '0.85rem 1rem',
+                                fontSize: '0.9rem',
+                                fontFamily: 'monospace',
+                                color: '#475569',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`${window.location.origin}/api/v1`, 'base_url')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0.85rem 1.25rem',
+                                backgroundColor: '#f1f5f9',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                fontWeight: 700,
+                                fontSize: '0.85rem',
+                                color: '#475569',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {copiedField === 'base_url' ? <Check size={16} color="#16a34a" /> : <Copy size={16} />}
+                              {copiedField === 'base_url' ? 'Copiado' : 'Copiar'}
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
+                    {/* CARD 2: CONFIGURACIÓN PARA AGENTES DE IA (LEADSHUB) */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, #1c2938 0%, #0f172a 100%)',
+                      borderRadius: '2rem',
+                      padding: '2rem',
+                      color: 'white',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)'
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '240px',
+                        height: '240px',
+                        backgroundColor: '#27bea5',
+                        borderRadius: '50%',
+                        filter: 'blur(80px)',
+                        opacity: 0.12,
+                        transform: 'translate(25%, -25%)',
+                        pointerEvents: 'none'
+                      }}></div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '1rem', position: 'relative', zIndex: 1 }}>
+                        <div style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '14px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          color: '#27bea5',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Sparkles size={22} />
+                        </div>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'white' }}>
+                          Configuración para Agentes de IA (LeadsHUB)
+                        </h3>
+                      </div>
+
+                      <p style={{ fontSize: '0.875rem', color: '#94a3b8', lineHeight: 1.6, margin: '0 0 1.25rem 0', maxWidth: '600px', position: 'relative', zIndex: 1 }}>
+                        Copia este esquema de herramienta (Tool Schema) directamente en tu panel de agentes en <strong>LeadsHUB</strong> para que el Botón de IA pueda iniciar y gestionar procesos de forma autónoma.
+                      </p>
+
+                      <div style={{
+                        position: 'relative',
+                        marginTop: '1rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                        borderRadius: '16px',
+                        padding: '1.25rem',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        fontFamily: 'monospace',
+                        fontSize: '0.8rem',
+                        overflowX: 'auto',
+                        maxHeight: '340px'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(JSON.stringify({
+                            name: "iniciar_proceso_konsul",
+                            description: "Inicia una nueva ejecución de proceso a partir de una plantilla en Kônsul Process",
+                            parameters: {
+                              type: "object",
+                              properties: {
+                                templateId: { type: "string", description: "ID de la plantilla de proceso aprobada a ejecutar" },
+                                instanceName: { type: "string", description: "Nombre de la ejecución o cliente asignado al proceso" },
+                                category: { type: "string", description: "Categoría o departamento asociado al proceso (opcional)" }
+                              },
+                              required: ["templateId", "instanceName"]
+                            }
+                          }, null, 2), 'schema')}
+                          style={{
+                            position: 'absolute',
+                            top: '0.75rem',
+                            right: '0.75rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0.4rem 0.75rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '10px',
+                            color: 'white',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {copiedField === 'schema' ? <Check size={14} color="#4ade80" /> : <Copy size={14} />}
+                          {copiedField === 'schema' ? 'Copiado' : 'Copiar Schema'}
+                        </button>
+
+                        <pre style={{ margin: 0, color: '#cbd5e1', lineHeight: '1.5' }}>
+{`{
+  "name": "iniciar_proceso_konsul",
+  "description": "Inicia una nueva ejecución de proceso a partir de una plantilla en Kônsul Process",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "templateId": {
+        "type": "string",
+        "description": "ID de la plantilla de proceso aprobada a ejecutar"
+      },
+      "instanceName": {
+        "type": "string",
+        "description": "Nombre de la ejecución o cliente asignado al proceso"
+      },
+      "category": {
+        "type": "string",
+        "description": "Categoría o departamento asociado al proceso (opcional)"
+      }
+    },
+    "required": [
+      "templateId",
+      "instanceName"
+    ]
+  }
+}`}
+                        </pre>
+                      </div>
+                    </div>
+
                   </div>
+
+                  {/* RIGHT COLUMN: WEBHOOK & DOCUMENTATION */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                    
+                    {/* CARD 3: WEBHOOK LEADSHUB */}
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '2rem',
+                      padding: '1.75rem',
+                      border: '1px solid #f1f5f9',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.75rem' }}>
+                        <Database size={20} color="#6366f1" />
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#1e293b' }}>
+                          Webhook LeadsHUB
+                        </h3>
+                      </div>
+
+                      <p style={{ fontSize: '0.8rem', color: '#64748b', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
+                        Configura esta URL en el disparador de LeadsHUB CRM para automatizar la creación de prospectos y arranque de procesos.
+                      </p>
+
+                      <div style={{
+                        backgroundColor: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '0.6rem 0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        marginBottom: '0.75rem',
+                        overflow: 'hidden'
+                      }}>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          color: '#64748b',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {`${window.location.origin}/api/v1/leadshub`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(`${window.location.origin}/api/v1/leadshub`, 'webhook')}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#94a3b8',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexShrink: 0
+                          }}
+                        >
+                          {copiedField === 'webhook' ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                        </button>
+                      </div>
+
+                      <span style={{
+                        display: 'inline-block',
+                        backgroundColor: '#e0e7ff',
+                        color: '#4338ca',
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700
+                      }}>
+                        Event: lead.created / closed.deal
+                      </span>
+                    </div>
+
+                    {/* CARD 4: DOCUMENTACIÓN */}
+                    <div style={{
+                      backgroundColor: 'rgba(236, 253, 245, 0.6)',
+                      borderRadius: '2rem',
+                      padding: '1.75rem',
+                      border: '1px solid #a7f3d0'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.75rem' }}>
+                        <ExternalLink size={20} color="#047857" />
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#065f46' }}>
+                          Documentación
+                        </h3>
+                      </div>
+
+                      <p style={{ fontSize: '0.8rem', color: '#047857', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
+                        Hemos generado una guía técnica completa con ejemplos interactivos en cURL, Python y Next.js en tu proyecto.
+                      </p>
+
+                      <div style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                        borderRadius: '16px',
+                        padding: '1rem',
+                        border: '1px solid #a7f3d0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.65rem'
+                      }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
+                          Archivo Local:
+                        </span>
+                        <div style={{
+                          backgroundColor: '#f1f5f9',
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '8px',
+                          fontFamily: 'monospace',
+                          fontSize: '0.75rem',
+                          color: '#1e293b',
+                          wordBreak: 'break-all'
+                        }}>
+                          LEADSHUB_API_INTEGRATION.md
+                        </div>
+                        <a
+                          href="/LEADSHUB_API_INTEGRATION.md"
+                          download="LEADSHUB_API_INTEGRATION.md"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            backgroundColor: '#059669',
+                            color: 'white',
+                            borderRadius: '12px',
+                            padding: '0.65rem 1rem',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            textDecoration: 'none',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                            transition: 'all 0.2s',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Download size={16} />
+                          Descargar Guía (.md)
+                        </a>
+                      </div>
+                    </div>
+
+                  </div>
+
                 </div>
               )}
             </div>

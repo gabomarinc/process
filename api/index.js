@@ -3003,4 +3003,123 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
   }
 });
 
+// Webhook for LeadsHUB CRM integration
+app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const event = body.event || body.type || 'lead.created';
+    const data = body.data || body.payload || body;
+    const orgId = req.user.organizationId;
+
+    // CASE 1: Sync Lead / Customer into Process clients
+    if (event.includes('lead') || event.includes('contact') || event.includes('customer')) {
+      const clientName = data.name || data.clientName || data.contactName || 'Lead sin nombre';
+      const clientId = data.id ? `leadshub_${data.id}` : `cli_${Date.now()}_${clientName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+      await pool.query(
+        `INSERT INTO clients (id, organization_id, name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+        [clientId, orgId, clientName]
+      );
+
+      return res.status(200).json({
+        success: true,
+        action: 'LEAD_SYNCED',
+        message: `Lead "${clientName}" sincronizado correctamente en Kônsul Process`,
+        data: { clientId, name: clientName }
+      });
+    }
+
+    // CASE 2: Trigger process execution
+    if (event.includes('process') || event.includes('execution') || event.includes('start') || event.includes('deal')) {
+      const templateId = data.templateId || data.template_id;
+      const instanceName = data.instanceName || data.name || data.clientName || 'Ejecución iniciada desde LeadsHUB';
+
+      let templateRes;
+      if (templateId) {
+        templateRes = await pool.query('SELECT * FROM templates WHERE id = $1 AND organization_id = $2', [templateId, orgId]);
+      } else {
+        templateRes = await pool.query("SELECT * FROM templates WHERE organization_id = $1 AND status = 'approved' ORDER BY created_at DESC LIMIT 1", [orgId]);
+      }
+
+      if (templateRes.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'No se encontró una plantilla de proceso aprobada en tu organización.'
+          }
+        });
+      }
+
+      const template = templateRes.rows[0];
+      const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
+      const startedAt = new Date().toISOString();
+
+      const stepsWithDates = (template.steps || []).map((step, idx) => {
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || step.durationDays || 1));
+        return {
+          ...step,
+          id: step.id || `step_${idx + 1}`,
+          title: step.title || step.label || `Paso ${idx + 1}`,
+          description: step.description || '',
+          assignedTo: step.assignedTo || 'Unassigned',
+          isCompleted: false,
+          completedAt: null,
+          completedBy: null,
+          dueDate: dueDate.toISOString()
+        };
+      });
+
+      await pool.query(
+        `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          instId,
+          orgId,
+          template.id,
+          template.title,
+          instanceName,
+          startedAt,
+          template.companion_name,
+          template.companion_avatar,
+          template.companion_greeting,
+          template.category,
+          JSON.stringify(stepsWithDates)
+        ]
+      );
+
+      return res.status(201).json({
+        success: true,
+        action: 'PROCESS_STARTED',
+        message: `Proceso "${template.title}" iniciado para "${instanceName}" con éxito`,
+        data: {
+          id: instId,
+          templateId: template.id,
+          instanceName,
+          startedAt,
+          steps: stepsWithDates
+        },
+        meta: {
+          app: "konsulprocess",
+          version: "1"
+        }
+      });
+    }
+
+    return res.status(200).json({ success: true, message: 'Webhook event received', event });
+  } catch (err) {
+    console.error('API LeadsHUB Webhook error:', err);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: err.message || 'Error interno del servidor en webhook de LeadsHUB'
+      }
+    });
+  }
+});
+
 export default app;
