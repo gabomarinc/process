@@ -1128,6 +1128,21 @@ app.delete('/api/instances/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// 6b. Bulk delete instances
+app.post('/api/instances/bulk-delete', authenticateToken, async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Se requieren IDs válidos para eliminar' });
+  }
+  try {
+    await pool.query('DELETE FROM instances WHERE id = ANY($1::text[]) AND organization_id = $2', [ids, req.user.organizationId]);
+    res.json({ message: `${ids.length} ejecuciones eliminadas con éxito` });
+  } catch (err) {
+    console.error('Error al eliminar ejecuciones en bulk:', err);
+    res.status(500).json({ error: 'Error al eliminar las ejecuciones en bulk' });
+  }
+});
+
 // 7. Get notification logs
 app.get('/api/notifications', authenticateToken, async (req, res) => {
   try {

@@ -56,7 +56,7 @@ import {
   Mic,
   Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
   Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid,
-  Copy, RefreshCw, Database, ExternalLink, Download, Layers, Target, BookOpen
+  Copy, RefreshCw, Database, ExternalLink, Download, Layers, Target, BookOpen, List, CheckSquare, Square
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -327,6 +327,10 @@ function App() {
   const [configuringRule, setConfiguringRule] = useState(null);
   const [showConfigureRuleModal, setShowConfigureRuleModal] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
+  const [instancesLayout, setInstancesLayout] = useState(() => {
+    return localStorage.getItem('process_instances_layout') || 'cards';
+  }); // 'cards' or 'list'
+  const [selectedInstanceIds, setSelectedInstanceIds] = useState([]);
   const [kanbanColumns, setKanbanColumns] = useState(["Por hacer", "En curso", "Terminado"]);
   const [selectedKanbanInstanceId, setSelectedKanbanInstanceId] = useState("");
   const [settingsTab, setSettingsTab] = useState('general'); // 'general' or 'api'
@@ -1635,19 +1639,55 @@ const handleDeleteMember = async (id) => {
   };
 
   const deleteInstance = async (id, e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     setInstances(prev => prev.filter(inst => inst.id !== id));
     if (selectedInstanceId === id) {
       setSelectedInstanceId("");
     }
+    setSelectedInstanceIds(prev => prev.filter(i => i !== id));
 
     // Call Express DELETE endpoint
     try {
       await fetch(`/api/instances/${id}`, {
         method: 'DELETE'
       });
+      addToast('Ejecución eliminada con éxito', 'success');
     } catch (err) {
       console.error("Error al eliminar ejecución en Neon:", err);
+    }
+  };
+
+  const handleBulkDeleteInstances = async (idsToDelete) => {
+    if (!idsToDelete || idsToDelete.length === 0) return;
+    const count = idsToDelete.length;
+
+    // Update local state immediately
+    const idsSet = new Set(idsToDelete);
+    setInstances(prev => prev.filter(inst => !idsSet.has(inst.id)));
+    if (selectedInstanceId && idsSet.has(selectedInstanceId)) {
+      setSelectedInstanceId("");
+    }
+    setSelectedInstanceIds([]);
+
+    try {
+      const res = await fetch('/api/instances/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsToDelete })
+      });
+      if (!res.ok) {
+        // Fallback to individual deletes if bulk endpoint not available
+        await Promise.all(idsToDelete.map(id => fetch(`/api/instances/${id}`, { method: 'DELETE' })));
+      }
+      addToast(`${count} ${count === 1 ? 'ejecución eliminada' : 'ejecuciones eliminadas'} con éxito`, 'success');
+    } catch (err) {
+      console.error("Error al eliminar ejecuciones en bulk:", err);
+      try {
+        await Promise.all(idsToDelete.map(id => fetch(`/api/instances/${id}`, { method: 'DELETE' })));
+        addToast(`${count} ejecuciones eliminadas con éxito`, 'success');
+      } catch (e2) {
+        addToast("Error al eliminar las ejecuciones", "error");
+      }
     }
   };
 
@@ -3040,22 +3080,76 @@ const handleDeleteMember = async (id) => {
             />
           ) : activeTab === 'instances' ? (
             <div style={{ width: '100%' }}>
-              {/* Focus vs Bird's Eye View Mode Toggle */}
+              {/* Focus vs Bird's Eye View Mode Toggle & Layout Switcher */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.8rem', color: 'var(--text-main)', margin: 0 }}>Ejecuciones Activas</h2>
-                  <div style={{ display: 'inline-flex', background: '#f5f3f0', borderRadius: '20px', padding: '3px', marginLeft: '12px' }}>
+                  
+                  {/* Focus vs Bird's Eye Mode Toggle */}
+                  <div style={{ display: 'inline-flex', background: '#f5f3f0', borderRadius: '20px', padding: '3px' }}>
                     <button
                       onClick={() => setDashboardViewMode('focus')}
-                      style={{ border: 'none', background: dashboardViewMode === 'focus' ? 'white' : 'transparent', color: dashboardViewMode === 'focus' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'focus' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                      style={{ border: 'none', background: dashboardViewMode === 'focus' ? 'white' : 'transparent', color: dashboardViewMode === 'focus' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'focus' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none', transition: 'all 0.15s ease' }}
                     >
                       <Eye size={13} /> Enfoque
                     </button>
                     <button
                       onClick={() => setDashboardViewMode('birds-eye')}
-                      style={{ border: 'none', background: dashboardViewMode === 'birds-eye' ? 'white' : 'transparent', color: dashboardViewMode === 'birds-eye' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'birds-eye' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none' }}
+                      style={{ border: 'none', background: dashboardViewMode === 'birds-eye' ? 'white' : 'transparent', color: dashboardViewMode === 'birds-eye' ? 'var(--color-primary-hover)' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '18px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: dashboardViewMode === 'birds-eye' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none', transition: 'all 0.15s ease' }}
                     >
                       <Layers size={13} /> Vista Completa
+                    </button>
+                  </div>
+
+                  {/* Cards vs List Layout Switcher */}
+                  <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: '20px', padding: '3px', border: '1px solid #E2E8F0' }}>
+                    <button
+                      onClick={() => {
+                        setInstancesLayout('cards');
+                        localStorage.setItem('process_instances_layout', 'cards');
+                      }}
+                      title="Vista en tarjetas"
+                      style={{
+                        border: 'none',
+                        background: instancesLayout === 'cards' ? '#FFFFFF' : 'transparent',
+                        color: instancesLayout === 'cards' ? '#0F766E' : 'var(--text-muted)',
+                        padding: '6px 12px',
+                        borderRadius: '18px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: instancesLayout === 'cards' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <LayoutGrid size={13} /> Tarjetas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setInstancesLayout('list');
+                        localStorage.setItem('process_instances_layout', 'list');
+                      }}
+                      title="Vista en lista"
+                      style={{
+                        border: 'none',
+                        background: instancesLayout === 'list' ? '#FFFFFF' : 'transparent',
+                        color: instancesLayout === 'list' ? '#0F766E' : 'var(--text-muted)',
+                        padding: '6px 12px',
+                        borderRadius: '18px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: instancesLayout === 'list' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <List size={13} /> Lista
                     </button>
                   </div>
                 </div>
@@ -3187,103 +3281,499 @@ const handleDeleteMember = async (id) => {
                   );
                 }
 
+                const isAllSelected = filteredInstances.length > 0 && filteredInstances.every(inst => selectedInstanceIds.includes(inst.id));
+
                 return (
-                  <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-                    {filteredInstances.map(inst => {
-                      const total = inst.steps.length;
-                      const completed = inst.steps.filter(s => s.isCompleted).length;
-                      const percentage = Math.round((completed / total) * 100) || 0;
-                      const isOverdue = checkOverdueSteps(inst);
+                  <div>
+                    {/* Bulk Action Bar */}
+                    {selectedInstanceIds.length > 0 && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: '#F0FDFA',
+                        border: '1px solid #99F6E4',
+                        borderRadius: '16px',
+                        padding: '0.75rem 1.25rem',
+                        marginBottom: '1.25rem',
+                        boxShadow: '0 2px 8px rgba(15, 118, 110, 0.08)',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <button
+                            onClick={() => {
+                              if (isAllSelected) {
+                                const filteredSet = new Set(filteredInstances.map(i => i.id));
+                                setSelectedInstanceIds(prev => prev.filter(id => !filteredSet.has(id)));
+                              } else {
+                                const merged = new Set([...selectedInstanceIds, ...filteredInstances.map(i => i.id)]);
+                                setSelectedInstanceIds(Array.from(merged));
+                              }
+                            }}
+                            style={{
+                              background: 'white',
+                              border: '1px solid #CBD5E1',
+                              borderRadius: '8px',
+                              padding: '5px 10px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              color: 'var(--text-main)',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                            }}
+                          >
+                            {isAllSelected ? (
+                              <CheckSquare size={15} color="#0F766E" />
+                            ) : (
+                              <Square size={15} color="#64748B" />
+                            )}
+                            {isAllSelected
+                              ? 'Deseleccionar todas'
+                              : `Seleccionar todas (${filteredInstances.length})`}
+                          </button>
 
-                      return (
-                        <div 
-                          key={inst.id}
-                          className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
-                          onClick={() => setSelectedInstanceId(inst.id)}
-                          style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: 'pointer' }}
-                        >
-                          <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <h4 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>{inst.instanceName}</h4>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{inst.category}</span>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Plantilla: {inst.title}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
-                              <button 
-                                onClick={(e) => deleteInstance(inst.id, e)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* Start and End Dates */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            <span>Inicio: {inst.steps[0]?.dueDate ? new Date(inst.steps[0].dueDate).toLocaleDateString() : 'N/A'}</span>
-                            <span>Fin: {inst.steps[inst.steps.length - 1]?.dueDate ? new Date(inst.steps[inst.steps.length - 1].dueDate).toLocaleDateString() : 'N/A'}</span>
-                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0F766E' }}>
+                            {selectedInstanceIds.length} {selectedInstanceIds.length === 1 ? 'ejecución seleccionada' : 'ejecuciones seleccionadas'}
+                          </span>
+                        </div>
 
-                          <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {/* Involved team members initials */}
-                            <div style={{ display: 'flex', marginLeft: 'auto' }}>
-                              {(() => {
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            onClick={() => setSelectedInstanceIds([])}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              padding: '6px 10px'
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                          {user?.role !== 'guest' && (
+                            <button
+                              onClick={() => {
+                                const count = selectedInstanceIds.length;
+                                if (window.confirm(`¿Estás seguro de que deseas eliminar las ${count} ejecuciones seleccionadas? Esta acción no se puede deshacer.`)) {
+                                  handleBulkDeleteInstances(selectedInstanceIds);
+                                }
+                              }}
+                              style={{
+                                background: '#DC2626',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '10px',
+                                padding: '6px 14px',
+                                fontSize: '0.82rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#B91C1C'}
+                              onMouseLeave={e => e.currentTarget.style.background = '#DC2626'}
+                            >
+                              <Trash2 size={14} /> Eliminar {selectedInstanceIds.length} seleccionadas
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Content: Cards View vs List View */}
+                    {instancesLayout === 'cards' ? (
+                      <div className="process-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {filteredInstances.map(inst => {
+                          const total = inst.steps.length;
+                          const completed = inst.steps.filter(s => s.isCompleted).length;
+                          const percentage = Math.round((completed / total) * 100) || 0;
+                          const isOverdue = checkOverdueSteps(inst);
+                          const isSelected = selectedInstanceIds.includes(inst.id);
+
+                          return (
+                            <div 
+                              key={inst.id}
+                              className={`process-card ${inst.id === selectedInstanceId ? 'active' : ''}`}
+                              onClick={() => setSelectedInstanceId(inst.id)}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem',
+                                cursor: 'pointer',
+                                border: isSelected ? '1.5px solid var(--color-primary)' : '1px solid #E2E8F0',
+                                backgroundColor: isSelected ? '#FAFCFC' : 'white',
+                                boxShadow: isSelected ? '0 0 0 1px rgba(39, 190, 167, 0.3), 0 4px 12px rgba(0,0,0,0.05)' : undefined
+                              }}
+                            >
+                              <div className="process-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedInstanceIds(prev =>
+                                        prev.includes(inst.id) ? prev.filter(id => id !== inst.id) : [...prev, inst.id]
+                                      );
+                                    }}
+                                    title={isSelected ? "Deseleccionar" : "Seleccionar"}
+                                    style={{
+                                      cursor: 'pointer',
+                                      paddingTop: '2px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: isSelected ? '#0F766E' : '#94A3B8'
+                                    }}
+                                  >
+                                    {isSelected ? (
+                                      <CheckSquare size={17} color="#0F766E" />
+                                    ) : (
+                                      <Square size={17} color="#94A3B8" />
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0, color: 'var(--text-main)' }}>{inst.instanceName}</h4>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{inst.category}</span>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Plantilla: {inst.title}</span>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '1.1rem' }}>{inst.companionAvatar}</span>
+                                  <button 
+                                    onClick={(e) => deleteInstance(inst.id, e)}
+                                    title="Eliminar ejecución"
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              {/* Start and End Dates */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                <span>Inicio: {inst.steps[0]?.dueDate ? new Date(inst.steps[0].dueDate).toLocaleDateString() : 'N/A'}</span>
+                                <span>Fin: {inst.steps[inst.steps.length - 1]?.dueDate ? new Date(inst.steps[inst.steps.length - 1].dueDate).toLocaleDateString() : 'N/A'}</span>
+                              </div>
+
+                              <div className="process-meta" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                {/* Involved team members initials */}
+                                <div style={{ display: 'flex', marginLeft: 'auto' }}>
+                                  {(() => {
+                                    const allAssignees = (inst.steps || [])
+                                      .filter(Boolean)
+                                      .filter(s => s.assignedTo)
+                                      .flatMap(s => Array.isArray(s.assignedTo) ? s.assignedTo : [s.assignedTo])
+                                      .map(String);
+                                    const uniqueAssignees = Array.from(new Set(allAssignees));
+                                    return (
+                                      <>
+                                        {uniqueAssignees.slice(0, 3).map((assigneeId, i) => {
+                                          const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+                                          if (!member) return null;
+                                          const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                          return (
+                                            <div key={assigneeId} title={member.name} style={{
+                                              width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                              border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
+                                            }}>
+                                              {initials}
+                                            </div>
+                                          );
+                                        })}
+                                        {uniqueAssignees.length > 3 && (
+                                          <div style={{
+                                            width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                            border: '2px solid white', marginLeft: '-8px', zIndex: 0
+                                          }}>
+                                            +{uniqueAssignees.length - 3}
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+
+                                <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                                  {inst.category}
+                                </span>
+                                {isOverdue && (
+                                  <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <AlertCircle size={12} /> Demorado
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="process-progress-container">
+                                <div className="progress-bar-bg">
+                                  <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+                                </div>
+                                <span className="progress-percent">{percentage}%</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      /* Table / List View */
+                      <div style={{
+                        background: 'white',
+                        borderRadius: '16px',
+                        border: '1px solid #E2E8F0',
+                        boxShadow: 'var(--shadow-sm)',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                            <thead>
+                              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                <th style={{ padding: '0.85rem 1rem', width: '40px', textAlign: 'center' }}>
+                                  <div
+                                    onClick={() => {
+                                      if (isAllSelected) {
+                                        const filteredSet = new Set(filteredInstances.map(i => i.id));
+                                        setSelectedInstanceIds(prev => prev.filter(id => !filteredSet.has(id)));
+                                      } else {
+                                        const merged = new Set([...selectedInstanceIds, ...filteredInstances.map(i => i.id)]);
+                                        setSelectedInstanceIds(Array.from(merged));
+                                      }
+                                    }}
+                                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    title={isAllSelected ? "Deseleccionar todas" : "Seleccionar todas"}
+                                  >
+                                    {isAllSelected ? (
+                                      <CheckSquare size={16} color="#0F766E" />
+                                    ) : (
+                                      <Square size={16} color="#94A3B8" />
+                                    )}
+                                  </div>
+                                </th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Ejecución / Proceso</th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Plantilla</th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Categoría</th>
+                                <th style={{ padding: '0.85rem 1rem', minWidth: '160px' }}>Progreso</th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Fechas</th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Estado</th>
+                                <th style={{ padding: '0.85rem 1rem' }}>Equipo</th>
+                                <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredInstances.map(inst => {
+                                const total = inst.steps.length;
+                                const completed = inst.steps.filter(s => s.isCompleted).length;
+                                const percentage = Math.round((completed / total) * 100) || 0;
+                                const isOverdue = checkOverdueSteps(inst);
+                                const isSelected = selectedInstanceIds.includes(inst.id);
+
                                 const allAssignees = (inst.steps || [])
                                   .filter(Boolean)
                                   .filter(s => s.assignedTo)
                                   .flatMap(s => Array.isArray(s.assignedTo) ? s.assignedTo : [s.assignedTo])
                                   .map(String);
                                 const uniqueAssignees = Array.from(new Set(allAssignees));
+
                                 return (
-                                  <>
-                                    {uniqueAssignees.slice(0, 3).map((assigneeId, i) => {
-                                      const member = teamMembers.find(m => String(m.id) === String(assigneeId));
-                                      if (!member) return null;
-                                      const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                                      return (
-                                        <div key={assigneeId} title={member.name} style={{
-                                          width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
-                                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                          border: '2px solid white', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i
-                                        }}>
-                                          {initials}
-                                        </div>
-                                      );
-                                    })}
-                                    {uniqueAssignees.length > 3 && (
-                                      <div style={{
-                                        width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
-                                        border: '2px solid white', marginLeft: '-8px', zIndex: 0
-                                      }}>
-                                        +{uniqueAssignees.length - 3}
+                                  <tr
+                                    key={inst.id}
+                                    onClick={() => setSelectedInstanceId(inst.id)}
+                                    style={{
+                                      borderBottom: '1px solid #F1F5F9',
+                                      cursor: 'pointer',
+                                      background: isSelected ? '#F0FDFA' : inst.id === selectedInstanceId ? '#F8FAFC' : 'white',
+                                      transition: 'background 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => {
+                                      if (!isSelected && inst.id !== selectedInstanceId) e.currentTarget.style.background = '#F8FAFC';
+                                    }}
+                                    onMouseLeave={e => {
+                                      if (!isSelected && inst.id !== selectedInstanceId) e.currentTarget.style.background = 'white';
+                                    }}
+                                  >
+                                    {/* Checkbox */}
+                                    <td style={{ padding: '1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                      <div
+                                        onClick={() => {
+                                          setSelectedInstanceIds(prev => 
+                                            prev.includes(inst.id) ? prev.filter(id => id !== inst.id) : [...prev, inst.id]
+                                          );
+                                        }}
+                                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      >
+                                        {isSelected ? (
+                                          <CheckSquare size={16} color="#0F766E" />
+                                        ) : (
+                                          <Square size={16} color="#94A3B8" />
+                                        )}
                                       </div>
-                                    )}
-                                  </>
+                                    </td>
+
+                                    {/* Process Name */}
+                                    <td style={{ padding: '1rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '1rem', flexShrink: 0 }}>{inst.companionAvatar}</span>
+                                        <div>
+                                          <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.9rem', display: 'block' }}>
+                                            {inst.instanceName}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Template */}
+                                    <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                      {inst.title}
+                                    </td>
+
+                                    {/* Category */}
+                                    <td style={{ padding: '1rem' }}>
+                                      <span className="badge" style={{ padding: '0.2rem 0.6rem', fontSize: '0.72rem', background: '#F1F5F9', color: 'var(--text-main)', fontWeight: 600 }}>
+                                        {inst.category}
+                                      </span>
+                                    </td>
+
+                                    {/* Progress */}
+                                    <td style={{ padding: '1rem' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
+                                          <span style={{ color: percentage === 100 ? '#10B981' : 'var(--text-main)' }}>{percentage}%</span>
+                                          <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{completed}/{total} pasos</span>
+                                        </div>
+                                        <div style={{ height: '6px', width: '100%', background: '#E2E8F0', borderRadius: '3px', overflow: 'hidden' }}>
+                                          <div style={{ height: '100%', width: `${percentage}%`, background: percentage === 100 ? '#10B981' : 'var(--color-primary)', transition: 'width 0.3s ease' }} />
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Dates */}
+                                    <td style={{ padding: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                      <div>Inicio: {inst.steps[0]?.dueDate ? new Date(inst.steps[0].dueDate).toLocaleDateString() : 'N/A'}</div>
+                                      <div>Fin: {inst.steps[inst.steps.length - 1]?.dueDate ? new Date(inst.steps[inst.steps.length - 1].dueDate).toLocaleDateString() : 'N/A'}</div>
+                                    </td>
+
+                                    {/* Status / Overdue */}
+                                    <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
+                                      {isOverdue ? (
+                                        <span className="overdue-badge" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <AlertCircle size={12} /> Demorado
+                                        </span>
+                                      ) : percentage === 100 ? (
+                                        <span style={{ padding: '0.2rem 0.6rem', fontSize: '0.72rem', borderRadius: '12px', background: '#ECFDF5', color: '#047857', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <CheckCircle size={12} /> Completado
+                                        </span>
+                                      ) : (
+                                        <span style={{ padding: '0.2rem 0.6rem', fontSize: '0.72rem', borderRadius: '12px', background: '#F0FDFA', color: '#0F766E', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <Clock size={12} /> En Curso
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Assignees */}
+                                    <td style={{ padding: '1rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                                        {uniqueAssignees.slice(0, 3).map((assigneeId, i) => {
+                                          const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+                                          if (!member) return null;
+                                          const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                          return (
+                                            <div key={assigneeId} title={member.name} style={{
+                                              width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                              border: '2px solid white', marginLeft: i > 0 ? '-6px' : '0', zIndex: 10 - i
+                                            }}>
+                                              {initials}
+                                            </div>
+                                          );
+                                        })}
+                                        {uniqueAssignees.length > 3 && (
+                                          <div style={{
+                                            width: '24px', height: '24px', borderRadius: '50%', background: '#e0e0e0', color: 'var(--text-main)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 'bold',
+                                            border: '2px solid white', marginLeft: '-6px', zIndex: 0
+                                          }}>
+                                            +{uniqueAssignees.length - 3}
+                                          </div>
+                                        )}
+                                        {uniqueAssignees.length === 0 && (
+                                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>-</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Actions */}
+                                    <td style={{ padding: '1rem', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                        <button
+                                          onClick={() => setSelectedInstanceId(inst.id)}
+                                          title="Ver detalles"
+                                          style={{
+                                            background: '#F1F5F9',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            padding: '6px',
+                                            cursor: 'pointer',
+                                            color: 'var(--text-muted)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                          onMouseEnter={e => {
+                                            e.currentTarget.style.background = '#E2E8F0';
+                                            e.currentTarget.style.color = '#0F766E';
+                                          }}
+                                          onMouseLeave={e => {
+                                            e.currentTarget.style.background = '#F1F5F9';
+                                            e.currentTarget.style.color = 'var(--text-muted)';
+                                          }}
+                                        >
+                                          <Eye size={14} />
+                                        </button>
+                                        <button
+                                          onClick={(e) => deleteInstance(inst.id, e)}
+                                          title="Eliminar ejecución"
+                                          style={{
+                                            background: '#FEF2F2',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            padding: '6px',
+                                            cursor: 'pointer',
+                                            color: '#EF4444',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                          onMouseEnter={e => {
+                                            e.currentTarget.style.background = '#FEE2E2';
+                                            e.currentTarget.style.color = '#DC2626';
+                                          }}
+                                          onMouseLeave={e => {
+                                            e.currentTarget.style.background = '#FEF2F2';
+                                            e.currentTarget.style.color = '#EF4444';
+                                          }}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 );
-                              })()}
-                            </div>
-
-                            <span className="badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
-                              {inst.category}
-                            </span>
-                            {isOverdue && (
-                              <span className="overdue-badge" style={{ padding: '0.1rem 0.5rem', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <AlertCircle size={12} /> Demorado
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="process-progress-container">
-                            <div className="progress-bar-bg">
-                              <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
-                            </div>
-                            <span className="progress-percent">{percentage}%</span>
-                          </div>
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
