@@ -728,6 +728,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       developerTokensPromise
     ]);
 
+    const orgRow = orgRes.rows[0] || {};
+
     // Map Templates
     const templatesMapped = templatesRes.rows.map(row => ({
       id: row.id,
@@ -1939,14 +1941,15 @@ app.put('/api/organization/gemini-api-key', authenticateToken, async (req, res) 
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
   }
-  const { gemini_api_key } = req.body;
+  const rawKey = req.body.gemini_api_key !== undefined ? req.body.gemini_api_key : req.body.geminiApiKey;
+  const gemini_api_key = (rawKey && typeof rawKey === 'string' && rawKey.trim()) ? rawKey.trim() : null;
   try {
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
     await pool.query(
       'UPDATE organizations SET gemini_api_key = $1 WHERE id = $2',
-      [gemini_api_key !== undefined ? gemini_api_key : null, req.user.organizationId]
+      [gemini_api_key, req.user.organizationId]
     );
-    res.json({ success: true, message: 'API Key de Gemini actualizada para toda la organización.' });
+    res.json({ success: true, message: 'API Key de Gemini actualizada para toda la organización.', gemini_api_key });
   } catch (err) {
     console.error('Error al actualizar Gemini API Key:', err);
     res.status(500).json({ error: 'Error al actualizar API Key de la organización' });

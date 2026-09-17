@@ -612,9 +612,13 @@ function App() {
               const localKey = localStorage.getItem('gemini_api_key');
               const currentUserRole = data.user?.role || user?.role;
               if (localKey && currentUserRole === 'admin') {
+                const token = localStorage.getItem('token');
                 fetch('/api/organization/gemini-api-key', {
                   method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
                   body: JSON.stringify({ gemini_api_key: localKey })
                 }).then(r => {
                   if (r.ok) {
@@ -2003,28 +2007,39 @@ const handleDeleteMember = async (id) => {
   // Save/Clear keys
   const saveApiKey = async () => {
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch('/api/organization/gemini-api-key', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ gemini_api_key: tempKey })
       });
       if (res.ok) {
         localStorage.setItem('gemini_api_key', tempKey);
         setApiKey(tempKey);
         setShowKeyInput(false);
+        showAlert('API Key guardada y habilitada para toda la organización.', 'success');
       } else {
         console.error("Error al guardar API Key en el servidor");
+        showAlert('Error al guardar la API Key en la organización.', 'error');
       }
     } catch (err) {
       console.error("Error al guardar API Key:", err);
+      showAlert('Error de conexión al guardar la API Key.', 'error');
     }
   };
 
   const clearApiKey = async () => {
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch('/api/organization/gemini-api-key', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ gemini_api_key: null })
       });
       if (res.ok) {
@@ -2032,6 +2047,7 @@ const handleDeleteMember = async (id) => {
         setApiKey('');
         setTempKey('');
         setShowKeyInput(false);
+        showAlert('API Key eliminada de la organización.', 'info');
       } else {
         console.error("Error al limpiar API Key en el servidor");
       }
