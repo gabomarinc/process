@@ -28,7 +28,7 @@ export const mockProcesses = [
         title: "Subir Contrato Firmado",
         description: "Sube el documento del contrato legal firmado por ambas partes para formalizar nuestra alianza.",
         type: "digital",
-        acceptedFormats: [".pdf", ".docx"],
+        acceptedFormats: [".pdf", ".docx", ".png", ".jpg"],
         isCompleted: true,
         completedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
         uploadedFileName: "Contrato_Premium_Final.pdf",
@@ -40,7 +40,7 @@ export const mockProcesses = [
         title: "Subir Requerimientos Técnicos y de Integración",
         description: "Sube el documento de arquitectura o requerimientos detallados del cliente.",
         type: "digital",
-        acceptedFormats: [".pdf", ".xlsx", ".docx"],
+        acceptedFormats: [".pdf", ".xlsx", ".docx", ".png", ".jpg"],
         isCompleted: false,
         durationLabel: "Día 3",
         motivation: "Este documento nos dará el mapa de ruta técnico. ¡Tu equipo de ingeniería lo agradecerá!"

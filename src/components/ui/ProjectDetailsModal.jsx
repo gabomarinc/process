@@ -32,6 +32,35 @@ import {
   Eye
 } from 'lucide-react';
 
+const getFileType = (name, fallbackType) => {
+  if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
+  const lower = (name || '').toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  return fallbackType || 'application/octet-stream';
+};
+
+const getEffectiveAcceptedFormats = (acceptedFormats) => {
+  const defaults = ['.pdf', '.docx', '.png', '.jpg', '.jpeg'];
+  if (!acceptedFormats || !Array.isArray(acceptedFormats) || acceptedFormats.length === 0) {
+    return defaults;
+  }
+  const set = new Set(acceptedFormats.map(f => f.toLowerCase().trim()));
+  set.add('.png');
+  set.add('.jpg');
+  set.add('.jpeg');
+  return Array.from(set);
+};
+
+const getAcceptString = (formats) => {
+  const eff = getEffectiveAcceptedFormats(formats);
+  return [...eff, 'image/png', 'image/jpeg', 'image/*'].join(',');
+};
+
 export const ProjectDetailsModal = ({
   isOpen,
   onClose,
@@ -104,7 +133,7 @@ export const ProjectDetailsModal = ({
       id: att.id,
       name: att.name,
       url: att.url,
-      type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+      type: getFileType(att.name, att.type),
       uploadedAt: att.uploadedAt,
       uploadedBy: att.uploadedBy,
       source: 'Adjunto General'
@@ -118,7 +147,7 @@ export const ProjectDetailsModal = ({
         id: `step_${step.id}`,
         name: step.uploadedFileName || fileFromStore?.name || 'Documento adjunto',
         url: step.uploadedFileUrl || fileFromStore?.url || null,
-        type: fileFromStore?.type || (step.uploadedFileName?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+        type: getFileType(step.uploadedFileName || fileFromStore?.name, fileFromStore?.type),
         uploadedAt: step.completedAt || step.dueDate || activeInstance.startedAt,
         uploadedBy: step.completedBy || 'Sistema / Paso',
         stepTitle: step.title,
@@ -1654,11 +1683,11 @@ export const ProjectDetailsModal = ({
                                 fontWeight: 700,
                                 cursor: 'pointer'
                               }}>
-                                <Upload size={14} /> Subir archivo ({step.acceptedFormats?.join(', ') || 'PDF, Imagen'})
+                                <Upload size={14} /> Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})
                                 <input
                                   type="file"
                                   style={{ display: 'none' }}
-                                  accept={step.acceptedFormats?.join(',')}
+                                  accept={getAcceptString(step.acceptedFormats)}
                                   onChange={e => {
                                     const file = e.target.files?.[0];
                                     if (file) {
@@ -1723,6 +1752,7 @@ export const ProjectDetailsModal = ({
                       type="file"
                       multiple
                       style={{ display: 'none' }}
+                      accept=".pdf,.docx,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.webp,image/*"
                       onChange={e => {
                         Array.from(e.target.files || []).forEach(file => handleFreeAttachmentUpload(file));
                         e.target.value = '';
@@ -1969,7 +1999,7 @@ export const ProjectDetailsModal = ({
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '0.5rem 0' }}>
               {previewFile.url ? (
-                previewFile.type && previewFile.type.startsWith('image/') ? (
+                ((previewFile.type && previewFile.type.startsWith('image/')) || /\.(png|jpe?g|webp|gif|svg)$/i.test(previewFile.name || '')) ? (
                   <img 
                     src={previewFile.url} 
                     alt={previewFile.name} 

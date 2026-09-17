@@ -2217,7 +2217,7 @@ const handleDeleteMember = async (id) => {
               title: "Subir entregable principal",
               description: "Cargar el reporte de requerimientos de la primera fase.",
               type: "digital",
-              acceptedFormats: [".pdf", ".docx"],
+              acceptedFormats: [".pdf", ".docx", ".png", ".jpg"],
               relativeOffsetDays: 2,
               durationLabel: "Día 2",
               motivation: "Almacenar tu progreso te dará tranquilidad mental."
@@ -2286,7 +2286,7 @@ const handleDeleteMember = async (id) => {
               "title": "Nombre corto del paso",
               "description": "Explicación clara de qué hacer",
               "type": "manual",
-              "acceptedFormats": [".pdf", ".docx"],
+              "acceptedFormats": [".pdf", ".docx", ".png", ".jpg"],
               "relativeOffsetDays": 1,
               "durationLabel": "Día 1",
               "motivation": "Frase de motivación empática específica para este paso"
@@ -2421,6 +2421,40 @@ const handleDeleteMember = async (id) => {
           }
         };
         reader.readAsArrayBuffer(file);
+      } else if (['png', 'jpg', 'jpeg', 'webp'].includes(fileExtension)) {
+        setUploadStatusMsg("Procesando imagen del proceso...");
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const base64Data = event.target.result.split(',')[1];
+            if (apiKey) {
+              setUploadProgress(40);
+              setUploadStatusMsg("Analizando imagen con IA...");
+              const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+              const response = await fetch(apiEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{
+                    parts: [
+                      { text: "Extrae el texto, diagrama o flujo de trabajo de esta imagen para estructurar las directrices del proceso:" },
+                      { inline_data: { mime_type: file.type || 'image/png', data: base64Data } }
+                    ]
+                  }]
+                })
+              });
+              const data = await response.json();
+              const extracted = data.candidates?.[0]?.content?.parts?.[0]?.text || titleSuggestion;
+              generateTemplate(extracted, titleSuggestion);
+            } else {
+              generateTemplate(`Proceso extraído de imagen: ${titleSuggestion}`, titleSuggestion);
+            }
+          } catch (err) {
+            console.error("Error al procesar imagen:", err);
+            generateTemplate(`Proceso a partir de ${titleSuggestion}`, titleSuggestion);
+          }
+        };
+        reader.readAsDataURL(file);
       } else {
         setUploadStatusMsg("Leyendo archivo de texto...");
         const reader = new FileReader();
@@ -5470,14 +5504,14 @@ const handleDeleteMember = async (id) => {
                   style={{ display: 'none' }} 
                   onChange={handleFileUpload}
                   disabled={isUploading}
-                  accept=".txt,.md,.json,.pdf,.docx"
+                  accept=".txt,.md,.json,.pdf,.docx,.png,.jpg,.jpeg,image/*"
                 />
                 <label htmlFor="main-uploader" style={{ cursor: 'pointer', display: 'block' }}>
                   <div className="upload-icon-container">
                     <Upload size={28} />
                   </div>
                   <h3>Sube un archivo de proceso</h3>
-                  <p>Formatos sugeridos: .pdf, .docx, .txt, .md</p>
+                  <p>Formatos sugeridos: .pdf, .docx, .png, .jpg, .txt, .md</p>
                 </label>
 
                 {isUploading && (

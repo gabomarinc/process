@@ -1,6 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers } from 'lucide-react';
 
+const getFileType = (name, fallbackType) => {
+  if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
+  const lower = (name || '').toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  return fallbackType || 'application/octet-stream';
+};
+
+const getEffectiveAcceptedFormats = (acceptedFormats) => {
+  const defaults = ['.pdf', '.docx', '.png', '.jpg', '.jpeg'];
+  if (!acceptedFormats || !Array.isArray(acceptedFormats) || acceptedFormats.length === 0) {
+    return defaults;
+  }
+  const set = new Set(acceptedFormats.map(f => f.toLowerCase().trim()));
+  set.add('.png');
+  set.add('.jpg');
+  set.add('.jpeg');
+  return Array.from(set);
+};
+
+const getAcceptString = (formats) => {
+  const eff = getEffectiveAcceptedFormats(formats);
+  return [...eff, 'image/png', 'image/jpeg', 'image/*'].join(',');
+};
+
 export const ActiveExecutionModal = ({
   isOpen,
   onClose,
@@ -230,7 +259,7 @@ export const ActiveExecutionModal = ({
       id: att.id,
       name: att.name,
       url: att.url,
-      type: att.type || (att.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+      type: getFileType(att.name, att.type),
       uploadedAt: att.uploadedAt,
       uploadedBy: att.uploadedBy,
       source: 'Adjunto General'
@@ -244,7 +273,7 @@ export const ActiveExecutionModal = ({
         id: `step_${step.id}`,
         name: step.uploadedFileName || fileFromStore?.name || 'Documento adjunto',
         url: step.uploadedFileUrl || fileFromStore?.url || null,
-        type: fileFromStore?.type || (step.uploadedFileName?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'),
+        type: getFileType(step.uploadedFileName || fileFromStore?.name, fileFromStore?.type),
         stepTitle: step.title,
         source: `Paso: ${step.title}`
       });
@@ -667,7 +696,7 @@ export const ActiveExecutionModal = ({
                                           setPreviewFile(fileStore[step.id] || { 
                                             name: step.uploadedFileName || 'Documento.pdf', 
                                             url: url,
-                                            type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
+                                            type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
                                             mock: !url
                                           });
                                         }}
@@ -684,7 +713,7 @@ export const ActiveExecutionModal = ({
                                         <input 
                                           type="file" 
                                           style={{ display: 'none' }}
-                                          accept={step.acceptedFormats?.join(',')}
+                                          accept={getAcceptString(step.acceptedFormats)}
                                           onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (file) {
@@ -700,7 +729,7 @@ export const ActiveExecutionModal = ({
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                                           <Upload size={14} className="text-primary" />
                                           <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                            Subir archivo ({step.acceptedFormats?.join(', ')})
+                                            Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})
                                           </span>
                                         </div>
                                       </label>
@@ -1161,13 +1190,12 @@ export const ActiveExecutionModal = ({
                                             setPreviewFile(fileStore[step.id] || { 
                                               name: step.uploadedFileName || 'Documento.pdf', 
                                               url: url,
-                                              type: (step.uploadedFileName?.endsWith('.pdf') || url?.includes('pdf') || url?.includes('invoices')) ? 'application/pdf' : 'application/octet-stream',
+                                              type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
                                               mock: !url
                                             });
                                           }}
                                           className="close-btn-aesthetic"
                                           style={{ width: '24px', height: '24px', padding: 0 }}
-                                          title="Previsualizar archivo"
                                         >
                                           <Eye size={12} />
                                         </button>
@@ -1178,7 +1206,7 @@ export const ActiveExecutionModal = ({
                                           <input 
                                             type="file" 
                                             style={{ display: 'none' }}
-                                            accept={step.acceptedFormats?.join(',')}
+                                            accept={getAcceptString(step.acceptedFormats)}
                                             onChange={(e) => {
                                               const file = e.target.files?.[0];
                                               if (file) {
@@ -1193,7 +1221,7 @@ export const ActiveExecutionModal = ({
                                           />
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <Upload size={16} className="text-primary" />
-                                            <span>Subir archivo ({step.acceptedFormats?.join(', ')})</span>
+                                            <span>Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})</span>
                                           </div>
                                         </label>
                                         <button
@@ -1208,25 +1236,30 @@ export const ActiveExecutionModal = ({
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                                                 body: JSON.stringify({
-                                                  id: `help-${step.id}-${Date.now()}`,
                                                   instanceId: activeInstance.id,
                                                   stepId: step.id,
                                                   instanceName: activeInstance.instanceName,
                                                   stepTitle: step.title,
-                                                  message: helpMsg,
-                                                  type: 'alert'
+                                                  message: helpMsg
                                                 })
                                               });
-                                           window.dispatchEvent(new Event('notifications-updated'));
+                                              handleRequestHelp(activeInstance.id, step.id);
                                               if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
                                             } catch (err) {
-                                              console.error("Error al pedir ayuda:", err);
+                                              console.error("Error al registrar solicitud de ayuda:", err);
+                                              handleRequestHelp(activeInstance.id, step.id);
                                             }
                                           }}
                                         >
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <AlertCircle size={13} /> Solicitar Apoyo
-                                          </span>
+                                          {step.helpRequested ? (
+                                            <span style={{ color: '#0D9488', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <AlertCircle size={14} /> Ayuda Solicitada
+                                            </span>
+                                          ) : (
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <HelpCircle size={14} /> Pedir Ayuda
+                                            </span>
+                                          )}
                                         </button>
                                       </>
                                     )}
@@ -1241,12 +1274,25 @@ export const ActiveExecutionModal = ({
                 </div>
               )}
             </div>
-
           </div>
+        </div>
+
+        {/* Footer Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', background: '#F8FAFC', borderTop: '1px solid #E2E8F0', flexShrink: 0 }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {activeInstance.steps.filter(s => s.isCompleted).length} de {activeInstance.steps.length} pasos completados
+          </div>
+          <button 
+            className="btn btn-secondary" 
+            onClick={onClose}
+            style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+          >
+            Cerrar
+          </button>
         </div>
       </div>
 
-      {/* Preview File Sub-Modal Overlay */}
+      {/* Document Preview Modal */}
       {previewFile && (
         <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0,0,0,0.6)' }} onClick={() => setPreviewFile(null)}>
           <div className="modal-card" style={{ maxWidth: '700px', width: '90%', padding: '1.5rem', background: '#fff', borderRadius: '16px' }} onClick={e => e.stopPropagation()}>
@@ -1257,7 +1303,7 @@ export const ActiveExecutionModal = ({
             
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1rem 0' }}>
               {previewFile.url ? (
-                previewFile.type && previewFile.type.startsWith('image/') ? (
+                ((previewFile.type && previewFile.type.startsWith('image/')) || /\.(png|jpe?g|webp|gif|svg)$/i.test(previewFile.name || '')) ? (
                   <img 
                     src={previewFile.url} 
                     alt={previewFile.name} 
