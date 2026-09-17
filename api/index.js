@@ -231,15 +231,61 @@ const triggerProcessAutomation = async (triggerName, user, data = {}) => {
   }
 };
 
+const isInstanceAssignedToUser = (instance, user, teamMemberId) => {
+  if (!instance) return false;
+  const userEmail = (user?.email || '').toLowerCase().trim();
+  const userIdStr = String(user?.id || '');
+  const adminIdStr = `admin_${userIdStr}`;
+  const memberIdStr = teamMemberId ? String(teamMemberId) : null;
+
+  const matchesAnyId = (val) => {
+    if (!val) return false;
+    const v = String(val).toLowerCase().trim();
+    if (userEmail && v === userEmail) return true;
+    if (userIdStr && v === userIdStr) return true;
+    if (adminIdStr && v === adminIdStr) return true;
+    if (memberIdStr && v === memberIdStr.toLowerCase()) return true;
+    return false;
+  };
+
+  // 1. Instance-level assigned_to
+  const instAssigned = instance.assigned_to || instance.assignedTo;
+  if (instAssigned) {
+    const list = Array.isArray(instAssigned) ? instAssigned : [instAssigned];
+    if (list.some(matchesAnyId)) return true;
+  }
+
+  // 2. Step-level assignedTo
+  const steps = instance.steps || [];
+  return steps.some(step => {
+    if (!step || !step.assignedTo) return false;
+    const list = Array.isArray(step.assignedTo) ? step.assignedTo : [step.assignedTo];
+    return list.some(matchesAnyId);
+  });
+};
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
   if (!token) return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado.' });
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) return res.status(403).json({ error: 'Token inválido o expirado.' });
     req.user = user;
+    try {
+      if (user && user.id) {
+        const dbUser = await pool.query('SELECT id, organization_id, name, email, role FROM users WHERE id = $1', [user.id]);
+        if (dbUser.rows.length > 0) {
+          req.user.role = dbUser.rows[0].role || user.role;
+          req.user.organizationId = dbUser.rows[0].organization_id || user.organizationId;
+          req.user.name = dbUser.rows[0].name || user.name;
+          req.user.email = dbUser.rows[0].email || user.email;
+        }
+      }
+    } catch (dbErr) {
+      console.warn('Error refreshing user from DB in authenticateToken:', dbErr.message);
+    }
     next();
   });
 };
@@ -699,16 +745,9 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
     // Map Instances
     let instancesRows = instancesRes.rows;
     if (isGuest) {
-      const memberRes = await pool.query('SELECT id FROM team_members WHERE email = $1 AND organization_id = $2', [req.user.email, orgId]);
+      const memberRes = await pool.query('SELECT id FROM team_members WHERE LOWER(email) = LOWER($1) AND organization_id = $2', [req.user.email, orgId]);
       const memberId = memberRes.rows[0]?.id;
-      instancesRows = instancesRows.filter(row => {
-        try {
-          const steps = row.steps || [];
-          return steps.some(step => step.assignedTo === memberId || step.assignedTo === req.user.email);
-        } catch (e) {
-          return false;
-        }
-      });
+      instancesRows = instancesRows.filter(row => isInstanceAssignedToUser(row, req.user, memberId));
     }
     const instancesMapped = instancesRows.map(row => ({
       id: row.id,
@@ -747,7 +786,7 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       assignedProcesses: row.assigned_processes || [],
       department: row.department || '',
       managerId: row.manager_id || '',
-      geminiApiKey: row.gemini_api_key || '',
+      geminiApiKey: orgRow.gemini_api_key || row.gemini_api_key || '',
       status: row.password_hash === 'INVITED_PENDING' ? 'pending' : 'active',
       isSystem: false
     }));
@@ -762,13 +801,11 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         assignedProcesses: [],
         department: 'Administración',
         managerId: '',
-        geminiApiKey: '',
+        geminiApiKey: orgRow.gemini_api_key || '',
         status: 'active',
         isSystem: true
       }));
     const fullTeam = [...adminUsers, ...teamMapped];
-
-    const orgRow = orgRes.rows[0] || {};
 
     res.json({
       templates: templatesMapped,
@@ -776,6 +813,13 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       clients: clientsRes.rows,
       notifications: logsMapped,
       team: fullTeam,
+      user: {
+        id: req.user.id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        organizationId: req.user.organizationId
+      },
       organization: {
         id: orgRow.id,
         name: orgRow.name || '',
@@ -906,18 +950,11 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
     const result = await pool.query('SELECT * FROM instances WHERE organization_id = $1 ORDER BY started_at DESC', [req.user.organizationId]);
     let rows = result.rows;
 
-    if (req.user.role === 'guest') {
-      const memberRes = await pool.query('SELECT id FROM team_members WHERE email = $1 AND organization_id = $2', [req.user.email, req.user.organizationId]);
+    const isGuest = req.user.role === 'guest' || req.user.role === 'agent';
+    if (isGuest) {
+      const memberRes = await pool.query('SELECT id FROM team_members WHERE LOWER(email) = LOWER($1) AND organization_id = $2', [req.user.email, req.user.organizationId]);
       const memberId = memberRes.rows[0]?.id;
-      
-      rows = rows.filter(row => {
-        try {
-          const steps = row.steps || [];
-          return steps.some(step => step.assignedTo === memberId || step.assignedTo === req.user.email);
-        } catch (e) {
-          return false;
-        }
-      });
+      rows = rows.filter(row => isInstanceAssignedToUser(row, req.user, memberId));
     }
 
     const mapped = rows.map(row => ({
@@ -1868,22 +1905,25 @@ app.put('/api/organization', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
   }
   const { name, gemini_api_key, description, departments } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
-  }
   try {
     // Ensure column exists
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
     await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT');
     await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS departments JSONB DEFAULT '[]'::jsonb");
     
+    let orgName = name;
+    if (!orgName) {
+      const currentOrg = await pool.query('SELECT name FROM organizations WHERE id = $1', [req.user.organizationId]);
+      orgName = currentOrg.rows[0]?.name || 'Organización';
+    }
+
     await pool.query(
-      'UPDATE organizations SET name = $1, gemini_api_key = $2, description = $3, departments = $4 WHERE id = $5',
+      'UPDATE organizations SET name = $1, gemini_api_key = COALESCE($2, gemini_api_key), description = COALESCE($3, description), departments = COALESCE($4, departments) WHERE id = $5',
       [
-        name, 
+        orgName, 
         gemini_api_key !== undefined ? gemini_api_key : null, 
-        description || null, 
-        departments ? JSON.stringify(departments) : '[]', 
+        description !== undefined ? description : null, 
+        departments ? JSON.stringify(departments) : null, 
         req.user.organizationId
       ]
     );
@@ -1891,6 +1931,25 @@ app.put('/api/organization', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar la empresa.' });
+  }
+});
+
+// Dedicated endpoint to update/sync Gemini API key for the entire organization
+app.put('/api/organization/gemini-api-key', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de Administrador.' });
+  }
+  const { gemini_api_key } = req.body;
+  try {
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key VARCHAR(255)');
+    await pool.query(
+      'UPDATE organizations SET gemini_api_key = $1 WHERE id = $2',
+      [gemini_api_key !== undefined ? gemini_api_key : null, req.user.organizationId]
+    );
+    res.json({ success: true, message: 'API Key de Gemini actualizada para toda la organización.' });
+  } catch (err) {
+    console.error('Error al actualizar Gemini API Key:', err);
+    res.status(500).json({ error: 'Error al actualizar API Key de la organización' });
   }
 });
 

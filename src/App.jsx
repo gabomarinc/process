@@ -324,9 +324,9 @@ function App() {
   const [selectedClickupListId, setSelectedClickupListId] = useState('');
   const [clickupStatuses, setClickupStatuses] = useState([]);
   const [isLoadingClickupData, setIsLoadingClickupData] = useState(false);
-  const [configuringRule, setConfiguringRule] = useState(null);
-  const [showConfigureRuleModal, setShowConfigureRuleModal] = useState(false);
-  const [dashboardViewMode, setDashboardViewMode] = useState('focus'); // 'focus' or 'birds-eye'
+  const [dashboardViewMode, setDashboardViewMode] = useState(() => {
+    return localStorage.getItem('process_dashboard_view_mode') || 'birds-eye';
+  }); // 'focus' or 'birds-eye'
   const [instancesLayout, setInstancesLayout] = useState(() => {
     return localStorage.getItem('process_instances_layout') || 'cards';
   }); // 'cards' or 'list'
@@ -581,6 +581,11 @@ function App() {
         if (bootstrapRes.ok) {
           const data = await bootstrapRes.json();
           
+          if (data.user) {
+            setUser(data.user);
+            localStorage.setItem('user', JSON.stringify(data.user));
+          }
+
           setTemplates(data.templates || []);
           setInstances(data.instances || []);
           setNotificationLogs(data.notifications || []);
@@ -599,6 +604,27 @@ function App() {
             if (data.organization.gemini_api_key) {
               setApiKey(data.organization.gemini_api_key);
               setTempKey(data.organization.gemini_api_key);
+              localStorage.setItem('gemini_api_key', data.organization.gemini_api_key);
+            } else {
+              // Si la organización aún no tiene clave en DB pero el admin la tiene en su navegador, auto-sincronizar
+              const localKey = localStorage.getItem('gemini_api_key');
+              const currentUserRole = data.user?.role || user?.role;
+              if (localKey && currentUserRole === 'admin') {
+                fetch('/api/organization/gemini-api-key', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ gemini_api_key: localKey })
+                }).then(r => {
+                  if (r.ok) {
+                    setApiKey(localKey);
+                    setTempKey(localKey);
+                  }
+                }).catch(e => console.warn('Auto-sync key warning:', e));
+              } else if (currentUserRole !== 'admin') {
+                // Usuarios no admin dependen estrictamente de la clave de la organización
+                setApiKey('');
+                setTempKey('');
+              }
             }
           }
 
@@ -1975,10 +2001,10 @@ const handleDeleteMember = async (id) => {
   // Save/Clear keys
   const saveApiKey = async () => {
     try {
-      const res = await fetch('/api/organization', {
+      const res = await fetch('/api/organization/gemini-api-key', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: orgFormData.name, gemini_api_key: tempKey })
+        body: JSON.stringify({ gemini_api_key: tempKey })
       });
       if (res.ok) {
         localStorage.setItem('gemini_api_key', tempKey);
@@ -1994,10 +2020,10 @@ const handleDeleteMember = async (id) => {
 
   const clearApiKey = async () => {
     try {
-      const res = await fetch('/api/organization', {
+      const res = await fetch('/api/organization/gemini-api-key', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: orgFormData.name, gemini_api_key: null })
+        body: JSON.stringify({ gemini_api_key: null })
       });
       if (res.ok) {
         localStorage.removeItem('gemini_api_key');
@@ -2983,7 +3009,7 @@ const handleDeleteMember = async (id) => {
                               <Key size={18} className="icon-orange" />
                               <h4>Gemini API Key</h4>
                             </div>
-                            <p>{apiKey ? 'Clave IA configurada localmente' : 'Carga tu clave para habilitar Gemini IA'}</p>
+                            <p>{apiKey ? 'Clave IA de la organización activa' : (user?.role === 'admin' ? 'Configura la clave Gemini del equipo' : 'Gestionada por el administrador')}</p>
                           </div>
                         )}
                       </div>
@@ -3048,29 +3074,39 @@ const handleDeleteMember = async (id) => {
       {showKeyInput && (
         <div className="api-drawer">
           <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.95rem' }}>
-            <Key size={16} /> Configura tu Gemini API Key
+            <Key size={16} /> Gemini API Key de la Organización
           </h4>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Tu clave se guarda localmente en el navegador y permite usar la IA para analizar tus archivos y generar flujos reales.
+            {user?.role === 'admin'
+              ? 'Esta clave se comparte de forma universal con todos los usuarios de tu equipo para habilitar las funciones de IA.'
+              : apiKey
+                ? 'Tu organización tiene habilitada la API Key de Gemini configurada por el administrador.'
+                : 'El administrador de tu equipo aún no ha configurado la API Key de Gemini para la organización.'}
           </p>
-          <div className="api-input-group">
-            <input 
-              type={showPassword ? "text" : "password"}
-              className="api-input"
-              placeholder="AQ.Ab8..."
-              value={tempKey}
-              onChange={(e) => setTempKey(e.target.value)}
-            />
-            <button 
-              className="btn btn-secondary"
-              onClick={() => setShowPassword(!showPassword)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.5rem' }}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-            <button className="btn btn-primary" onClick={saveApiKey}>Guardar</button>
-            {apiKey && <button className="btn btn-secondary" onClick={clearApiKey}>Eliminar</button>}
-          </div>
+          {user?.role === 'admin' ? (
+            <div className="api-input-group">
+              <input 
+                type={showPassword ? "text" : "password"}
+                className="api-input"
+                placeholder="AQ.Ab8..."
+                value={tempKey}
+                onChange={(e) => setTempKey(e.target.value)}
+              />
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.5rem' }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              <button className="btn btn-primary" onClick={saveApiKey}>Guardar para el Equipo</button>
+              {apiKey && <button className="btn btn-secondary" onClick={clearApiKey}>Eliminar</button>}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.85rem', color: apiKey ? 'var(--color-primary)' : '#DC2626', fontWeight: 600 }}>
+              {apiKey ? '✓ IA habilitada mediante la cuenta del administrador' : '⚠ Contacta al administrador de tu cuenta para activar la IA del equipo.'}
+            </div>
+          )}
         </div>
       )}
 
@@ -3206,26 +3242,37 @@ const handleDeleteMember = async (id) => {
 
               {/* Mi Momento Card */}
               {(() => {
-                const myMember = teamMembers.find(m => m.email?.toLowerCase() === user?.email?.toLowerCase());
+                const myMember = teamMembers.find(m => m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()) ||
+                                 teamMembers.find(m => String(m.id) === String(user?.id) || String(m.id) === `admin_${user?.id}`);
+
+                const isStepAssignedToMe = (step) => {
+                  if (!step || !step.assignedTo) return false;
+                  const list = Array.isArray(step.assignedTo) ? step.assignedTo.map(String) : [String(step.assignedTo)];
+                  const myIdentifiers = [
+                    myMember?.id ? String(myMember.id).toLowerCase() : null,
+                    user?.id ? String(user.id).toLowerCase() : null,
+                    user?.id ? `admin_${user.id}`.toLowerCase() : null,
+                    user?.email ? user.email.toLowerCase().trim() : null,
+                    myMember?.email ? myMember.email.toLowerCase().trim() : null
+                  ].filter(Boolean);
+
+                  return list.some(item => myIdentifiers.includes(item.toLowerCase().trim()));
+                };
+
                 const myMomentSteps = [];
-                if (myMember) {
-                  instances.forEach(inst => {
-                    const nextStepIdx = inst.steps.findIndex(s => !s.isCompleted);
-                    if (nextStepIdx !== -1) {
-                      const activeStep = inst.steps[nextStepIdx];
-                      const isAssigned = Array.isArray(activeStep.assignedTo)
-                        ? activeStep.assignedTo.map(String).includes(String(myMember.id))
-                        : String(activeStep.assignedTo) === String(myMember.id);
-                      if (isAssigned) {
-                        myMomentSteps.push({
-                          instance: inst,
-                          step: activeStep,
-                          index: nextStepIdx
-                        });
-                      }
+                instances.forEach(inst => {
+                  const nextStepIdx = inst.steps ? inst.steps.findIndex(s => !s.isCompleted) : -1;
+                  if (nextStepIdx !== -1) {
+                    const activeStep = inst.steps[nextStepIdx];
+                    if (isStepAssignedToMe(activeStep)) {
+                      myMomentSteps.push({
+                        instance: inst,
+                        step: activeStep,
+                        index: nextStepIdx
+                      });
                     }
-                  });
-                }
+                  }
+                });
 
                 if (dashboardViewMode === 'focus' && myMomentSteps.length > 0) {
                   return (
@@ -3283,15 +3330,73 @@ const handleDeleteMember = async (id) => {
               )}
 
               {(() => {
-                const myMember = teamMembers.find(m => m.email?.toLowerCase() === user?.email?.toLowerCase());
+                const myMember = teamMembers.find(m => m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()) ||
+                                 teamMembers.find(m => String(m.id) === String(user?.id) || String(m.id) === `admin_${user?.id}`);
+
+                const isStepAssignedToMe = (step) => {
+                  if (!step || !step.assignedTo) return false;
+                  const list = Array.isArray(step.assignedTo) ? step.assignedTo.map(String) : [String(step.assignedTo)];
+                  const myIdentifiers = [
+                    myMember?.id ? String(myMember.id).toLowerCase() : null,
+                    user?.id ? String(user.id).toLowerCase() : null,
+                    user?.id ? `admin_${user.id}`.toLowerCase() : null,
+                    user?.email ? user.email.toLowerCase().trim() : null,
+                    myMember?.email ? myMember.email.toLowerCase().trim() : null
+                  ].filter(Boolean);
+
+                  return list.some(item => myIdentifiers.includes(item.toLowerCase().trim()));
+                };
+
+                const isInstanceAssignedToMe = (inst) => {
+                  if (!inst) return false;
+                  const instAssigned = inst.assigned_to || inst.assignedTo;
+                  if (instAssigned) {
+                    const list = Array.isArray(instAssigned) ? instAssigned.map(String) : [String(instAssigned)];
+                    const myIdentifiers = [
+                      myMember?.id ? String(myMember.id).toLowerCase() : null,
+                      user?.id ? String(user.id).toLowerCase() : null,
+                      user?.id ? `admin_${user.id}`.toLowerCase() : null,
+                      user?.email ? user.email.toLowerCase().trim() : null,
+                      myMember?.email ? myMember.email.toLowerCase().trim() : null
+                    ].filter(Boolean);
+                    if (list.some(item => myIdentifiers.includes(item.toLowerCase().trim()))) return true;
+                  }
+                  return inst.steps && inst.steps.some(isStepAssignedToMe);
+                };
+
                 const filteredInstances = instances.filter(inst => {
                   if (selectedClientFilter && getClientForInstance(inst, clients) !== selectedClientFilter) return false;
                   if (dashboardViewMode === 'birds-eye') return true;
-                  if (!myMember) return false;
-                  return inst.steps.some(s => Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(myMember.id)) : String(s.assignedTo) === String(myMember.id));
+                  return isInstanceAssignedToMe(inst);
                 });
 
                 if (filteredInstances.length === 0) {
+                  if (dashboardViewMode === 'focus' && instances.length > 0) {
+                    return (
+                      <div style={{ textAlign: 'center', padding: '3.5rem 2rem', background: '#F8FAFC', borderRadius: '20px', border: '1px dashed #CBD5E1', margin: '1rem 0 2rem 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem', color: 'var(--color-primary)' }}>
+                          <Check size={44} />
+                        </div>
+                        <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: '1.4rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                          ¡Estás al día! No tienes tareas asignadas pendientes
+                        </h3>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 1.5rem auto' }}>
+                          Tu equipo tiene {instances.length} {instances.length === 1 ? 'ejecución activa' : 'ejecuciones activas'} en curso. Cambia a Vista Completa para ver el tablero global.
+                        </p>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.9rem', padding: '0.65rem 1.5rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                          onClick={() => {
+                            setDashboardViewMode('birds-eye');
+                            localStorage.setItem('process_dashboard_view_mode', 'birds-eye');
+                          }}
+                        >
+                          <Layers size={16} /> Ver Vista Completa ({instances.length})
+                        </button>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', color: 'var(--color-primary)' }}><Rocket size={64} /></div>
@@ -5493,7 +5598,11 @@ const handleDeleteMember = async (id) => {
               {!apiKey && (
                 <div className="warning-alert" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlertTriangle size={16} />
-                  <span>Modo Simulación. Configura tu API Key de Gemini en la parte superior.</span>
+                  <span>
+                    {user?.role === 'admin'
+                      ? 'Modo Simulación. Configura la API Key de Gemini en la parte superior para habilitar la IA en tu equipo.'
+                      : 'Modo Simulación. El administrador de tu organización aún no ha configurado la API Key de Gemini.'}
+                  </span>
                 </div>
               )}
 
