@@ -324,6 +324,8 @@ function App() {
   const [selectedClickupListId, setSelectedClickupListId] = useState('');
   const [clickupStatuses, setClickupStatuses] = useState([]);
   const [isLoadingClickupData, setIsLoadingClickupData] = useState(false);
+  const [configuringRule, setConfiguringRule] = useState(null);
+  const [showConfigureRuleModal, setShowConfigureRuleModal] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState(() => {
     return localStorage.getItem('process_dashboard_view_mode') || 'birds-eye';
   }); // 'focus' or 'birds-eye'
