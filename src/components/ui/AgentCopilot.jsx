@@ -35,17 +35,40 @@ export default function AgentCopilot({
   onToggleExternal 
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'model',
-      text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico** de Kônsul Process.\n\nPuedo crear plantillas, iniciar ejecuciones, mover tarjetas en el Kanban, crear clientes y darte análisis en tiempo real mediante **Tool Calling**. ¿Qué deseas coordinar hoy?`,
-      actions: []
-    }
-  ]);
+  const defaultWelcome = {
+    id: 'welcome',
+    role: 'model',
+    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico** de Kônsul Process.\n\nPuedo crear plantillas, iniciar ejecuciones, mover tarjetas en el Kanban, crear clientes y darte análisis en tiempo real mediante **Tool Calling**. ¿Qué deseas coordinar hoy?`,
+    actions: []
+  };
+
+  const [messages, setMessages] = useState([defaultWelcome]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Load chat history from localStorage
+  useEffect(() => {
+    if (user?.id) {
+      try {
+        const stored = localStorage.getItem(`konsul_chat_${user.id}`);
+        if (stored) {
+          setMessages(JSON.parse(stored));
+        }
+      } catch (err) {
+        console.error('Error loading chat history', err);
+      }
+    }
+  }, [user?.id]);
+
+  // Save chat history to localStorage
+  useEffect(() => {
+    if (user?.id && messages.length > 0) {
+      // Don't save if it's just the default welcome message
+      if (messages.length === 1 && messages[0].id === 'welcome_reset') return;
+      localStorage.setItem(`konsul_chat_${user.id}`, JSON.stringify(messages));
+    }
+  }, [messages, user?.id]);
 
   // Sync external open state if provided
   useEffect(() => {
@@ -141,14 +164,16 @@ export default function AgentCopilot({
   };
 
   const handleClearHistory = () => {
-    setMessages([
-      {
-        id: 'welcome_reset',
-        role: 'model',
-        text: `Historial reiniciado. ¿En qué podemos avanzar ahora, **${user?.name?.split(' ')[0] || 'Colega'}**?`,
-        actions: []
-      }
-    ]);
+    const welcomeReset = {
+      id: 'welcome_reset',
+      role: 'model',
+      text: `Historial reiniciado. ¿En qué podemos avanzar ahora, **${user?.name?.split(' ')[0] || 'Colega'}**?`,
+      actions: []
+    };
+    setMessages([welcomeReset]);
+    if (user?.id) {
+      localStorage.removeItem(`konsul_chat_${user.id}`);
+    }
   };
 
   const renderActionCard = (act, idx) => {
