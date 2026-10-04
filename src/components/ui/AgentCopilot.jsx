@@ -14,12 +14,14 @@ import {
   Plus, 
   Trash2, 
   Bot,
-  Zap
+  Zap,
+  BookOpen
 } from 'lucide-react';
 import './AgentCopilot.css';
 
 const DEFAULT_CHIPS = [
   { label: '📊 Resumen del Workspace', prompt: 'Dame un resumen del estado actual de la organización, plantillas y ejecuciones activas.' },
+  { label: '📖 Guía de Procesos', prompt: 'Explícame las plantillas de procesos disponibles y cómo ejecutarlas paso a paso.' },
   { label: '➕ Crear plantilla de Onboarding', prompt: 'Crea una nueva plantilla para "Onboarding de Nuevos Clientes" con 4 pasos clave en la categoría Operaciones.' },
   { label: '📋 Añadir columna al Kanban', prompt: 'Agrega una columna llamada "En Revisión Legal" al tablero Kanban.' },
   { label: '👥 Registrar nuevo cliente', prompt: 'Crea un nuevo cliente llamado "InnovaTech Global".' }
@@ -28,6 +30,7 @@ const DEFAULT_CHIPS = [
 export default function AgentCopilot({ 
   user, 
   apiKey, 
+  templates = [],
   onNavigate, 
   onDataModified, 
   addToast,
@@ -35,10 +38,11 @@ export default function AgentCopilot({
   onToggleExternal 
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const defaultWelcome = {
     id: 'welcome',
     role: 'model',
-    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico** de Kônsul Process.\n\nPuedo crear plantillas, iniciar ejecuciones, mover tarjetas en el Kanban, crear clientes y darte análisis en tiempo real mediante **Tool Calling**. ¿Qué deseas coordinar hoy?`,
+    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico y Consultor de Procesos** de Kônsul.\n\nPuedo guiarte paso a paso en cualquier plantilla, crear procesos, mover tarjetas en el Kanban, registrar clientes y analizar tu workspace en tiempo real. ¿En qué te ayudo hoy?`,
     actions: []
   };
 
@@ -124,23 +128,28 @@ export default function AgentCopilot({
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Error al conectar con el servidor del Asistente.');
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        console.warn('Could not parse response JSON:', jsonErr);
       }
 
-      const data = await response.json();
+      if (!response.ok && (!data || !data.reply)) {
+        throw new Error(data?.error || data?.reply || 'Error al conectar con el servidor del Asistente.');
+      }
       
       const botMsg = {
         id: 'bot_' + Date.now(),
         role: 'model',
-        text: data.reply || 'Acción procesada.',
-        actions: data.actions || []
+        text: data?.reply || 'Acción procesada.',
+        actions: data?.actions || []
       };
 
       setMessages(prev => [...prev, botMsg]);
 
       // If actions were executed, trigger data reload in App.jsx
-      if (data.refreshRequired && onDataModified) {
+      if (data?.refreshRequired && onDataModified) {
         onDataModified();
         if (addToast) {
           addToast('Acción agéntica completada y sincronizada', 'success');
@@ -377,6 +386,32 @@ export default function AgentCopilot({
               </button>
             </div>
           </div>
+
+          {/* Process Guide Selector (Old chat feature integration) */}
+          {Array.isArray(templates) && templates.length > 0 && (
+            <div className="agent-context-bar">
+              <BookOpen size={14} color="#27BEA5" style={{ flexShrink: 0 }} />
+              <select
+                className="agent-template-select"
+                value={selectedTemplateId}
+                onChange={(e) => {
+                  const tId = e.target.value;
+                  setSelectedTemplateId(tId);
+                  if (tId) {
+                    const temp = templates.find(t => t.id === tId);
+                    if (temp) {
+                      handleSendMessage(`Quiero consultar detalles y dudas sobre el proceso "${temp.title}". ¿Podrías resumirme sus objetivos y qué se hace en cada uno de sus pasos?`);
+                    }
+                  }
+                }}
+              >
+                <option value="">-- Consultar o guiar un proceso específico --</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.title} ({t.category || 'General'})</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Messages Feed */}
           <div className="agent-copilot-messages">

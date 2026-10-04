@@ -3266,11 +3266,7 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
 const AGENT_TOOLS_DECLARATIONS = [
   {
     name: 'get_workspace_summary',
-    description: 'Obtiene un resumen en tiempo real del estado de la organización: total de plantillas, ejecuciones activas por columna Kanban, miembros del equipo y clientes registrados.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {}
-    }
+    description: 'Obtiene un resumen en tiempo real del estado de la organización: total de plantillas, ejecuciones activas por columna Kanban, miembros del equipo y clientes registrados.'
   },
   {
     name: 'list_templates',
@@ -3280,6 +3276,28 @@ const AGENT_TOOLS_DECLARATIONS = [
       properties: {
         category: { type: 'STRING', description: 'Filtrar opcionalmente por categoría o área' }
       }
+    }
+  },
+  {
+    name: 'get_template_details',
+    description: 'Obtiene los detalles completos de una plantilla de proceso: su descripción general y todos sus pasos con instrucciones detalladas, entregables y motivación. Úsalo para resolver cualquier duda sobre cómo hacer un proceso o paso a paso.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        templateNameOrId: { type: 'STRING', description: 'ID o título aproximado de la plantilla' }
+      },
+      required: ['templateNameOrId']
+    }
+  },
+  {
+    name: 'get_instance_details',
+    description: 'Obtiene el estado actual, cliente y avance de pasos completados/pendientes de una ejecución activa en el Kanban.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        instanceNameOrId: { type: 'STRING', description: 'ID o nombre de la ejecución activa' }
+      },
+      required: ['instanceNameOrId']
     }
   },
   {
@@ -3421,6 +3439,78 @@ async function executeAgentTool(toolName, args, user) {
         success: true,
         count: res.rows.length,
         templates: res.rows
+      };
+    }
+
+    case 'get_template_details': {
+      const { templateNameOrId } = args;
+      if (!templateNameOrId) return { success: false, error: 'Especifica el nombre o ID de la plantilla.' };
+
+      let tmplRes;
+      if (typeof templateNameOrId === 'string' && templateNameOrId.startsWith('tmpl_')) {
+        tmplRes = await pool.query('SELECT * FROM templates WHERE id = $1 AND organization_id = $2', [templateNameOrId, orgId]);
+      } else {
+        tmplRes = await pool.query('SELECT * FROM templates WHERE organization_id = $1 AND title ILIKE $2 LIMIT 1', [orgId, `%${templateNameOrId}%`]);
+      }
+
+      if (tmplRes.rows.length === 0) {
+        return { success: false, error: `No se encontró ninguna plantilla que coincida con "${templateNameOrId}".` };
+      }
+
+      const t = tmplRes.rows[0];
+      const rawSteps = typeof t.steps === 'string' ? JSON.parse(t.steps) : (t.steps || []);
+      return {
+        success: true,
+        templateId: t.id,
+        title: t.title,
+        description: t.description,
+        category: t.category,
+        estimatedDurationDays: t.duration_days,
+        companionName: t.companion_name,
+        companionGreeting: t.companion_greeting,
+        totalSteps: rawSteps.length,
+        steps: rawSteps.map((s, idx) => ({
+          stepNumber: idx + 1,
+          title: s.title,
+          description: s.description,
+          motivation: s.motivation,
+          durationDays: s.durationDays
+        }))
+      };
+    }
+
+    case 'get_instance_details': {
+      const { instanceNameOrId } = args;
+      if (!instanceNameOrId) return { success: false, error: 'Especifica el nombre o ID de la ejecución.' };
+
+      let instRes;
+      if (typeof instanceNameOrId === 'string' && instanceNameOrId.startsWith('inst_')) {
+        instRes = await pool.query('SELECT * FROM instances WHERE id = $1 AND organization_id = $2', [instanceNameOrId, orgId]);
+      } else {
+        instRes = await pool.query('SELECT * FROM instances WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1', [orgId, `%${instanceNameOrId}%`]);
+      }
+
+      if (instRes.rows.length === 0) {
+        return { success: false, error: `No se encontró ninguna ejecución activa que coincida con "${instanceNameOrId}".` };
+      }
+
+      const inst = instRes.rows[0];
+      const rawSteps = typeof inst.steps === 'string' ? JSON.parse(inst.steps) : (inst.steps || []);
+      return {
+        success: true,
+        instanceId: inst.id,
+        name: inst.name,
+        status: inst.status,
+        priority: inst.priority,
+        clientName: inst.client_name,
+        totalSteps: rawSteps.length,
+        completedSteps: rawSteps.filter(s => s.isCompleted).length,
+        steps: rawSteps.map((s, idx) => ({
+          stepNumber: idx + 1,
+          title: s.title,
+          isCompleted: !!s.isCompleted,
+          description: s.description
+        }))
       };
     }
 
@@ -3656,14 +3746,28 @@ app.post('/api/agent/chat', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'El mensaje es obligatorio.' });
     }
 
-    // Resolve Gemini API Key (Org DB > Body > Env)
+    const orgId = req.user?.organizationId;
     let geminiKey = null;
-    const orgRes = await pool.query('SELECT name, gemini_api_key, kanban_columns FROM organizations WHERE id = $1', [req.user.organizationId]);
-    if (orgRes.rows.length > 0 && orgRes.rows[0].gemini_api_key) {
-      geminiKey = orgRes.rows[0].gemini_api_key;
-    } else if (req.body.geminiApiKey) {
+    let orgName = 'Kônsul Workspace';
+    let kanbanCols = ["Por hacer", "En curso", "Terminado"];
+
+    if (orgId) {
+      try {
+        const orgRes = await pool.query('SELECT name, gemini_api_key, kanban_columns FROM organizations WHERE id = $1', [orgId]);
+        if (orgRes.rows.length > 0) {
+          if (orgRes.rows[0].gemini_api_key) geminiKey = orgRes.rows[0].gemini_api_key;
+          if (orgRes.rows[0].name) orgName = orgRes.rows[0].name;
+          if (orgRes.rows[0].kanban_columns) kanbanCols = orgRes.rows[0].kanban_columns;
+        }
+      } catch (dbErr) {
+        console.warn('Could not read org settings for agent chat:', dbErr.message);
+      }
+    }
+
+    if (!geminiKey && req.body.geminiApiKey) {
       geminiKey = req.body.geminiApiKey;
-    } else if (process.env.GEMINI_API_KEY) {
+    }
+    if (!geminiKey && process.env.GEMINI_API_KEY) {
       geminiKey = process.env.GEMINI_API_KEY;
     }
 
@@ -3676,66 +3780,114 @@ app.post('/api/agent/chat', authenticateToken, async (req, res) => {
       });
     }
 
-    const orgName = orgRes.rows[0]?.name || 'Kônsul Workspace';
-    const kanbanCols = orgRes.rows[0]?.kanban_columns || ["Por hacer", "En curso", "Terminado"];
-
-    const systemPrompt = `Eres el Agente de Inteligencia Operativa y Copiloto de Kônsul Process para la empresa "${orgName}".
-Usuario interactuando: "${req.user.name || req.user.email}" (Rol: ${req.user.role}).
+    const systemPrompt = `Eres el Asistente Experto y Copiloto Agéntico de Kônsul Process para la empresa "${orgName}".
+Usuario interactuando: "${req.user?.name || req.user?.email || 'Colega'}" (Rol: ${req.user?.role || 'colaborador'}).
 Filosofía de Kônsul: "La app trabaja para el usuario, no el usuario para la app".
 
-REGLAS ESENCIALES:
-1. Tienes acceso a un catálogo de herramientas (Tool Calling). Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o crear clientes/miembros, DEBES invocar la herramienta correspondiente.
-2. NUNCA inventes que creaste algo sin haber invocado la herramienta.
-3. Si el usuario hace una consulta sobre el estado o progreso, usa "get_workspace_summary" o "list_templates" para dar información verídica y en tiempo real.
-4. Responde en español, de forma concisa, profesional y con formato Markdown amigable.
-5. Columnas actuales del Kanban: ${JSON.stringify(kanbanCols)}.`;
+TUS DOS FUNCIONES PRINCIPALES:
+1. GUÍA Y CONSULTOR DE PROCESOS (Asistente Kônsul):
+   - Responde cualquier duda sobre los procesos de la empresa, qué se hace en cada paso, los entregables, objetivos y mejores prácticas.
+   - Si el usuario pregunta dudas sobre un proceso (ej. "¿Cómo hago el paso 2 de Onboarding?", "¿Qué pasos tiene Ventas?"), invoca "get_template_details" o "list_templates" para consultar los pasos reales en la base de datos y guiarlo paso a paso de forma directa, concisa y profesional.
+   
+2. COPILOTO AGÉNTICO Y ACCIONES OPERATIVAS (Tool Calling):
+   - Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o registrar clientes/miembros, DEBES invocar la herramienta correspondiente del catálogo.
+   - NUNCA inventes que creaste o modificaste algo sin haber ejecutado la herramienta.
 
-    // Format chat history for Gemini
-    const contents = [];
+REGLAS DE COMUNICACIÓN:
+- Responde en español con formato Markdown limpio y profesional.
+- Sé claro, conciso y ve directo al grano.
+- Columnas actuales del Kanban: ${JSON.stringify(kanbanCols)}.`;
+
+    // Strictly format chat history for Gemini:
+    // 1. Must alternate 'user' -> 'model' -> 'user'
+    // 2. Must start with 'user'
+    // 3. Must end with current 'user' message
+    const rawTurns = [];
     if (Array.isArray(history)) {
-      history.slice(-8).forEach(item => {
-        if (item.role && item.text) {
-          contents.push({
-            role: item.role === 'user' ? 'user' : 'model',
-            parts: [{ text: item.text }]
-          });
+      history.forEach(item => {
+        if (item && item.text && typeof item.text === 'string' && (item.role === 'user' || item.role === 'model')) {
+          rawTurns.push({ role: item.role, text: item.text.trim() });
         }
       });
     }
-    contents.push({
-      role: 'user',
-      parts: [{ text: message }]
-    });
+    rawTurns.push({ role: 'user', text: message.trim() });
 
-    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+    const sanitizedTurns = [];
+    for (const turn of rawTurns) {
+      if (sanitizedTurns.length === 0) {
+        if (turn.role === 'user') {
+          sanitizedTurns.push({ role: 'user', text: turn.text });
+        }
+      } else {
+        const last = sanitizedTurns[sanitizedTurns.length - 1];
+        if (last.role === turn.role) {
+          last.text += '\n\n' + turn.text;
+        } else {
+          sanitizedTurns.push({ role: turn.role, text: turn.text });
+        }
+      }
+    }
 
-    // Step 1: Initial invocation with tools
-    const geminiResponse = await fetch(geminiEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        tools: [{ functionDeclarations: AGENT_TOOLS_DECLARATIONS }]
-      })
-    });
+    if (sanitizedTurns.length === 0) {
+      sanitizedTurns.push({ role: 'user', text: message });
+    }
 
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      console.error('Error Gemini Agent:', errText);
-      return res.status(500).json({
+    const contents = sanitizedTurns.map(t => ({
+      role: t.role,
+      parts: [{ text: t.text }]
+    }));
+
+    // Multi-model endpoint fallback
+    const candidateModels = [
+      'gemini-1.5-flash',
+      'gemini-flash-latest',
+      'gemini-2.0-flash'
+    ];
+
+    let geminiResponse = null;
+    let geminiData = null;
+    let usedEndpoint = '';
+
+    for (const model of candidateModels) {
+      usedEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      try {
+        const resCall = await fetch(usedEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            tools: [{ functionDeclarations: AGENT_TOOLS_DECLARATIONS }]
+          })
+        });
+
+        if (resCall.ok) {
+          geminiResponse = resCall;
+          geminiData = await resCall.json();
+          break;
+        } else {
+          const errBody = await resCall.text();
+          console.warn(`Gemini model ${model} failed (${resCall.status}):`, errBody.substring(0, 150));
+        }
+      } catch (callErr) {
+        console.warn(`Fetch error for Gemini model ${model}:`, callErr.message);
+      }
+    }
+
+    if (!geminiData) {
+      return res.json({
         success: false,
-        error: 'GEMINI_API_ERROR',
-        reply: 'Hubo un error de comunicación con Gemini AI. Verifica que tu API Key sea válida.'
+        reply: "⚠️ No se pudo comunicar con Gemini AI. Por favor verifica que tu API Key sea válida y cuente con cuota disponible.",
+        actions: [],
+        refreshRequired: false
       });
     }
 
-    const geminiData = await geminiResponse.json();
     const candidate = geminiData.candidates?.[0];
     if (!candidate || !candidate.content) {
       return res.json({
         success: true,
-        reply: "No pude procesar la respuesta en este momento. Por favor intenta de nuevo.",
+        reply: "No pude procesar la respuesta en este momento. Por favor intenta reformular tu solicitud.",
         actions: [],
         refreshRequired: false
       });
@@ -3757,23 +3909,19 @@ REGLAS ESENCIALES:
 
     // Step 2: Execute each tool call through RBAC Engine
     const actionsTaken = [];
-    const functionResponsesParts = [];
+    const toolResultsSummary = [];
 
     for (const call of functionCalls) {
       try {
         const toolResult = await executeAgentTool(call.name, call.args || {}, req.user);
+        const isSuccess = toolResult.success !== false;
         actionsTaken.push({
           tool: call.name,
           args: call.args,
           result: toolResult,
-          success: toolResult.success !== false
+          success: isSuccess
         });
-        functionResponsesParts.push({
-          functionResponse: {
-            name: call.name,
-            response: toolResult
-          }
-        });
+        toolResultsSummary.push(`Herramienta: ${call.name}\nResultado: ${JSON.stringify(toolResult)}`);
       } catch (toolErr) {
         console.error(`Error al ejecutar herramienta ${call.name}:`, toolErr);
         actionsTaken.push({
@@ -3782,34 +3930,33 @@ REGLAS ESENCIALES:
           result: { success: false, error: toolErr.message },
           success: false
         });
-        functionResponsesParts.push({
-          functionResponse: {
-            name: call.name,
-            response: { success: false, error: toolErr.message }
-          }
-        });
+        toolResultsSummary.push(`Herramienta: ${call.name}\nFallo: ${toolErr.message}`);
       }
     }
 
-    // Step 3: Feed the tool results back to Gemini for natural language explanation
-    const followUpContents = [
-      ...contents,
-      candidate.content,
-      {
-        role: 'function',
-        parts: functionResponsesParts
-      }
-    ];
-
+    // Step 3: Ask Gemini for a natural explanation of the results
     let finalReply = '';
     try {
-      const followUpRes = await fetch(geminiEndpoint, {
+      const explanationContents = [
+        ...contents,
+        {
+          role: 'model',
+          parts: [{ text: parts.map(p => p.text || '').join('\n') || 'Ejecutando herramientas solicitadas...' }]
+        },
+        {
+          role: 'user',
+          parts: [{
+            text: `Resultados de las herramientas ejecutadas en el sistema:\n${toolResultsSummary.join('\n\n')}\n\nPor favor, responde al usuario explicando de forma clara, amigable y concisa lo que hiciste o la información obtenida.`
+          }]
+        }
+      ];
+
+      const followUpRes = await fetch(usedEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: followUpContents,
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          tools: [{ functionDeclarations: AGENT_TOOLS_DECLARATIONS }]
+          contents: explanationContents,
+          systemInstruction: { parts: [{ text: systemPrompt }] }
         })
       });
 
@@ -3819,7 +3966,7 @@ REGLAS ESENCIALES:
         finalReply = followUpParts.map(p => p.text || '').join('\n').trim();
       }
     } catch (fErr) {
-      console.warn('Follow up Gemini formatting failed, using summary fallback:', fErr);
+      console.warn('Follow up explanation failed, fallback to summary:', fErr.message);
     }
 
     if (!finalReply) {
@@ -3835,10 +3982,11 @@ REGLAS ESENCIALES:
 
   } catch (err) {
     console.error('Agent chat error:', err);
-    res.status(500).json({
+    res.json({
       success: false,
-      error: 'SERVER_ERROR',
-      reply: 'Ocurrió un error interno al procesar tu solicitud con el Asistente.'
+      reply: `⚠️ Ocurrió un inconveniente al procesar tu solicitud: ${err.message || 'Error interno'}. Por favor intenta de nuevo.`,
+      actions: [],
+      refreshRequired: false
     });
   }
 });

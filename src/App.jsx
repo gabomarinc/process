@@ -5806,116 +5806,7 @@ const handleDeleteMember = async (id) => {
         />
       )}
 
-      {/* Floating Chat Assistant Bubble (Visible Only When Logged In) */}
-      {token && (
-        <>
-          {/* The Bubble Button */}
-          <div 
-            onClick={() => setIsChatModalOpen(!isChatModalOpen)}
-            style={{
-              position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999,
-              width: '60px', height: '60px', borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-              color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(0,0,0,0.25)', cursor: 'pointer',
-              transition: 'transform 0.2s ease', transform: isChatModalOpen ? 'scale(0.9)' : 'scale(1)'
-            }}
-          >
-            {isChatModalOpen ? <X size={26} /> : <MessageSquare size={26} />}
-          </div>
-
-          {/* The Chat Panel */}
-          {/* The Chat Panel */}
-          {isChatModalOpen && (
-            <div style={{
-              position: 'fixed', bottom: '110px', right: '30px', zIndex: 9998,
-              background: '#FFFFFF',
-              borderRadius: '20px', width: '380px', maxHeight: '550px',
-              boxShadow: 'var(--shadow-card)', border: '1px solid #E2E8F0',
-              display: 'flex', flexDirection: 'column', overflow: 'hidden'
-            }} onClick={e => e.stopPropagation()}>
-              
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.1rem 1.25rem', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ background: '#E6FFFA', color: 'var(--color-primary)', width: '34px', height: '34px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Sparkles size={16} />
-                  </div>
-                  <div>
-                    <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.05rem', margin: 0, fontWeight: 800, color: 'var(--text-main)' }}>Asistente Kônsul</h3>
-                  </div>
-                </div>
-              </div>
-
-              {!chatTemplateId ? (
-                <div style={{ padding: '2rem 1.5rem', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                    Selecciona un proceso para iniciar tu guía interactiva:
-                  </p>
-                  <select
-                    value={chatTemplateId}
-                    onChange={(e) => {
-                      const selected = e.target.value;
-                      setChatTemplateId(selected);
-                      const temp = templates.find(t => t.id === selected);
-                      if (temp) {
-                        setChatMessages([{ sender: 'ai', text: `¡Hola! Soy tu asistente para **"${temp.title}"**. Puedes consultarme dudas como:\n- ¿Qué se hace en el paso 2?\n- ¿Cómo resolver el entregable?\n- ¿Cuál es el propósito general del flujo?` }]);
-                      } else {
-                        setChatMessages([]);
-                      }
-                    }}
-                    style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: '0.85rem', outline: 'none', background: '#F8FAFC', cursor: 'pointer' }}
-                  >
-                    <option value="">-- Seleccionar Proceso --</option>
-                    {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                  </select>
-                </div>
-              ) : (
-                <>
-                  <div style={{ padding: '0.5rem 1.25rem', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', fontSize: '0.75rem', color: 'var(--color-primary-hover)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><BookOpen size={14} /> {templates.find(t => t.id === chatTemplateId)?.title}</span>
-                    <button onClick={() => setChatTemplateId('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.7rem', textDecoration: 'underline' }}>Cambiar</button>
-                  </div>
-                  {/* Chat Thread */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', height: '300px', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#F8FAFC' }}>
-                    {chatMessages.map((msg, idx) => (
-                      <div key={idx} style={{
-                        padding: '10px 14px', borderRadius: msg.sender === 'user' ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
-                        fontSize: '0.85rem', maxWidth: '85%', lineHeight: 1.4,
-                        alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                        background: msg.sender === 'user' ? '#27BEA5' : 'white',
-                        color: msg.sender === 'user' ? 'white' : 'var(--text-main)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: msg.sender === 'user' ? 'none' : '1px solid #E2E8F0',
-                        whiteSpace: 'pre-wrap', textAlign: 'left'
-                      }}>
-                        {msg.text}
-                      </div>
-                    ))}
-                    {isChatLoading && (
-                      <div style={{ alignSelf: 'flex-start', padding: '10px 14px', borderRadius: '16px 16px 16px 2px', background: 'white', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
-                        <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite 0.2s' }} />
-                        <span className="dot" style={{ width: '4px', height: '4px', background: 'var(--color-primary)', borderRadius: '50%', animation: 'pulse 1s infinite 0.4s' }} />
-                      </div>
-                    )}
-                  </div>
-                  {/* Footer Form */}
-                  <form onSubmit={handleSendChatMessage} style={{ padding: '1rem 1.25rem', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '8px', background: '#FFFFFF' }}>
-                    <input
-                      type="text" placeholder="Pregúntale a la IA..." value={chatInput} onChange={e => setChatInput(e.target.value)}
-                      disabled={isChatLoading || !apiKey}
-                      style={{ flex: 1, padding: '0.65rem 0.85rem', fontSize: '0.85rem', borderRadius: '12px', border: '1px solid #E2E8F0', outline: 'none', background: '#F8FAFC' }}
-                    />
-                    <button type="submit" className="btn btn-primary" disabled={isChatLoading || !apiKey} style={{ padding: '0.65rem 1.15rem', fontSize: '0.85rem', borderRadius: '12px', fontWeight: 700 }}>
-                      Enviar
-                    </button>
-                  </form>
-                </>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      {/* Old Chat Assistant visually removed in favor of unified AgentCopilot */}
 
       {/* Complete Celebration Modal */}
       {showCelebration && (
@@ -6826,6 +6717,7 @@ const handleDeleteMember = async (id) => {
       <AgentCopilot
         user={user}
         apiKey={apiKey}
+        templates={templates}
         onNavigate={(tab) => {
           setActiveTab(tab);
           window.location.hash = `#/${tab}`;

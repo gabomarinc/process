@@ -186,6 +186,36 @@
   color: #FFFFFF;
 }
 
+/* Context Process Selector Bar (Process Guide integration) */
+.agent-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #F1F5F9;
+  border-bottom: 1px solid #E2E8F0;
+  font-size: 0.8rem;
+}
+
+.agent-template-select {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #1E293B;
+  font-size: 0.78rem;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-template-select:focus {
+  border-color: #27BEA5;
+  box-shadow: 0 0 0 2px rgba(39, 190, 167, 0.15);
+}
+
 /* Chat Messages Feed */
 .agent-copilot-messages {
   flex: 1;
