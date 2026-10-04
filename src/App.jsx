@@ -4270,23 +4270,41 @@ const handleDeleteMember = async (id) => {
                             </div>
                           </div>
 
-                          {/* Item Pills Summary */}
+                          {/* Item Pills Summary (Dynamic) */}
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.85rem' }}>
-                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.carrusel ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.carrusel ? '#065F46' : '#64748B', fontWeight: 600 }}>
-                              {semaforo.checks.carrusel ? '✓' : '○'} Carrusel ({semaforo.checklist.carrusel.current}/{semaforo.checklist.carrusel.target})
-                            </span>
-                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.post ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.post ? '#065F46' : '#64748B', fontWeight: 600 }}>
-                              {semaforo.checks.post ? '✓' : '○'} Post ({semaforo.checklist.post.current}/{semaforo.checklist.post.target})
-                            </span>
-                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.video ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.video ? '#065F46' : '#64748B', fontWeight: 600 }}>
-                              {semaforo.checks.video ? '✓' : '○'} Video ({semaforo.checklist.video.current}/{semaforo.checklist.video.target})
-                            </span>
-                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.facturaPaga ? '#D1FAE5' : '#FEE2E2', color: semaforo.checks.facturaPaga ? '#065F46' : '#991B1B', fontWeight: 600 }}>
-                              {semaforo.checks.facturaPaga ? '✓ Factura Paga' : '○ Factura Pendiente'}
-                            </span>
-                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: '#DBEAFE', color: '#1E40AF', fontWeight: 600 }}>
-                              Ads: {semaforo.checklist.adsRating}
-                            </span>
+                            {semaforo.items.map(item => {
+                              const isItemDone = item.isDone;
+                              let label = `${isItemDone ? '✓' : '○'} ${item.name}`;
+                              if (item.type === 'counter') {
+                                label += ` (${item.current || 0}/${item.target || 1})`;
+                              } else if (item.type === 'rating') {
+                                label = `${item.name}: ${item.rating || 'Excelente'}`;
+                              }
+
+                              const bgPill = isItemDone ? '#D1FAE5' : (item.type === 'rating' ? '#DBEAFE' : '#F1F5F9');
+                              const textPill = isItemDone ? '#065F46' : (item.type === 'rating' ? '#1E40AF' : '#64748B');
+
+                              return (
+                                <span 
+                                  key={item.id} 
+                                  style={{ 
+                                    fontSize: '0.72rem', 
+                                    padding: '3px 8px', 
+                                    borderRadius: '6px', 
+                                    background: bgPill, 
+                                    color: textPill, 
+                                    fontWeight: 600,
+                                    maxWidth: '100%',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                  title={label}
+                                >
+                                  {label}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
 
