@@ -4224,7 +4224,11 @@ const handleDeleteMember = async (id) => {
 
                         <div>
                           {/* Header with Title and Semáforo Badge */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                          <div 
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', cursor: 'pointer' }}
+                            onClick={() => setChecklistModalClient(c)}
+                            title="Abrir perfil completo del cliente"
+                          >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'var(--bg-companion)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--color-primary)', fontSize: '1.1rem' }}>
                                 {client.name ? client.name.charAt(0).toUpperCase() : 'C'}
@@ -4260,7 +4264,10 @@ const handleDeleteMember = async (id) => {
                           </div>
 
                           {/* Progress Bar */}
-                          <div style={{ margin: '0.75rem 0' }}>
+                          <div 
+                            style={{ margin: '0.75rem 0', cursor: 'pointer' }}
+                            onClick={() => setChecklistModalClient(c)}
+                          >
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', marginBottom: '4px', fontWeight: 600 }}>
                               <span>Avance del Cliente</span>
                               <span style={{ color: semaforo.color, fontWeight: 800 }}>{semaforo.percentage}%</span>
@@ -4271,7 +4278,10 @@ const handleDeleteMember = async (id) => {
                           </div>
 
                           {/* Item Pills Summary (Dynamic) */}
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.85rem' }}>
+                          <div 
+                            style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.85rem', cursor: 'pointer' }}
+                            onClick={() => setChecklistModalClient(c)}
+                          >
                             {semaforo.items.map(item => {
                               const isItemDone = item.isDone;
                               let label = `${isItemDone ? '✓' : '○'} ${item.name}`;
@@ -4315,7 +4325,7 @@ const handleDeleteMember = async (id) => {
                             style={{ flex: 1, padding: '0.45rem 0.65rem', fontSize: '0.8rem', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                             onClick={() => setChecklistModalClient(c)}
                           >
-                            <CheckCircle2 size={14} style={{ marginRight: '4px' }} /> Checklist
+                            <Users size={14} style={{ marginRight: '4px' }} /> Ver Perfil
                           </button>
                           <button 
                             className="btn btn-secondary" 
@@ -4325,7 +4335,7 @@ const handleDeleteMember = async (id) => {
                               setActiveTab('instances');
                             }}
                           >
-                            Ejecuciones
+                            Ver en Tablero
                           </button>
                         </div>
                       </div>
@@ -6863,7 +6873,18 @@ const handleDeleteMember = async (id) => {
         isOpen={!!checklistModalClient}
         onClose={() => setChecklistModalClient(null)}
         client={checklistModalClient}
+        instances={instances}
         onSaveChecklist={handleSaveClientChecklist}
+        onOpenInstance={(instId) => {
+          setSelectedInstanceId(instId);
+          setActiveTab('instances');
+          window.location.hash = '#/instances';
+        }}
+        onLaunchForClient={(cl) => {
+          setLaunchInstanceName(cl.name || '');
+          setLaunchStartDate(new Date().toISOString().split('T')[0]);
+          setShowLaunchModal(true);
+        }}
       />
 
       <AgentCopilot
