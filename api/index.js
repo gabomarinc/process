@@ -59,6 +59,7 @@ const pool = new Pool({
       name VARCHAR(255) NOT NULL,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{"carrusel":{"checked":false,"current":0,"target":4},"post":{"checked":false,"current":0,"target":12},"video":{"checked":false,"current":0,"target":6},"facturaPaga":{"checked":false},"adsRating":"Excelente"}'::jsonb`,
 
     `CREATE TABLE IF NOT EXISTS clickup_rules (
       id SERIAL PRIMARY KEY,
@@ -1016,6 +1017,25 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear el cliente' });
+  }
+});
+
+app.put('/api/clients/:id/checklist', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { checklist } = req.body;
+  if (!checklist) return res.status(400).json({ error: 'El checklist es obligatorio.' });
+  try {
+    const result = await pool.query(
+      'UPDATE clients SET checklist = $1 WHERE id = $2 AND organization_id = $3 RETURNING *',
+      [JSON.stringify(checklist), id, req.user.organizationId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cliente no encontrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error al actualizar checklist del cliente:', err);
+    res.status(500).json({ error: 'Error al actualizar checklist.' });
   }
 });
 

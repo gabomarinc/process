@@ -13,6 +13,8 @@ import { KanbanBoard } from "./components/ui/KanbanBoard";
 import { ProjectDetailsModal } from "./components/ui/ProjectDetailsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
+import ClientChecklistModal from "./components/ui/ClientChecklistModal";
+import { getClientTrafficLightStatus } from "./utils/clientSemaforo";
 import AgentCopilot from "./components/ui/AgentCopilot";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
@@ -460,6 +462,34 @@ function App() {
   });
 
   const [emailTestStatus, setEmailTestStatus] = useState(null);
+
+  // Client Checklist Modal State
+  const [checklistModalClient, setChecklistModalClient] = useState(null);
+
+  const handleSaveClientChecklist = async (clientId, newChecklist) => {
+    try {
+      const response = await fetch(`/api/clients/${clientId}/checklist`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ checklist: newChecklist })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al guardar checklist del cliente');
+      }
+
+      const updatedClient = await response.json();
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist } : c));
+      addToast('Checklist y semáforo del cliente actualizados', 'success');
+    } catch (err) {
+      console.error('Error updating checklist:', err);
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist } : c));
+      addToast('Checklist actualizado localmente', 'info');
+    }
+  };
 
   // Celebration state
   const [showCelebration, setShowCelebration] = useState(false);
@@ -4162,27 +4192,123 @@ const handleDeleteMember = async (id) => {
                   <p>Inicia una ejecución y registra tu primer cliente para verlo aquí.</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem', marginTop: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
                   {clients.map((c, idx) => {
                     const client = getClientDisplay(c, idx);
                     const clientInstances = instances.filter(inst => getClientForInstance(inst, clients) === client.id);
                     const active = clientInstances.filter(inst => !inst.steps.every(s => s.isCompleted)).length;
                     const completed = clientInstances.filter(inst => inst.steps.every(s => s.isCompleted)).length;
-                    const statsText = `${active} Activas • ${completed} Completadas`;
+                    
+                    const semaforo = getClientTrafficLightStatus(c.checklist);
 
                     return (
-                      <div key={client.id} style={{ height: '360px' }}>
-                        <DestinationCard
-                          imageUrl={client.imageUrl}
-                          location={client.name}
-                          flag={client.flag}
-                          stats={statsText}
-                          themeColor={client.themeColor}
-                          onClick={() => {
-                            setSelectedClientFilter(client.id);
-                            setActiveTab('instances');
-                          }}
-                        />
+                      <div 
+                        key={c.id || client.id} 
+                        style={{ 
+                          background: '#FFFFFF', 
+                          borderRadius: '20px', 
+                          border: `1.5px solid ${semaforo.badgeBorder}`, 
+                          padding: '1.35rem', 
+                          boxShadow: 'var(--shadow-sm)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '1rem',
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {/* Top Accent Line */}
+                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: semaforo.color }} />
+
+                        <div>
+                          {/* Header with Title and Semáforo Badge */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'var(--bg-companion)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--color-primary)', fontSize: '1.1rem' }}>
+                                {client.name ? client.name.charAt(0).toUpperCase() : 'C'}
+                              </div>
+                              <div>
+                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                                  {client.name}
+                                </h3>
+                                <span style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                                  {active} Activas • {completed} Completadas
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Semáforo Badge */}
+                            <div 
+                              style={{ 
+                                background: semaforo.bg, 
+                                color: semaforo.color, 
+                                border: `1px solid ${semaforo.badgeBorder}`,
+                                padding: '0.25rem 0.65rem', 
+                                borderRadius: '20px', 
+                                fontSize: '0.75rem', 
+                                fontWeight: 800, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '5px' 
+                              }}
+                            >
+                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: semaforo.color }} />
+                              {semaforo.statusLabel}
+                            </div>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div style={{ margin: '0.75rem 0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', marginBottom: '4px', fontWeight: 600 }}>
+                              <span>Avance del Cliente</span>
+                              <span style={{ color: semaforo.color, fontWeight: 800 }}>{semaforo.percentage}%</span>
+                            </div>
+                            <div style={{ height: '8px', background: '#E2E8F0', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{ width: `${semaforo.percentage}%`, height: '100%', background: semaforo.color, borderRadius: '4px', transition: 'width 0.35s' }} />
+                            </div>
+                          </div>
+
+                          {/* Item Pills Summary */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.85rem' }}>
+                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.carrusel ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.carrusel ? '#065F46' : '#64748B', fontWeight: 600 }}>
+                              {semaforo.checks.carrusel ? '✓' : '○'} Carrusel ({semaforo.checklist.carrusel.current}/{semaforo.checklist.carrusel.target})
+                            </span>
+                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.post ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.post ? '#065F46' : '#64748B', fontWeight: 600 }}>
+                              {semaforo.checks.post ? '✓' : '○'} Post ({semaforo.checklist.post.current}/{semaforo.checklist.post.target})
+                            </span>
+                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.video ? '#D1FAE5' : '#F1F5F9', color: semaforo.checks.video ? '#065F46' : '#64748B', fontWeight: 600 }}>
+                              {semaforo.checks.video ? '✓' : '○'} Video ({semaforo.checklist.video.current}/{semaforo.checklist.video.target})
+                            </span>
+                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: semaforo.checks.facturaPaga ? '#D1FAE5' : '#FEE2E2', color: semaforo.checks.facturaPaga ? '#065F46' : '#991B1B', fontWeight: 600 }}>
+                              {semaforo.checks.facturaPaga ? '✓ Factura Paga' : '○ Factura Pendiente'}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: '#DBEAFE', color: '#1E40AF', fontWeight: 600 }}>
+                              Ads: {semaforo.checklist.adsRating}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #F1F5F9' }}>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ flex: 1, padding: '0.45rem 0.65rem', fontSize: '0.8rem', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                            onClick={() => setChecklistModalClient(c)}
+                          >
+                            <CheckCircle2 size={14} style={{ marginRight: '4px' }} /> Checklist
+                          </button>
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ flex: 1, padding: '0.45rem 0.65rem', fontSize: '0.8rem', borderRadius: '10px' }}
+                            onClick={() => {
+                              setSelectedClientFilter(client.id);
+                              setActiveTab('instances');
+                            }}
+                          >
+                            Ejecuciones
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -6712,6 +6838,13 @@ const handleDeleteMember = async (id) => {
       <OnDemandModal
         isOpen={showOnDemandModal}
         onClose={() => setShowOnDemandModal(false)}
+      />
+
+      <ClientChecklistModal
+        isOpen={!!checklistModalClient}
+        onClose={() => setChecklistModalClient(null)}
+        client={checklistModalClient}
+        onSaveChecklist={handleSaveClientChecklist}
       />
 
       <AgentCopilot
