@@ -416,6 +416,12 @@ Base URL: `https://process.konsul.digital/api`
 | `POST` | `/api/email/send-email` | JWT | Enviar email vía SMTP del usuario |
 | `POST` | `/api/ondemand-request` | JWT | Enviar solicitud de integración custom |
 
+### Agente Inteligente & Copilot (Tool Calling / MCP)
+
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `POST` | `/api/agent/chat` | JWT | Chat agéntico con Gemini 1.5 Flash. Ejecuta acciones mediante Tool Calling (`get_workspace_summary`, `create_process_template`, `launch_process_execution`, `update_kanban_columns`, `move_execution_status`, `create_client`, `add_team_member`) con control estricto de roles (RBAC) y Server-Driven Generative UI. |
+
 ### API Tokens
 
 | Método | Ruta | Auth | Descripción |
@@ -534,6 +540,7 @@ Genera los assets estáticos en `/dist`.
 │   └── components/ui/
 │       ├── ActiveExecutionModal.jsx      # Modal detallado de ejecución activa
 │       ├── AddUserModal.jsx             # Modal de invitación de usuarios
+│       ├── AgentCopilot.jsx/.css        # Copiloto Agéntico con Tool Calling y Generative UI
 │       ├── DestinationCard.jsx/.css     # Tarjeta visual de cliente
 │       ├── KanbanBoard.jsx/.css         # Tablero Kanban con drag & drop
 │       ├── LandingPage.jsx/.css         # Landing page pública

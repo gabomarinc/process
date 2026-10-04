@@ -13,6 +13,7 @@ import { KanbanBoard } from "./components/ui/KanbanBoard";
 import { ProjectDetailsModal } from "./components/ui/ProjectDetailsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
+import AgentCopilot from "./components/ui/AgentCopilot";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { useAlert } from './contexts/AlertContext';
@@ -573,100 +574,103 @@ function App() {
   }, [activeTab, selectedInstanceId, selectedTemplateId, settingsTab, user]);
 
 
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
   // Fetch initial data from database (Optimized Bootstrapping)
-  useEffect(() => {
-    const loadData = async () => {
-      if (!localStorage.getItem('token')) return;
+  const loadData = async () => {
+    if (!localStorage.getItem('token')) return;
 
-      try {
-        const bootstrapRes = await fetch('/api/bootstrap');
-        if (bootstrapRes.ok) {
-          const data = await bootstrapRes.json();
-          
-          if (data.user) {
-            setUser(data.user);
-            localStorage.setItem('user', JSON.stringify(data.user));
+    try {
+      const bootstrapRes = await fetch('/api/bootstrap');
+      if (bootstrapRes.ok) {
+        const data = await bootstrapRes.json();
+        
+        if (data.user) {
+          setUser(data.user);
+          localStorage.setItem('user', JSON.stringify(data.user));
+        }
+
+        setTemplates(data.templates || []);
+        setInstances(data.instances || []);
+        setNotificationLogs(data.notifications || []);
+        setTeamMembers(data.team || []);
+        setClients(data.clients || []);
+        
+        if (data.organization) {
+          setOrgFormData({ 
+            name: data.organization.name || '',
+            description: data.organization.description || '',
+            departments: data.organization.departments || []
+          });
+          if (data.organization.kanban_columns) {
+            setKanbanColumns(data.organization.kanban_columns);
           }
-
-          setTemplates(data.templates || []);
-          setInstances(data.instances || []);
-          setNotificationLogs(data.notifications || []);
-          setTeamMembers(data.team || []);
-          setClients(data.clients || []);
-          
-          if (data.organization) {
-            setOrgFormData({ 
-              name: data.organization.name || '',
-              description: data.organization.description || '',
-              departments: data.organization.departments || []
-            });
-            if (data.organization.kanban_columns) {
-              setKanbanColumns(data.organization.kanban_columns);
-            }
-            if (data.organization.gemini_api_key) {
-              setApiKey(data.organization.gemini_api_key);
-              setTempKey(data.organization.gemini_api_key);
-              localStorage.setItem('gemini_api_key', data.organization.gemini_api_key);
-            } else {
-              // Si la organización aún no tiene clave en DB pero el admin la tiene en su navegador, auto-sincronizar
-              const localKey = localStorage.getItem('gemini_api_key');
-              const currentUserRole = data.user?.role || user?.role;
-              if (localKey && currentUserRole === 'admin') {
-                const token = localStorage.getItem('token');
-                fetch('/api/organization/gemini-api-key', {
-                  method: 'PUT',
-                  headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  },
-                  body: JSON.stringify({ gemini_api_key: localKey })
-                }).then(r => {
-                  if (r.ok) {
-                    setApiKey(localKey);
-                    setTempKey(localKey);
-                  }
-                }).catch(e => console.warn('Auto-sync key warning:', e));
-              } else if (currentUserRole !== 'admin') {
-                // Usuarios no admin dependen estrictamente de la clave de la organización
-                setApiKey('');
-                setTempKey('');
-              }
-            }
-          }
-
-          if (data.clickup) {
-            setClickupToken(data.clickup.clickupToken || '');
-          }
-
-          if (data.clickupRules) {
-            setClickupRules(data.clickupRules);
-          }
-
-          const savedUser = localStorage.getItem('user');
-          if (savedUser) {
-            const parsed = JSON.parse(savedUser);
-            setProfileFormData({ 
-              name: parsed.name, 
-              email: parsed.email, 
-              password: '', 
-              companionName: parsed.companionName || '', 
-              companionAvatar: parsed.companionAvatar || '' 
-            });
-
-            if (parsed.role === 'admin') {
-              if (data.users) {
-                setOrgUsers(data.users);
-              }
-              if (data.apiTokens) {
-                setApiTokens(data.apiTokens);
-              }
+          if (data.organization.gemini_api_key) {
+            setApiKey(data.organization.gemini_api_key);
+            setTempKey(data.organization.gemini_api_key);
+            localStorage.setItem('gemini_api_key', data.organization.gemini_api_key);
+          } else {
+            // Si la organización aún no tiene clave en DB pero el admin la tiene en su navegador, auto-sincronizar
+            const localKey = localStorage.getItem('gemini_api_key');
+            const currentUserRole = data.user?.role || user?.role;
+            if (localKey && currentUserRole === 'admin') {
+              const token = localStorage.getItem('token');
+              fetch('/api/organization/gemini-api-key', {
+                method: 'PUT',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ gemini_api_key: localKey })
+              }).then(r => {
+                if (r.ok) {
+                  setApiKey(localKey);
+                  setTempKey(localKey);
+                }
+              }).catch(e => console.warn('Auto-sync key warning:', e));
+            } else if (currentUserRole !== 'admin') {
+              // Usuarios no admin dependen estrictamente de la clave de la organización
+              setApiKey('');
+              setTempKey('');
             }
           }
         }
-      } catch (err) {
-        console.error("Error al cargar datos desde Neon (Bootstrap):", err);
+
+        if (data.clickup) {
+          setClickupToken(data.clickup.clickupToken || '');
+        }
+
+        if (data.clickupRules) {
+          setClickupRules(data.clickupRules);
+        }
+
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser);
+          setProfileFormData({ 
+            name: parsed.name, 
+            email: parsed.email, 
+            password: '', 
+            companionName: parsed.companionName || '', 
+            companionAvatar: parsed.companionAvatar || '' 
+          });
+
+          if (parsed.role === 'admin') {
+            if (data.users) {
+              setOrgUsers(data.users);
+            }
+            if (data.apiTokens) {
+              setApiTokens(data.apiTokens);
+            }
+          }
+        }
       }
-    };
+    } catch (err) {
+      console.error("Error al cargar datos desde Neon (Bootstrap):", err);
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, [token]);
 
@@ -2978,7 +2982,30 @@ const handleDeleteMember = async (id) => {
 
           {/* Right Header Status / Account Dropdown */}
           <div className="header-badge-section">
-            <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="desktop-nav-right" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="nav-trigger-btn"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: 'rgba(39, 190, 165, 0.12)',
+                  border: '1px solid rgba(39, 190, 165, 0.4)',
+                  color: '#0D9488',
+                  fontWeight: 700,
+                  borderRadius: '9999px',
+                  padding: '0.45rem 0.9rem',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  transition: 'all 0.2s ease'
+                }}
+                onClick={() => setIsCopilotOpen(prev => !prev)}
+                title="Abrir Copiloto Agéntico Kônsul"
+              >
+                <Sparkles size={14} color="#27BEA5" />
+                <span>Copilot</span>
+              </button>
               <Notifications user={user} apiUrl="/api" onNavigate={(n) => { const instId = n.instance_id || n.instanceId; if (instId) setSelectedInstanceId(instId); }} onCompleteStep={handleStepComplete} addToast={addToast} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
@@ -6794,6 +6821,19 @@ const handleDeleteMember = async (id) => {
       <OnDemandModal
         isOpen={showOnDemandModal}
         onClose={() => setShowOnDemandModal(false)}
+      />
+
+      <AgentCopilot
+        user={user}
+        apiKey={apiKey}
+        onNavigate={(tab) => {
+          setActiveTab(tab);
+          window.location.hash = `#/${tab}`;
+        }}
+        onDataModified={loadData}
+        addToast={addToast}
+        isOpenExternal={isCopilotOpen}
+        onToggleExternal={setIsCopilotOpen}
       />
     </div>
   );

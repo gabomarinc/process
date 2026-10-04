@@ -3259,4 +3259,588 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
   }
 });
 
+// ============================================================================
+// AGENTIC WORKFLOW & TOOL CALLING ENGINE (Pilar 1: Metadatos + Pilar 2: Tool Calling / MCP)
+// ============================================================================
+
+const AGENT_TOOLS_DECLARATIONS = [
+  {
+    name: 'get_workspace_summary',
+    description: 'Obtiene un resumen en tiempo real del estado de la organización: total de plantillas, ejecuciones activas por columna Kanban, miembros del equipo y clientes registrados.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+  {
+    name: 'list_templates',
+    description: 'Lista las plantillas de procesos disponibles en la organización con sus títulos, categorías y cantidad de pasos.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        category: { type: 'STRING', description: 'Filtrar opcionalmente por categoría o área' }
+      }
+    }
+  },
+  {
+    name: 'create_process_template',
+    description: 'Crea una nueva plantilla de procesos de negocio (Arquitectura de metadatos) con sus pasos detallados, motivaciones y plazos.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Nombre descriptivo del proceso' },
+        category: { type: 'STRING', description: 'Área o categoría (ej. Operaciones, Ventas, Finanzas, Legal, RRHH)' },
+        description: { type: 'STRING', description: 'Objetivo y descripción general del proceso' },
+        durationDays: { type: 'NUMBER', description: 'Duración estimada total en días' },
+        steps: {
+          type: 'ARRAY',
+          description: 'Lista ordenada de pasos o tareas que componen el proceso',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING', description: 'Nombre claro de la acción o paso' },
+              description: { type: 'STRING', description: 'Instrucciones precisas de ejecución' },
+              motivation: { type: 'STRING', description: 'El por qué hacemos este paso (valor de negocio)' },
+              durationDays: { type: 'NUMBER', description: 'Plazo en días estimado para este paso' }
+            },
+            required: ['title']
+          }
+        }
+      },
+      required: ['title', 'category', 'steps']
+    }
+  },
+  {
+    name: 'launch_process_execution',
+    description: 'Inicia la ejecución activa de un proceso a partir de una plantilla para un cliente o proyecto específico.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        templateNameOrId: { type: 'STRING', description: 'ID o título aproximado de la plantilla base' },
+        instanceName: { type: 'STRING', description: 'Nombre identificador del proceso (ej. "Onboarding - Acme Corp")' },
+        priority: { type: 'STRING', description: 'Nivel de prioridad: "Baja", "Media", "Alta" o "Urgente"' },
+        clientName: { type: 'STRING', description: 'Nombre del cliente vinculado (opcional)' }
+      },
+      required: ['templateNameOrId', 'instanceName']
+    }
+  },
+  {
+    name: 'update_kanban_columns',
+    description: 'Actualiza o reordena la lista de columnas del tablero Kanban de la organización.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        columns: {
+          type: 'ARRAY',
+          description: 'Lista completa y ordenada de nombres de columnas (ej. ["Por hacer", "En curso", "En Revisión", "Terminado"])',
+          items: { type: 'STRING' }
+        }
+      },
+      required: ['columns']
+    }
+  },
+  {
+    name: 'move_execution_status',
+    description: 'Mueve una ejecución activa a una nueva columna/estado en el tablero Kanban o modifica su prioridad.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        instanceNameOrId: { type: 'STRING', description: 'ID o nombre de la ejecución a actualizar' },
+        newStatus: { type: 'STRING', description: 'Nombre exacto de la columna Kanban destino' },
+        newPriority: { type: 'STRING', description: 'Nueva prioridad opcional ("Baja", "Media", "Alta", "Urgente")' }
+      },
+      required: ['instanceNameOrId', 'newStatus']
+    }
+  },
+  {
+    name: 'create_client',
+    description: 'Registra un nuevo cliente o cuenta en el directorio de la organización.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        name: { type: 'STRING', description: 'Nombre o razón social del cliente' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'add_team_member',
+    description: 'Agrega un nuevo colaborador al equipo de la organización.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        name: { type: 'STRING', description: 'Nombre completo del miembro' },
+        role: { type: 'STRING', description: 'Cargo o posición (ej. "Líder de Proyectos", "Analista")' },
+        email: { type: 'STRING', description: 'Correo electrónico' },
+        department: { type: 'STRING', description: 'Departamento o área' }
+      },
+      required: ['name', 'role', 'email']
+    }
+  }
+];
+
+// Execute a tool safely inside PostgreSQL with RBAC verification
+async function executeAgentTool(toolName, args, user) {
+  const orgId = user.organizationId;
+  const userRole = user.role || 'guest';
+
+  switch (toolName) {
+    case 'get_workspace_summary': {
+      const [tmplRes, instRes, teamRes, clientRes, orgRes] = await Promise.all([
+        pool.query('SELECT COUNT(*) as count FROM templates WHERE organization_id = $1', [orgId]),
+        pool.query('SELECT status, COUNT(*) as count FROM instances WHERE organization_id = $1 GROUP BY status', [orgId]),
+        pool.query('SELECT COUNT(*) as count FROM team_members WHERE organization_id = $1', [orgId]),
+        pool.query('SELECT COUNT(*) as count FROM clients WHERE organization_id = $1', [orgId]),
+        pool.query('SELECT name, kanban_columns FROM organizations WHERE id = $1', [orgId])
+      ]);
+
+      const kanbanBreakdown = {};
+      instRes.rows.forEach(r => { kanbanBreakdown[r.status || 'Sin Estado'] = parseInt(r.count, 10); });
+
+      return {
+        success: true,
+        organizationName: orgRes.rows[0]?.name || 'Organización',
+        totalTemplates: parseInt(tmplRes.rows[0]?.count || 0, 10),
+        totalTeamMembers: parseInt(teamRes.rows[0]?.count || 0, 10),
+        totalClients: parseInt(clientRes.rows[0]?.count || 0, 10),
+        kanbanColumns: orgRes.rows[0]?.kanban_columns || ["Por hacer", "En curso", "Terminado"],
+        executionsByStatus: kanbanBreakdown
+      };
+    }
+
+    case 'list_templates': {
+      let query = 'SELECT id, title, category, status, duration_days, jsonb_array_length(steps) as steps_count FROM templates WHERE organization_id = $1';
+      const params = [orgId];
+      if (args.category) {
+        query += ' AND LOWER(category) = LOWER($2)';
+        params.push(args.category);
+      }
+      query += ' ORDER BY title ASC LIMIT 20';
+      const res = await pool.query(query, params);
+      return {
+        success: true,
+        count: res.rows.length,
+        templates: res.rows
+      };
+    }
+
+    case 'create_process_template': {
+      if (userRole === 'guest') {
+        return { success: false, error: 'Permisos insuficientes: Tu rol de Invitado no puede crear plantillas.' };
+      }
+
+      const id = 'tmpl_' + Date.now();
+      const status = userRole === 'gerente' ? 'pending_approval' : 'approved';
+      const steps = (args.steps || []).map((s, idx) => ({
+        id: `step_${idx + 1}_${Date.now()}`,
+        title: s.title,
+        description: s.description || '',
+        motivation: s.motivation || '',
+        durationDays: s.durationDays || 1,
+        isCompleted: false,
+        comments: []
+      }));
+
+      await pool.query(
+        `INSERT INTO templates (id, organization_id, title, description, duration_days, companion_name, companion_avatar, companion_greeting, category, steps, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          id,
+          orgId,
+          args.title,
+          args.description || `Plantilla generada por el Asistente Agéntico para ${args.title}`,
+          args.durationDays || 5,
+          'Process AI',
+          '⚡',
+          '¡Vamos a completar este proceso con éxito!',
+          args.category || 'General',
+          JSON.stringify(steps),
+          status
+        ]
+      );
+
+      return {
+        success: true,
+        templateId: id,
+        title: args.title,
+        category: args.category,
+        stepsCount: steps.length,
+        status,
+        message: status === 'pending_approval' 
+          ? 'Plantilla creada y enviada a revisión del Administrador' 
+          : 'Plantilla creada y aprobada automáticamente en el catálogo'
+      };
+    }
+
+    case 'launch_process_execution': {
+      let tmplRes = await pool.query(
+        'SELECT * FROM templates WHERE organization_id = $1 AND (id = $2 OR LOWER(title) ILIKE LOWER($3)) LIMIT 1',
+        [orgId, args.templateNameOrId, `%${args.templateNameOrId}%`]
+      );
+
+      if (tmplRes.rows.length === 0) {
+        return { success: false, error: `No se encontró ninguna plantilla que coincida con "${args.templateNameOrId}".` };
+      }
+
+      const template = tmplRes.rows[0];
+      const instId = 'inst_' + Date.now();
+      const startedAt = new Date().toISOString();
+      let currentDate = Date.now();
+
+      const rawSteps = Array.isArray(template.steps) ? template.steps : (typeof template.steps === 'string' ? JSON.parse(template.steps) : []);
+      const stepsWithDates = rawSteps.map((step, idx) => {
+        const stepDays = step.durationDays || 1;
+        const dueDate = new Date(currentDate + (stepDays * 24 * 60 * 60 * 1000)).toISOString();
+        currentDate += (stepDays * 24 * 60 * 60 * 1000);
+        return {
+          ...step,
+          id: step.id || `step_${idx + 1}_${Date.now()}`,
+          isCompleted: false,
+          dueDate,
+          comments: []
+        };
+      });
+
+      // Optionally auto-register client if given
+      if (args.clientName) {
+        const checkClient = await pool.query('SELECT id FROM clients WHERE organization_id = $1 AND LOWER(name) = LOWER($2)', [orgId, args.clientName.trim()]);
+        if (checkClient.rows.length === 0) {
+          const cliId = 'cli_' + args.clientName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
+          await pool.query('INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3)', [cliId, orgId, args.clientName.trim()]);
+        }
+      }
+
+      const priority = args.priority || 'Media';
+      const initialStatus = 'Por hacer';
+
+      await pool.query(
+        `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          instId,
+          orgId,
+          template.id,
+          template.title,
+          args.instanceName,
+          startedAt,
+          template.companion_name || 'Process AI',
+          template.companion_avatar || '⚡',
+          template.companion_greeting || '¡A trabajar!',
+          template.category || 'General',
+          JSON.stringify(stepsWithDates),
+          initialStatus,
+          priority,
+          JSON.stringify([])
+        ]
+      );
+
+      return {
+        success: true,
+        instanceId: instId,
+        instanceName: args.instanceName,
+        templateTitle: template.title,
+        status: initialStatus,
+        priority,
+        stepsCount: stepsWithDates.length
+      };
+    }
+
+    case 'update_kanban_columns': {
+      if (userRole !== 'admin') {
+        return { success: false, error: 'Permisos insuficientes: Solo administradores pueden modificar las columnas del Kanban.' };
+      }
+
+      const columns = Array.isArray(args.columns) ? args.columns.map(c => String(c).trim()).filter(Boolean) : [];
+      if (columns.length === 0) {
+        return { success: false, error: 'Debe especificarse al menos una columna válida.' };
+      }
+
+      await pool.query(
+        'UPDATE organizations SET kanban_columns = $1 WHERE id = $2',
+        [JSON.stringify(columns), orgId]
+      );
+
+      return {
+        success: true,
+        columns,
+        message: 'Columnas del tablero Kanban actualizadas exitosamente.'
+      };
+    }
+
+    case 'move_execution_status': {
+      const instQuery = await pool.query(
+        'SELECT id, instance_name, status, priority FROM instances WHERE organization_id = $1 AND (id = $2 OR LOWER(instance_name) ILIKE LOWER($3)) LIMIT 1',
+        [orgId, args.instanceNameOrId, `%${args.instanceNameOrId}%`]
+      );
+
+      if (instQuery.rows.length === 0) {
+        return { success: false, error: `No se encontró ninguna ejecución activa con "${args.instanceNameOrId}".` };
+      }
+
+      const inst = instQuery.rows[0];
+      const newStatus = args.newStatus;
+      const newPriority = args.newPriority || inst.priority;
+
+      await pool.query(
+        'UPDATE instances SET status = $1, priority = $2 WHERE id = $3 AND organization_id = $4',
+        [newStatus, newPriority, inst.id, orgId]
+      );
+
+      return {
+        success: true,
+        instanceId: inst.id,
+        instanceName: inst.instance_name,
+        previousStatus: inst.status,
+        newStatus,
+        priority: newPriority
+      };
+    }
+
+    case 'create_client': {
+      const name = String(args.name || '').trim();
+      if (!name) return { success: false, error: 'Nombre de cliente inválido.' };
+
+      const clientId = 'cli_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
+      await pool.query(
+        'INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3)',
+        [clientId, orgId, name]
+      );
+
+      return {
+        success: true,
+        clientId,
+        name
+      };
+    }
+
+    case 'add_team_member': {
+      if (userRole === 'guest') {
+        return { success: false, error: 'Permisos insuficientes: Tu rol no permite registrar miembros en el equipo.' };
+      }
+
+      const memberId = 'mem_' + Date.now();
+      await pool.query(
+        `INSERT INTO team_members (id, organization_id, name, role, email, avatar, assigned_processes, department)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          memberId,
+          orgId,
+          args.name,
+          args.role,
+          args.email,
+          `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(args.name)}`,
+          JSON.stringify([]),
+          args.department || 'General'
+        ]
+      );
+
+      return {
+        success: true,
+        memberId,
+        name: args.name,
+        role: args.role,
+        email: args.email
+      };
+    }
+
+    default:
+      return { success: false, error: `Herramienta desconocida: ${toolName}` };
+  }
+}
+
+// Agentic Chat Endpoint with Gemini Tool Calling & RBAC (Pilar 2)
+app.post('/api/agent/chat', authenticateToken, async (req, res) => {
+  try {
+    const { message, history } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ success: false, error: 'El mensaje es obligatorio.' });
+    }
+
+    // Resolve Gemini API Key (Org DB > Body > Env)
+    let geminiKey = null;
+    const orgRes = await pool.query('SELECT name, gemini_api_key, kanban_columns FROM organizations WHERE id = $1', [req.user.organizationId]);
+    if (orgRes.rows.length > 0 && orgRes.rows[0].gemini_api_key) {
+      geminiKey = orgRes.rows[0].gemini_api_key;
+    } else if (req.body.geminiApiKey) {
+      geminiKey = req.body.geminiApiKey;
+    } else if (process.env.GEMINI_API_KEY) {
+      geminiKey = process.env.GEMINI_API_KEY;
+    }
+
+    if (!geminiKey) {
+      return res.json({
+        success: true,
+        reply: "👋 Hola. Para poder ejecutar acciones y asistirte con inteligencia agéntica, necesitas configurar tu **Gemini API Key** en la barra superior o en los Ajustes de la Organización.",
+        actions: [],
+        refreshRequired: false
+      });
+    }
+
+    const orgName = orgRes.rows[0]?.name || 'Kônsul Workspace';
+    const kanbanCols = orgRes.rows[0]?.kanban_columns || ["Por hacer", "En curso", "Terminado"];
+
+    const systemPrompt = `Eres el Agente de Inteligencia Operativa y Copiloto de Kônsul Process para la empresa "${orgName}".
+Usuario interactuando: "${req.user.name || req.user.email}" (Rol: ${req.user.role}).
+Filosofía de Kônsul: "La app trabaja para el usuario, no el usuario para la app".
+
+REGLAS ESENCIALES:
+1. Tienes acceso a un catálogo de herramientas (Tool Calling). Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o crear clientes/miembros, DEBES invocar la herramienta correspondiente.
+2. NUNCA inventes que creaste algo sin haber invocado la herramienta.
+3. Si el usuario hace una consulta sobre el estado o progreso, usa "get_workspace_summary" o "list_templates" para dar información verídica y en tiempo real.
+4. Responde en español, de forma concisa, profesional y con formato Markdown amigable.
+5. Columnas actuales del Kanban: ${JSON.stringify(kanbanCols)}.`;
+
+    // Format chat history for Gemini
+    const contents = [];
+    if (Array.isArray(history)) {
+      history.slice(-8).forEach(item => {
+        if (item.role && item.text) {
+          contents.push({
+            role: item.role === 'user' ? 'user' : 'model',
+            parts: [{ text: item.text }]
+          });
+        }
+      });
+    }
+    contents.push({
+      role: 'user',
+      parts: [{ text: message }]
+    });
+
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+
+    // Step 1: Initial invocation with tools
+    const geminiResponse = await fetch(geminiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        tools: [{ functionDeclarations: AGENT_TOOLS_DECLARATIONS }]
+      })
+    });
+
+    if (!geminiResponse.ok) {
+      const errText = await geminiResponse.text();
+      console.error('Error Gemini Agent:', errText);
+      return res.status(500).json({
+        success: false,
+        error: 'GEMINI_API_ERROR',
+        reply: 'Hubo un error de comunicación con Gemini AI. Verifica que tu API Key sea válida.'
+      });
+    }
+
+    const geminiData = await geminiResponse.json();
+    const candidate = geminiData.candidates?.[0];
+    if (!candidate || !candidate.content) {
+      return res.json({
+        success: true,
+        reply: "No pude procesar la respuesta en este momento. Por favor intenta de nuevo.",
+        actions: [],
+        refreshRequired: false
+      });
+    }
+
+    const parts = candidate.content.parts || [];
+    const functionCalls = parts.filter(p => p.functionCall).map(p => p.functionCall);
+
+    // If Gemini just answered with text (no tool calls)
+    if (functionCalls.length === 0) {
+      const textReply = parts.map(p => p.text || '').join('\n').trim();
+      return res.json({
+        success: true,
+        reply: textReply || "Entendido. ¿En qué más puedo ayudarte?",
+        actions: [],
+        refreshRequired: false
+      });
+    }
+
+    // Step 2: Execute each tool call through RBAC Engine
+    const actionsTaken = [];
+    const functionResponsesParts = [];
+
+    for (const call of functionCalls) {
+      try {
+        const toolResult = await executeAgentTool(call.name, call.args || {}, req.user);
+        actionsTaken.push({
+          tool: call.name,
+          args: call.args,
+          result: toolResult,
+          success: toolResult.success !== false
+        });
+        functionResponsesParts.push({
+          functionResponse: {
+            name: call.name,
+            response: toolResult
+          }
+        });
+      } catch (toolErr) {
+        console.error(`Error al ejecutar herramienta ${call.name}:`, toolErr);
+        actionsTaken.push({
+          tool: call.name,
+          args: call.args,
+          result: { success: false, error: toolErr.message },
+          success: false
+        });
+        functionResponsesParts.push({
+          functionResponse: {
+            name: call.name,
+            response: { success: false, error: toolErr.message }
+          }
+        });
+      }
+    }
+
+    // Step 3: Feed the tool results back to Gemini for natural language explanation
+    const followUpContents = [
+      ...contents,
+      candidate.content,
+      {
+        role: 'function',
+        parts: functionResponsesParts
+      }
+    ];
+
+    let finalReply = '';
+    try {
+      const followUpRes = await fetch(geminiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: followUpContents,
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          tools: [{ functionDeclarations: AGENT_TOOLS_DECLARATIONS }]
+        })
+      });
+
+      if (followUpRes.ok) {
+        const followUpData = await followUpRes.json();
+        const followUpParts = followUpData.candidates?.[0]?.content?.parts || [];
+        finalReply = followUpParts.map(p => p.text || '').join('\n').trim();
+      }
+    } catch (fErr) {
+      console.warn('Follow up Gemini formatting failed, using summary fallback:', fErr);
+    }
+
+    if (!finalReply) {
+      finalReply = `He procesado tu solicitud y ejecutado ${actionsTaken.length} acción(es) en el sistema.`;
+    }
+
+    return res.json({
+      success: true,
+      reply: finalReply,
+      actions: actionsTaken,
+      refreshRequired: actionsTaken.some(a => a.success)
+    });
+
+  } catch (err) {
+    console.error('Agent chat error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'SERVER_ERROR',
+      reply: 'Ocurrió un error interno al procesar tu solicitud con el Asistente.'
+    });
+  }
+});
+
 export default app;
