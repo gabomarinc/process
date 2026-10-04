@@ -31,6 +31,7 @@ import {
   Smile, 
   MessageSquare,
   Check, 
+  CheckCircle2,
   Clock,
   FileCheck,
   Key,
