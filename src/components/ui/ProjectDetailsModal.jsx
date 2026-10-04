@@ -29,8 +29,10 @@ import {
   Sliders,
   RefreshCw,
   ChevronDown,
-  Eye
+  Eye,
+  ShieldAlert
 } from 'lucide-react';
+import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 
 const getFileType = (name, fallbackType) => {
   if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
@@ -79,8 +81,11 @@ export const ProjectDetailsModal = ({
   currentUser,
   fileStore = {},
   setFileStore,
-  addToast
+  addToast,
+  clients = [],
+  onOpenClientChecklist
 }) => {
+  const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [activeModalTab, setActiveModalTab] = useState('detalles'); // 'detalles', 'actividad', 'tareas', 'archivos', 'conversacion', 'calendario'
   const [expandedStepId, setExpandedStepId] = useState(null);
   const [noteText, setNoteText] = useState('');
@@ -1552,6 +1557,64 @@ export const ProjectDetailsModal = ({
           ─────────────────────────────────────────────────────────── */}
           {activeModalTab === 'tareas' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '920px' }}>
+              {/* Blocking Gate Alert Banner */}
+              {blockingItems.length > 0 && (
+                <div style={{
+                  background: '#FEF2F2',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: '16px',
+                  padding: '1rem 1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <ShieldAlert size={22} color="#DC2626" style={{ flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#991B1B', fontSize: '0.88rem' }}>
+                        Punto de Bloqueo Activo
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: '2px' }}>
+                        El avance de esta ejecución está bloqueado hasta que se complete en el checklist del cliente: {blockingItems.map((b, i) => (
+                          <span key={b.id}>
+                            {i > 0 ? ', ' : ''}<strong>"{b.name}"</strong>
+                          </span>
+                        ))}.
+                      </div>
+                    </div>
+                  </div>
+                  {onOpenClientChecklist && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const instNameLower = (activeInstance?.instanceName || '').toLowerCase();
+                        const targetClient = clients.find(c => {
+                          if (activeInstance?.clientId && String(c.id) === String(activeInstance.clientId)) return true;
+                          if (!c.name) return false;
+                          const cNameLower = c.name.toLowerCase();
+                          return instNameLower.includes(cNameLower) || cNameLower.includes(instNameLower);
+                        });
+                        if (targetClient) onOpenClientChecklist(targetClient);
+                      }}
+                      style={{
+                        background: '#DC2626',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                    >
+                      Abrir Checklist
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF', padding: '1rem 1.25rem', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>

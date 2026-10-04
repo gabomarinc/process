@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert } from 'lucide-react';
+import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 
 const getFileType = (name, fallbackType) => {
   if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
@@ -43,8 +44,11 @@ export const ActiveExecutionModal = ({
   currentUser,
   fileStore = {},
   setFileStore,
-  addToast
+  addToast,
+  clients = [],
+  onOpenClientChecklist
 }) => {
+  const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [isFocusMode, setIsFocusMode] = useState(true);
   const [commentingStepId, setCommentingStepId] = useState(null);
   const [commentText, setCommentText] = useState('');
@@ -423,6 +427,63 @@ export const ActiveExecutionModal = ({
         
         {/* Scrollable Content Container */}
         <div style={{ padding: '0.75rem 2rem 2rem 2rem', overflowY: 'auto', flex: 1 }}>
+          {blockingItems.length > 0 && (
+            <div style={{
+              background: '#FEF2F2',
+              border: '1px solid #FCA5A5',
+              borderRadius: '16px',
+              padding: '1rem 1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              marginBottom: '1.25rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ShieldAlert size={22} color="#DC2626" style={{ flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 800, color: '#991B1B', fontSize: '0.88rem' }}>
+                    Punto de Bloqueo Activo
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: '2px' }}>
+                    El avance de esta ejecución está bloqueado hasta que se complete en el checklist del cliente: {blockingItems.map((b, i) => (
+                      <span key={b.id}>
+                        {i > 0 ? ', ' : ''}<strong>"{b.name}"</strong>
+                      </span>
+                    ))}.
+                  </div>
+                </div>
+              </div>
+              {onOpenClientChecklist && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const instNameLower = (activeInstance?.instanceName || '').toLowerCase();
+                    const targetClient = clients.find(c => {
+                      if (activeInstance?.clientId && String(c.id) === String(activeInstance.clientId)) return true;
+                      if (!c.name) return false;
+                      const cNameLower = c.name.toLowerCase();
+                      return instNameLower.includes(cNameLower) || cNameLower.includes(instNameLower);
+                    });
+                    if (targetClient) onOpenClientChecklist(targetClient);
+                  }}
+                  style={{
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    flexShrink: 0
+                  }}
+                >
+                  Abrir Checklist
+                </button>
+              )}
+            </div>
+          )}
           <div className="achievement-card-unified">
             {/* Header info */}
             <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>

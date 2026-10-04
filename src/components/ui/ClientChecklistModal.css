@@ -684,3 +684,230 @@
   gap: 0.75rem;
   background: #F8FAFC;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   GATE & EXECUTION ASSOCIATION STYLES
+───────────────────────────────────────────────────────────── */
+
+.checklist-gate-config-box {
+  background: #F1F5F9;
+  border: 1px dashed #CBD5E1;
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.checklist-gate-box-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.checklist-gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checklist-gate-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748B;
+}
+
+.checklist-gate-select {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #CBD5E1;
+  font-size: 0.8rem;
+  background: #FFFFFF;
+  color: #0F172A;
+  outline: none;
+}
+
+.checklist-gate-select:focus {
+  border-color: #27BEA5;
+}
+
+.checklist-gate-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0F172A;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.checklist-gate-checkbox-label input {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+}
+
+.checklist-gate-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+  padding-left: 0.5rem;
+}
+
+.gate-type-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.gate-type-option:hover {
+  border-color: #CBD5E1;
+}
+
+.gate-type-option.selected {
+  border-color: #27BEA5;
+  background: #F0FDF4;
+}
+
+.gate-type-option input {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.gate-type-option div {
+  display: flex;
+  flex-direction: column;
+}
+
+.gate-type-option strong {
+  font-size: 0.78rem;
+  color: #0F172A;
+}
+
+.gate-type-option span {
+  font-size: 0.7rem;
+  color: #64748B;
+  margin-top: 1px;
+  line-height: 1.2;
+}
+
+/* Item Action Settings Button */
+.checklist-settings-item-btn {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.checklist-settings-item-btn:hover,
+.checklist-settings-item-btn.active {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+/* Metadata Tags on Item Cards */
+.checklist-item-meta-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 28px;
+}
+
+.checklist-tag-linked {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checklist-tag-gate-block {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.checklist-tag-gate-req {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.checklist-tag-gate-req.blocked {
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+}
+
+.checklist-tag-gate-req.unlocked {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+
+/* Inline Settings Drawer */
+.checklist-item-inline-settings {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Locked card styles */
+.checklist-item-card.is-locked-by-exec {
+  border-left: 3px solid #F59E0B;
+}
+
+.checklist-custom-box.locked {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+}
+

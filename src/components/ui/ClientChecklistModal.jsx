@@ -18,9 +18,19 @@ import {
   ArrowRight,
   Clock,
   Layers,
-  Calendar
+  Calendar,
+  Lock,
+  Unlock,
+  Link2,
+  ShieldAlert,
+  SlidersHorizontal
 } from 'lucide-react';
-import { normalizeChecklistItems, getClientTrafficLightStatus } from '../../utils/clientSemaforo';
+import { 
+  normalizeChecklistItems, 
+  getClientTrafficLightStatus,
+  isChecklistItemDone,
+  isChecklistItemBlockedByExecution
+} from '../../utils/clientSemaforo';
 import './ClientChecklistModal.css';
 
 export default function ClientChecklistModal({
@@ -37,6 +47,7 @@ export default function ClientChecklistModal({
   const [activeTab, setActiveTab] = useState('checklist'); // 'checklist' | 'active' | 'completed'
   const [items, setItems] = useState(() => normalizeChecklistItems(client.checklist));
   const [expandedSection, setExpandedSection] = useState(null);
+  const [editSettingsItemId, setEditSettingsItemId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // New Item Creator State
@@ -44,6 +55,9 @@ export default function ClientChecklistModal({
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState('boolean'); // 'boolean' | 'counter' | 'rating'
   const [newItemTarget, setNewItemTarget] = useState(4);
+  const [newItemAssociatedInstanceId, setNewItemAssociatedInstanceId] = useState('');
+  const [newItemIsGate, setNewItemIsGate] = useState(false);
+  const [newItemGateType, setNewItemGateType] = useState('blocks_execution'); // 'blocks_execution' | 'blocked_by_execution'
 
   useEffect(() => {
     if (client) {
@@ -72,8 +86,23 @@ export default function ClientChecklistModal({
     return steps.length > 0 && steps.every(s => s.isCompleted);
   });
 
+  // Check if an item is locked by an unfinished execution
+  const checkExecutionBlock = (item) => {
+    const blockInfo = isChecklistItemBlockedByExecution(item, instances);
+    if (blockInfo.isBlocked) {
+      alert(`🔒 Requerimiento Bloqueado:\n\nDebes finalizar todos los pasos de la ejecución "${blockInfo.instance.instanceName}" (${blockInfo.remainingSteps} pasos pendientes) para poder marcar o evaluar este requerimiento.`);
+      return true;
+    }
+    return false;
+  };
+
   // Toggle boolean item or counter item
   const handleToggleCheck = (itemId) => {
+    const target = items.find(i => i.id === itemId);
+    if (target && !target.checked && checkExecutionBlock(target)) {
+      return;
+    }
+
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       const nextChecked = !item.checked;
@@ -96,6 +125,11 @@ export default function ClientChecklistModal({
   // Update counter item values
   const handleUpdateCount = (itemId, key, val) => {
     const num = Math.max(0, parseInt(val, 10) || 0);
+    const targetItem = items.find(i => i.id === itemId);
+    if (targetItem && key === 'current' && num > (targetItem.current || 0) && checkExecutionBlock(targetItem)) {
+      return;
+    }
+
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       const updated = { ...item, [key]: num };
@@ -114,9 +148,22 @@ export default function ClientChecklistModal({
 
   // Change rating for rating items
   const handleRatingChange = (itemId, rating) => {
+    const targetItem = items.find(i => i.id === itemId);
+    if (targetItem && (rating === 'Excelente' || rating === 'Bueno') && checkExecutionBlock(targetItem)) {
+      return;
+    }
+
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       return { ...item, rating };
+    }));
+  };
+
+  // Update item config (association, gate)
+  const handleUpdateItemConfig = (itemId, updates) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      return { ...item, ...updates };
     }));
   };
 
@@ -133,7 +180,10 @@ export default function ClientChecklistModal({
     const newItem = {
       id: 'item_' + Date.now(),
       name: newItemName.trim(),
-      type: newItemType
+      type: newItemType,
+      associatedInstanceId: newItemAssociatedInstanceId || null,
+      isGate: !!newItemIsGate,
+      gateType: newItemIsGate ? newItemGateType : 'blocks_execution'
     };
 
     if (newItemType === 'boolean') {
@@ -149,6 +199,9 @@ export default function ClientChecklistModal({
     setItems(prev => [...prev, newItem]);
     setNewItemName('');
     setNewItemTarget(4);
+    setNewItemAssociatedInstanceId('');
+    setNewItemIsGate(false);
+    setNewItemGateType('blocks_execution');
     setShowAddForm(false);
   };
 
@@ -333,6 +386,73 @@ export default function ClientChecklistModal({
                     )}
                   </div>
 
+                  <div className="checklist-gate-config-box">
+                    <div className="checklist-gate-box-title">
+                      <Link2 size={13} /> Vinculación con Ejecuciones y Bloqueos (Opcional)
+                    </div>
+
+                    <div className="checklist-gate-field">
+                      <label>Vincular a Ejecución:</label>
+                      <select 
+                        className="checklist-gate-select"
+                        value={newItemAssociatedInstanceId}
+                        onChange={e => setNewItemAssociatedInstanceId(e.target.value)}
+                      >
+                        <option value="">Ninguna (Requerimiento general del cliente)</option>
+                        {clientInstances.map(inst => {
+                          const steps = inst.steps || [];
+                          const done = steps.filter(s => s.isCompleted).length;
+                          return (
+                            <option key={inst.id} value={inst.id}>
+                              {inst.instanceName} ({done}/{steps.length} pasos)
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <label className="checklist-gate-checkbox-label">
+                      <input 
+                        type="checkbox" 
+                        checked={newItemIsGate} 
+                        onChange={e => setNewItemIsGate(e.target.checked)} 
+                      />
+                      <span>🔒 Activar como Punto de Bloqueo (Gate)</span>
+                    </label>
+
+                    {newItemIsGate && (
+                      <div className="checklist-gate-type-options">
+                        <label className={`gate-type-option ${newItemGateType === 'blocks_execution' ? 'selected' : ''}`}>
+                          <input 
+                            type="radio" 
+                            name="newGateType" 
+                            value="blocks_execution" 
+                            checked={newItemGateType === 'blocks_execution'} 
+                            onChange={() => setNewItemGateType('blocks_execution')} 
+                          />
+                          <div>
+                            <strong>⛔ Bloquear avance del proceso</strong>
+                            <span>El proceso no podrá avanzar ni completar pasos hasta que este ítem esté marcado como cumplido.</span>
+                          </div>
+                        </label>
+
+                        <label className={`gate-type-option ${newItemGateType === 'blocked_by_execution' ? 'selected' : ''}`}>
+                          <input 
+                            type="radio" 
+                            name="newGateType" 
+                            value="blocked_by_execution" 
+                            checked={newItemGateType === 'blocked_by_execution'} 
+                            onChange={() => setNewItemGateType('blocked_by_execution')} 
+                          />
+                          <div>
+                            <strong>🔒 Bloquear este requerimiento</strong>
+                            <span>Este requerimiento no podrá marcarse como completado hasta que la ejecución finalice al 100%.</span>
+                          </div>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="checklist-new-item-actions">
                     <button type="submit" className="btn btn-primary btn-sm" disabled={!newItemName.trim()}>
                       Guardar Elemento
@@ -343,16 +463,14 @@ export default function ClientChecklistModal({
 
               {/* Dynamic Items List */}
               {items.map((item) => {
-                const isDone = item.type === 'counter' 
-                  ? (item.checked || (item.target > 0 && item.current >= item.target))
-                  : item.type === 'rating'
-                    ? (item.rating === 'Excelente' || item.rating === 'Bueno')
-                    : !!item.checked;
+                const isDone = isChecklistItemDone(item);
+                const execBlockInfo = isChecklistItemBlockedByExecution(item, instances);
+                const linkedInstance = clientInstances.find(i => String(i.id) === String(item.associatedInstanceId));
 
                 return (
                   <div 
                     key={item.id} 
-                    className={`checklist-item-card ${isDone ? 'completed' : ''} ${item.type}`}
+                    className={`checklist-item-card ${isDone ? 'completed' : ''} ${item.type} ${execBlockInfo.isBlocked ? 'is-locked-by-exec' : ''}`}
                   >
                     {item.type !== 'rating' ? (
                       <>
@@ -363,8 +481,12 @@ export default function ClientChecklistModal({
                               checked={isDone} 
                               onChange={() => handleToggleCheck(item.id)} 
                             />
-                            <span className="checklist-custom-box">
-                              {isDone && <CheckCircle2 size={16} color="#FFFFFF" />}
+                            <span className={`checklist-custom-box ${execBlockInfo.isBlocked ? 'locked' : ''}`}>
+                              {execBlockInfo.isBlocked ? (
+                                <Lock size={13} color="#D97706" />
+                              ) : (
+                                isDone && <CheckCircle2 size={16} color="#FFFFFF" />
+                              )}
                             </span>
                             <span className="checklist-item-name">
                               {getItemIcon(item)} {item.name}
@@ -387,6 +509,15 @@ export default function ClientChecklistModal({
 
                             <button 
                               type="button" 
+                              className={`checklist-settings-item-btn ${editSettingsItemId === item.id ? 'active' : ''}`}
+                              onClick={() => setEditSettingsItemId(editSettingsItemId === item.id ? null : item.id)}
+                              title="Configurar vinculación y punto de bloqueo"
+                            >
+                              <SlidersHorizontal size={14} />
+                            </button>
+
+                            <button 
+                              type="button" 
                               className="checklist-delete-item-btn" 
                               onClick={() => handleDeleteItem(item.id)}
                               title="Eliminar elemento"
@@ -395,6 +526,31 @@ export default function ClientChecklistModal({
                             </button>
                           </div>
                         </div>
+
+                        {/* Metadata Tags for Linked Executions and Gates */}
+                        {(item.associatedInstanceId || item.isGate) && (
+                          <div className="checklist-item-meta-tags">
+                            {item.associatedInstanceId && (
+                              <span className="checklist-tag-linked" title={`Asociado a: ${linkedInstance ? linkedInstance.instanceName : 'Ejecución'}`}>
+                                <Link2 size={11} /> {linkedInstance ? linkedInstance.instanceName : 'Ejecución'}
+                              </span>
+                            )}
+                            {item.isGate && (!item.gateType || item.gateType === 'blocks_execution') && (
+                              <span className="checklist-tag-gate-block" title="Bloquea el avance del proceso hasta completar este requerimiento">
+                                <ShieldAlert size={11} /> Bloquea Proceso
+                              </span>
+                            )}
+                            {item.isGate && item.gateType === 'blocked_by_execution' && (
+                              <span 
+                                className={`checklist-tag-gate-req ${execBlockInfo.isBlocked ? 'blocked' : 'unlocked'}`}
+                                title={execBlockInfo.isBlocked ? `Bloqueado hasta finalizar ${execBlockInfo.instance?.instanceName}` : 'Desbloqueado (Proceso finalizado)'}
+                              >
+                                {execBlockInfo.isBlocked ? <Lock size={11} /> : <Unlock size={11} />}
+                                {execBlockInfo.isBlocked ? `Bloqueado (${execBlockInfo.remainingSteps} pasos rest.)` : 'Desbloqueado'}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {item.type === 'counter' && expandedSection === item.id && (
                           <div className="checklist-expand-panel">
@@ -431,6 +587,14 @@ export default function ClientChecklistModal({
                             </span>
                             <button 
                               type="button" 
+                              className={`checklist-settings-item-btn ${editSettingsItemId === item.id ? 'active' : ''}`}
+                              onClick={() => setEditSettingsItemId(editSettingsItemId === item.id ? null : item.id)}
+                              title="Configurar vinculación y punto de bloqueo"
+                            >
+                              <SlidersHorizontal size={14} />
+                            </button>
+                            <button 
+                              type="button" 
                               className="checklist-delete-item-btn" 
                               onClick={() => handleDeleteItem(item.id)}
                               title="Eliminar elemento"
@@ -439,6 +603,31 @@ export default function ClientChecklistModal({
                             </button>
                           </div>
                         </div>
+
+                        {/* Metadata Tags for Linked Executions and Gates */}
+                        {(item.associatedInstanceId || item.isGate) && (
+                          <div className="checklist-item-meta-tags">
+                            {item.associatedInstanceId && (
+                              <span className="checklist-tag-linked" title={`Asociado a: ${linkedInstance ? linkedInstance.instanceName : 'Ejecución'}`}>
+                                <Link2 size={11} /> {linkedInstance ? linkedInstance.instanceName : 'Ejecución'}
+                              </span>
+                            )}
+                            {item.isGate && (!item.gateType || item.gateType === 'blocks_execution') && (
+                              <span className="checklist-tag-gate-block" title="Bloquea el avance del proceso hasta completar este requerimiento">
+                                <ShieldAlert size={11} /> Bloquea Proceso
+                              </span>
+                            )}
+                            {item.isGate && item.gateType === 'blocked_by_execution' && (
+                              <span 
+                                className={`checklist-tag-gate-req ${execBlockInfo.isBlocked ? 'blocked' : 'unlocked'}`}
+                                title={execBlockInfo.isBlocked ? `Bloqueado hasta finalizar ${execBlockInfo.instance?.instanceName}` : 'Desbloqueado (Proceso finalizado)'}
+                              >
+                                {execBlockInfo.isBlocked ? <Lock size={11} /> : <Unlock size={11} />}
+                                {execBlockInfo.isBlocked ? `Bloqueado (${execBlockInfo.remainingSteps} pasos rest.)` : 'Desbloqueado'}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         <div className="checklist-ads-options">
                           {['Excelente', 'Bueno', 'Normal', 'Malo', 'No incluido'].map((opt) => (
@@ -454,6 +643,77 @@ export default function ClientChecklistModal({
                         </div>
                       </div>
                     )}
+
+                    {/* Inline Settings Configuration Drawer */}
+                    {editSettingsItemId === item.id && (
+                      <div className="checklist-item-inline-settings">
+                        <div className="checklist-gate-box-title">
+                          <SlidersHorizontal size={13} /> Configuración de Ejecución & Bloqueo
+                        </div>
+
+                        <div className="checklist-gate-field">
+                          <label>Vincular a Ejecución:</label>
+                          <select 
+                            className="checklist-gate-select"
+                            value={item.associatedInstanceId || ''}
+                            onChange={e => handleUpdateItemConfig(item.id, { associatedInstanceId: e.target.value || null })}
+                          >
+                            <option value="">Ninguna (Requerimiento general del cliente)</option>
+                            {clientInstances.map(inst => {
+                              const steps = inst.steps || [];
+                              const done = steps.filter(s => s.isCompleted).length;
+                              return (
+                                <option key={inst.id} value={inst.id}>
+                                  {inst.instanceName} ({done}/{steps.length} pasos)
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <label className="checklist-gate-checkbox-label">
+                          <input 
+                            type="checkbox" 
+                            checked={!!item.isGate} 
+                            onChange={e => handleUpdateItemConfig(item.id, { isGate: e.target.checked, gateType: item.gateType || 'blocks_execution' })} 
+                          />
+                          <span>🔒 Activar como Punto de Bloqueo (Gate)</span>
+                        </label>
+
+                        {item.isGate && (
+                          <div className="checklist-gate-type-options">
+                            <label className={`gate-type-option ${(!item.gateType || item.gateType === 'blocks_execution') ? 'selected' : ''}`}>
+                              <input 
+                                type="radio" 
+                                name={`gateType_${item.id}`} 
+                                value="blocks_execution" 
+                                checked={!item.gateType || item.gateType === 'blocks_execution'} 
+                                onChange={() => handleUpdateItemConfig(item.id, { gateType: 'blocks_execution' })} 
+                              />
+                              <div>
+                                <strong>⛔ Bloquear avance del proceso</strong>
+                                <span>No se podrán completar pasos de la ejecución hasta que este ítem esté completado.</span>
+                              </div>
+                            </label>
+
+                            <label className={`gate-type-option ${item.gateType === 'blocked_by_execution' ? 'selected' : ''}`}>
+                              <input 
+                                type="radio" 
+                                name={`gateType_${item.id}`} 
+                                value="blocked_by_execution" 
+                                checked={item.gateType === 'blocked_by_execution'} 
+                                onChange={() => handleUpdateItemConfig(item.id, { gateType: 'blocked_by_execution' })} 
+                              />
+                              <div>
+                                <strong>🔒 Bloquear este requerimiento</strong>
+                                <span>Este requerimiento no podrá marcarse como completado hasta que la ejecución finalice al 100%.</span>
+                              </div>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   </div>
                 );
               })}

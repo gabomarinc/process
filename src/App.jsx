@@ -14,7 +14,7 @@ import { ProjectDetailsModal } from "./components/ui/ProjectDetailsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import ClientChecklistModal from "./components/ui/ClientChecklistModal";
-import { getClientTrafficLightStatus } from "./utils/clientSemaforo";
+import { getClientTrafficLightStatus, getBlockingChecklistItemsForInstance } from "./utils/clientSemaforo";
 import AgentCopilot from "./components/ui/AgentCopilot";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
@@ -795,6 +795,23 @@ function App() {
   const handleStepComplete = async (instanceId, stepId, isCompleted, uploadedName = null) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
+
+    if (isCompleted) {
+      // Check if there are any active blocking checklist items (Gates)
+      const blockingItems = getBlockingChecklistItemsForInstance(inst, clients);
+      if (blockingItems.length > 0) {
+        const clientId = getClientForInstance(inst, clients);
+        const client = clients.find(c => c.id === clientId);
+        const blockingNames = blockingItems.map(b => `"${b.name}"`).join(', ');
+        showAlert(
+          `Punto de Bloqueo Activo: No puedes avanzar ni completar pasos en "${inst.instanceName}" porque el cliente ${client ? client.name : ''} tiene pendiente el requerimiento de checklist: ${blockingNames}.\n\nDebes completarlo primero en el perfil del cliente para desbloquear el proceso.`,
+          'warning',
+          'Acción Bloqueada por Checklist'
+        );
+        addToast(`Bloqueado por checklist: ${blockingItems[0].name}`, 'warning');
+        return;
+      }
+    }
 
     const updatedSteps = inst.steps.map(s => {
       if (s.id !== stepId) return s;
@@ -5922,6 +5939,8 @@ const handleDeleteMember = async (id) => {
         fileStore={fileStore}
         setFileStore={setFileStore}
         addToast={addToast}
+        clients={clients}
+        onOpenClientChecklist={(cl) => setChecklistModalClient(cl)}
       />
 
       <ProjectDetailsModal
@@ -5943,6 +5962,8 @@ const handleDeleteMember = async (id) => {
         fileStore={fileStore}
         setFileStore={setFileStore}
         addToast={addToast}
+        clients={clients}
+        onOpenClientChecklist={(cl) => setChecklistModalClient(cl)}
       />
 
 

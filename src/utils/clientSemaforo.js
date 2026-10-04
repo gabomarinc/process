@@ -69,6 +69,74 @@ export function normalizeChecklistItems(checklist) {
   return items.length > 0 ? items : DEFAULT_CHECKLIST_ITEMS;
 }
 
+export function isChecklistItemDone(item) {
+  if (!item) return false;
+  if (item.type === 'counter') {
+    const target = Number(item.target) || 1;
+    const current = Number(item.current) || 0;
+    return !!item.checked || (target > 0 && current >= target);
+  }
+  if (item.type === 'rating') {
+    const r = item.rating || 'Excelente';
+    return r === 'Excelente' || r === 'Bueno';
+  }
+  return !!item.checked;
+}
+
+export function getBlockingChecklistItemsForInstance(instance, clients) {
+  if (!instance || !clients || !clients.length) return [];
+  
+  // Find client
+  const instNameLower = (instance.instanceName || '').toLowerCase();
+  const client = clients.find(c => {
+    if (instance.clientId && String(c.id) === String(instance.clientId)) return true;
+    if (!c.name) return false;
+    const cNameLower = c.name.toLowerCase();
+    return instNameLower.includes(cNameLower) || cNameLower.includes(instNameLower);
+  });
+
+  if (!client || !client.checklist) return [];
+
+  const items = normalizeChecklistItems(client.checklist);
+  return items.filter(item => {
+    if (!item.isGate) return false;
+    const gateType = item.gateType || 'blocks_execution';
+    if (gateType !== 'blocks_execution') return false;
+    
+    // Check association: either specifically for this instance or general for the client
+    const matchesInstance = !item.associatedInstanceId || String(item.associatedInstanceId) === String(instance.id);
+    if (!matchesInstance) return false;
+
+    // Must be uncompleted to block
+    return !isChecklistItemDone(item);
+  });
+}
+
+export function isChecklistItemBlockedByExecution(item, instances) {
+  if (!item || !item.isGate || item.gateType !== 'blocked_by_execution') {
+    return { isBlocked: false, instance: null, remainingSteps: 0 };
+  }
+
+  if (!item.associatedInstanceId) {
+    return { isBlocked: false, instance: null, remainingSteps: 0 };
+  }
+
+  const inst = (instances || []).find(i => String(i.id) === String(item.associatedInstanceId));
+  if (!inst) {
+    return { isBlocked: false, instance: null, remainingSteps: 0 };
+  }
+
+  const steps = inst.steps || [];
+  const remainingSteps = steps.filter(s => !s.isCompleted).length;
+  const isComplete = steps.length > 0 && remainingSteps === 0;
+
+  return {
+    isBlocked: !isComplete,
+    instance: inst,
+    remainingSteps
+  };
+}
+
 export function getClientTrafficLightStatus(checklist) {
   const items = normalizeChecklistItems(checklist);
   
@@ -93,17 +161,7 @@ export function getClientTrafficLightStatus(checklist) {
   const analyzedItems = items.map(item => {
     let isDone = false;
 
-    if (item.type === 'boolean') {
-      isDone = !!item.checked;
-      totalActive += 1;
-      if (isDone) totalDone += 1;
-    } else if (item.type === 'counter') {
-      const target = Number(item.target) || 1;
-      const current = Number(item.current) || 0;
-      isDone = !!item.checked || (target > 0 && current >= target);
-      totalActive += 1;
-      if (isDone) totalDone += 1;
-    } else if (item.type === 'rating') {
+    if (item.type === 'rating') {
       const r = item.rating || 'Excelente';
       if (r !== 'No incluido') {
         totalActive += 1;
@@ -116,7 +174,7 @@ export function getClientTrafficLightStatus(checklist) {
         }
       }
     } else {
-      isDone = !!item.checked;
+      isDone = isChecklistItemDone(item);
       totalActive += 1;
       if (isDone) totalDone += 1;
     }
