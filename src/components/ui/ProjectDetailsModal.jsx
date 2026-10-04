@@ -83,7 +83,8 @@ export const ProjectDetailsModal = ({
   setFileStore,
   addToast,
   clients = [],
-  onOpenClientChecklist
+  onOpenClientChecklist,
+  handleToggleStepChecklist
 }) => {
   const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [activeModalTab, setActiveModalTab] = useState('detalles'); // 'detalles', 'actividad', 'tareas', 'archivos', 'conversacion', 'calendario'
@@ -1705,6 +1706,21 @@ export const ProjectDetailsModal = ({
                         </div>
 
                         {/* Badges / Expand */}
+                        {step.checklist?.length > 0 && (
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            borderRadius: '99px',
+                            background: '#E6FFFA',
+                            color: '#0D9488',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            <CheckSquare size={11} /> {step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length}
+                          </span>
+                        )}
                         <span style={{
                           fontSize: '0.7rem',
                           fontWeight: 700,
@@ -1728,6 +1744,37 @@ export const ProjectDetailsModal = ({
                             <div style={{ display: 'flex', gap: '8px', background: '#F0FDFA', border: '1px solid #CCFBF1', padding: '0.75rem', borderRadius: '12px', marginTop: '0.75rem', color: '#0F172A', fontSize: '0.8rem' }}>
                               <Lightbulb size={16} color="#27BEA5" style={{ flexShrink: 0, marginTop: '2px' }} />
                               <div><strong>¿Por qué este paso?:</strong> {step.motivation}</div>
+                            </div>
+                          )}
+
+                          {/* Step Checklist Section */}
+                          {step.checklist && step.checklist.length > 0 && (
+                            <div style={{ marginTop: '0.85rem', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.85rem' }}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <ListChecks size={15} color="#27BEA5" /> Verificaciones del Paso
+                                </div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+                                  {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completadas
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {step.checklist.map((chk, cIdx) => (
+                                  <label 
+                                    key={chk.id || cIdx} 
+                                    onClick={e => e.stopPropagation()}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={!!chk.isCompleted}
+                                      onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
+                                      style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                                    />
+                                    <span>{chk.text || chk}</span>
+                                  </label>
+                                ))}
+                              </div>
                             </div>
                           )}
 

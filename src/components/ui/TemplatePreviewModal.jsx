@@ -1,16 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Save, Plus, Trash2, Edit2, X } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2 } from 'lucide-react';
 import './TemplatePreviewModal.css';
 
 export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [template, setTemplate] = useState(null);
   const [expandedStepIndex, setExpandedStepIndex] = useState(null);
+  const [newChecklistText, setNewChecklistText] = useState({});
+  const [loadingAIStep, setLoadingAIStep] = useState(null);
 
   useEffect(() => {
     if (isOpen && initialData) {
-      setTemplate(JSON.parse(JSON.stringify(initialData)));
+      const cloned = JSON.parse(JSON.stringify(initialData));
+      // Ensure each step has an array for checklist
+      if (Array.isArray(cloned.steps)) {
+        cloned.steps = cloned.steps.map((s, idx) => ({
+          ...s,
+          checklist: Array.isArray(s.checklist) ? s.checklist.map((c, cIdx) => ({
+            id: c.id || `chk_${idx}_${cIdx}_${Date.now()}`,
+            text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+            isCompleted: false
+          })) : []
+        }));
+      }
+      setTemplate(cloned);
       setExpandedStepIndex(null);
+      setNewChecklistText({});
     }
   }, [isOpen, initialData]);
 
@@ -38,7 +53,8 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
       type: "manual",
       relativeOffsetDays: newSteps.length + 1,
       durationLabel: `Día ${newSteps.length + 1}`,
-      motivation: "¡Tú puedes!"
+      motivation: "¡Tú puedes!",
+      checklist: []
     });
     setTemplate(prev => ({ ...prev, steps: newSteps }));
     setExpandedStepIndex(newSteps.length - 1);
@@ -47,6 +63,65 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
   const handleDeleteStep = (index) => {
     const newSteps = template.steps.filter((_, i) => i !== index);
     setTemplate(prev => ({ ...prev, steps: newSteps }));
+  };
+
+  const handleAddChecklistItem = (stepIndex, text) => {
+    if (!text || !text.trim()) return;
+    const newSteps = [...template.steps];
+    const currentList = newSteps[stepIndex].checklist || [];
+    newSteps[stepIndex].checklist = [
+      ...currentList,
+      {
+        id: `chk_${stepIndex}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        text: text.trim(),
+        isCompleted: false
+      }
+    ];
+    delete newSteps[stepIndex].checklistQuestion;
+    setTemplate(prev => ({ ...prev, steps: newSteps }));
+    setNewChecklistText(prev => ({ ...prev, [stepIndex]: '' }));
+  };
+
+  const handleDeleteChecklistItem = (stepIndex, itemIndex) => {
+    const newSteps = [...template.steps];
+    const currentList = newSteps[stepIndex].checklist || [];
+    newSteps[stepIndex].checklist = currentList.filter((_, i) => i !== itemIndex);
+    setTemplate(prev => ({ ...prev, steps: newSteps }));
+  };
+
+  const handleSuggestAIChecklist = async (stepIndex) => {
+    const step = template.steps[stepIndex];
+    if (!step) return;
+    setLoadingAIStep(stepIndex);
+    try {
+      const res = await fetch('/api/ai/suggest-step-checklist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ title: step.title, description: step.description })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.checklist) && data.checklist.length > 0) {
+          const newSteps = [...template.steps];
+          const existing = newSteps[stepIndex].checklist || [];
+          const newItems = data.checklist.map((t, cIdx) => ({
+            id: `chk_${stepIndex}_${cIdx}_${Date.now()}`,
+            text: typeof t === 'string' ? t : (t.text || String(t)),
+            isCompleted: false
+          }));
+          newSteps[stepIndex].checklist = [...existing, ...newItems];
+          delete newSteps[stepIndex].checklistQuestion;
+          setTemplate(prev => ({ ...prev, steps: newSteps }));
+        }
+      }
+    } catch (err) {
+      console.error('Error suggesting checklist:', err);
+    } finally {
+      setLoadingAIStep(null);
+    }
   };
 
   const handleSave = () => {
@@ -146,6 +221,16 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
                         onClick={e => e.stopPropagation()}
                         className="tpm-step-title-input"
                       />
+                      {step.checklist?.length > 0 && (
+                        <span className="tpm-step-chk-badge" title={`${step.checklist.length} verificaciones en checklist`}>
+                          <CheckSquare size={12} /> {step.checklist.length}
+                        </span>
+                      )}
+                      {step.checklistQuestion && (
+                        <span className="tpm-step-question-badge" title="La IA sugiere definir un checklist para este paso">
+                          <Sparkles size={12} /> Sugerir Checklist
+                        </span>
+                      )}
                       <button 
                         className="tpm-btn-delete"
                         onClick={(e) => { e.stopPropagation(); handleDeleteStep(index); }}
@@ -185,6 +270,84 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
                             </select>
                           </div>
                         </div>
+
+                        {/* Checklist Section for this step */}
+                        <div className="tpm-step-checklist-section">
+                          {step.checklistQuestion && (
+                            <div className="tpm-ai-question-box">
+                              <Sparkles size={15} color="#27BEA5" style={{ flexShrink: 0 }} />
+                              <div>
+                                <strong>Consulta de IA sobre este paso:</strong>
+                                <p>{step.checklistQuestion}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="tpm-checklist-header">
+                            <label className="tpm-checklist-title">
+                              <ListChecks size={14} /> Checklist / Verificaciones del Paso ({step.checklist?.length || 0})
+                            </label>
+                            <button 
+                              type="button" 
+                              className="tpm-btn-ai-suggest"
+                              onClick={() => handleSuggestAIChecklist(index)}
+                              disabled={loadingAIStep === index}
+                              title="Analizar este paso y generar sugerencias con IA"
+                            >
+                              {loadingAIStep === index ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}
+                              {loadingAIStep === index ? 'Analizando...' : 'Sugerir con IA'}
+                            </button>
+                          </div>
+
+                          {/* Existing checklist items */}
+                          <div className="tpm-checklist-items-list">
+                            {(step.checklist || []).map((item, itemIdx) => (
+                              <div key={item.id || itemIdx} className="tpm-checklist-item-row">
+                                <CheckSquare size={13} color="#27BEA5" />
+                                <span className="tpm-checklist-item-text">{item.text}</span>
+                                <button 
+                                  type="button"
+                                  className="tpm-checklist-item-del"
+                                  onClick={() => handleDeleteChecklistItem(index, itemIdx)}
+                                  title="Eliminar ítem"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ))}
+                            {(!step.checklist || step.checklist.length === 0) && (
+                              <span className="tpm-checklist-empty-hint">
+                                Sin checklist asignado. Puedes añadir tareas o pulsar "Sugerir con IA".
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Add new checklist item input */}
+                          <div className="tpm-checklist-add-row">
+                            <input 
+                              type="text"
+                              placeholder="Añadir verificación o sub-tarea..."
+                              value={newChecklistText[index] || ''}
+                              onChange={e => setNewChecklistText(prev => ({ ...prev, [index]: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddChecklistItem(index, newChecklistText[index]);
+                                }
+                              }}
+                              className="tpm-checklist-add-input"
+                            />
+                            <button 
+                              type="button"
+                              className="tpm-btn-add-chk"
+                              onClick={() => handleAddChecklistItem(index, newChecklistText[index])}
+                              disabled={!(newChecklistText[index] || '').trim()}
+                            >
+                              <Plus size={13} /> Añadir
+                            </button>
+                          </div>
+                        </div>
+
                       </div>
                     )}
                   </div>

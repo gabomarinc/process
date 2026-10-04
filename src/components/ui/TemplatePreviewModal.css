@@ -289,3 +289,203 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 14px rgba(39, 190, 167, 0.4);
 }
+
+/* ─────────────────────────────────────────────────────────────
+   STEP CHECKLIST & AI SUGGESTION STYLES
+───────────────────────────────────────────────────────────── */
+
+.tpm-step-chk-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #E6FFFA;
+  color: #0D9488;
+  border: 1px solid #99F6E4;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tpm-step-question-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #FEF3C7;
+  color: #D97706;
+  border: 1px solid #FDE68A;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tpm-step-checklist-section {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.tpm-ai-question-box {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tpm-ai-question-box strong {
+  font-size: 0.78rem;
+  color: #1E40AF;
+  display: block;
+}
+
+.tpm-ai-question-box p {
+  margin: 2px 0 0 0;
+  font-size: 0.75rem;
+  color: #1E3A8A;
+}
+
+.tpm-checklist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tpm-checklist-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tpm-btn-ai-suggest {
+  background: #FFFFFF;
+  border: 1px solid #27BEA5;
+  color: #27BEA5;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.tpm-btn-ai-suggest:hover:not(:disabled) {
+  background: #E6FFFA;
+}
+
+.tpm-btn-ai-suggest:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tpm-checklist-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tpm-checklist-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+}
+
+.tpm-checklist-item-text {
+  flex: 1;
+  font-size: 0.8rem;
+  color: #1E293B;
+  font-weight: 500;
+}
+
+.tpm-checklist-item-del {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.tpm-checklist-item-del:hover {
+  color: #EF4444;
+  background: #FEE2E2;
+}
+
+.tpm-checklist-empty-hint {
+  font-size: 0.75rem;
+  color: #94A3B8;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.tpm-checklist-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tpm-checklist-add-input {
+  flex: 1;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.tpm-checklist-add-input:focus {
+  border-color: #27BEA5;
+}
+
+.tpm-btn-add-chk {
+  background: #27BEA5;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.tpm-btn-add-chk:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+

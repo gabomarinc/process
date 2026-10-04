@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 
 const getFileType = (name, fallbackType) => {
@@ -46,7 +46,8 @@ export const ActiveExecutionModal = ({
   setFileStore,
   addToast,
   clients = [],
-  onOpenClientChecklist
+  onOpenClientChecklist,
+  handleToggleStepChecklist
 }) => {
   const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [isFocusMode, setIsFocusMode] = useState(true);
@@ -648,6 +649,37 @@ export const ActiveExecutionModal = ({
                                 <span>{step.motivation}</span>
                               </div>
                             )}
+
+                            {/* Step Checklist in Focus Mode */}
+                            {step.checklist && step.checklist.length > 0 && (
+                              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.85rem', marginTop: '0.5rem' }}>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <ListChecks size={15} color="#27BEA5" /> Verificaciones del Paso
+                                  </div>
+                                  <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+                                    {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completadas
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {step.checklist.map((chk, cIdx) => (
+                                    <label 
+                                      key={chk.id || cIdx} 
+                                      onClick={e => e.stopPropagation()}
+                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={!!chk.isCompleted}
+                                        onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
+                                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                                      />
+                                      <span>{chk.text || chk}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Col 2: Acciones, Colaboradores y Notas */}
@@ -1073,12 +1105,44 @@ export const ActiveExecutionModal = ({
                               >
                                 <MessageSquare size={15} />
                               </button>
+                              {step.checklist?.length > 0 && (
+                                <span className="badge" style={{ background: '#E6FFFA', color: '#0D9488', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <ListChecks size={11} /> {step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length}
+                                </span>
+                              )}
                               <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
                                 {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
                               </span>
                             </div>
                           </div>
                           <p>{step.description}</p>
+
+                          {/* Step Checklist */}
+                          {step.checklist && step.checklist.length > 0 && (
+                            <div style={{ marginTop: '0.75rem', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '0.75rem' }}>
+                              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <ListChecks size={14} color="#27BEA5" /> Verificaciones ({step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length})
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                {step.checklist.map((chk, cIdx) => (
+                                  <label 
+                                    key={chk.id || cIdx} 
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={!!chk.isCompleted}
+                                      onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    <span>{chk.text || chk}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Steps List Comments Block */}
                           {commentingStepId === step.id && (

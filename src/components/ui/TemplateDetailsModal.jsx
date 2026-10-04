@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle } from 'lucide-react';
+import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle, Sparkles, CheckSquare } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import './TemplateDetailsModal.css';
 
@@ -28,6 +28,8 @@ export const TemplateDetailsModal = ({
   setTicketModal,
   departments = []
 }) => {
+  const [detailChecklistInput, setDetailChecklistInput] = useState('');
+  const [isSuggestingAI, setIsSuggestingAI] = useState(false);
   useEffect(() => {
     if (activeTemplate && activeTemplate.steps && teamMembers) {
       const initial = {};
@@ -257,6 +259,125 @@ export const TemplateDetailsModal = ({
                               </div>
                             </div>
 
+                            {/* Checklist Section in Step Editor */}
+                            <div className="tdm-form-group" style={{ marginTop: '0.5rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                                  <ListChecks size={15} color="#27BEA5" /> Checklist / Sub-tareas del Paso ({(editingStepData.checklist || []).length})
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setIsSuggestingAI(true);
+                                    try {
+                                      const res = await fetch('/api/ai/suggest-step-checklist', {
+                                        method: 'POST',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                        },
+                                        body: JSON.stringify({ title: editingStepData.title, description: editingStepData.description })
+                                      });
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        if (Array.isArray(data.checklist)) {
+                                          const currentList = editingStepData.checklist || [];
+                                          const newItems = data.checklist.map((t, cIdx) => ({
+                                            id: `chk_${Date.now()}_${cIdx}`,
+                                            text: typeof t === 'string' ? t : (t.text || String(t)),
+                                            isCompleted: false
+                                          }));
+                                          setEditingStepData({
+                                            ...editingStepData,
+                                            checklist: [...currentList, ...newItems]
+                                          });
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.error(err);
+                                    } finally {
+                                      setIsSuggestingAI(false);
+                                    }
+                                  }}
+                                  disabled={isSuggestingAI}
+                                  style={{
+                                    background: '#FFFFFF',
+                                    border: '1px solid #27BEA5',
+                                    color: '#27BEA5',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    padding: '0.2rem 0.6rem',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  <Sparkles size={12} /> {isSuggestingAI ? 'Analizando...' : 'Sugerir con IA'}
+                                </button>
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                {(editingStepData.checklist || []).map((item, itemIdx) => (
+                                  <div key={item.id || itemIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#FFFFFF', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                                    <CheckSquare size={13} color="#27BEA5" />
+                                    <span style={{ flex: 1, fontSize: '0.8rem', color: '#1E293B' }}>{item.text || item}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = (editingStepData.checklist || []).filter((_, i) => i !== itemIdx);
+                                        setEditingStepData({ ...editingStepData, checklist: updated });
+                                      }}
+                                      style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ))}
+
+                                <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Añadir verificación o sub-tarea..."
+                                    value={detailChecklistInput}
+                                    onChange={e => setDetailChecklistInput(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        if (detailChecklistInput.trim()) {
+                                          const currentList = editingStepData.checklist || [];
+                                          setEditingStepData({
+                                            ...editingStepData,
+                                            checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false }]
+                                          });
+                                          setDetailChecklistInput('');
+                                        }
+                                      }
+                                    }}
+                                    style={{ flex: 1, background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '0.35rem 0.6rem', fontSize: '0.8rem', outline: 'none' }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (detailChecklistInput.trim()) {
+                                        const currentList = editingStepData.checklist || [];
+                                        setEditingStepData({
+                                          ...editingStepData,
+                                          checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false }]
+                                        });
+                                        setDetailChecklistInput('');
+                                      }
+                                    }}
+                                    disabled={!detailChecklistInput.trim()}
+                                    style={{ background: '#27BEA5', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '0.35rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                                  >
+                                    <Plus size={13} /> Añadir
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
                             <div className="tdm-form-actions">
                               <button className="tdm-btn-cancel-step" onClick={() => setEditingStepIndex(null)}>
                                 Cancelar
@@ -336,6 +457,22 @@ export const TemplateDetailsModal = ({
                                       </>
                                     );
                                   })()}
+                                </div>
+                              )}
+
+                              {step.checklist && step.checklist.length > 0 && (
+                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.8rem', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                    <ListChecks size={13} color="#27BEA5" /> Checklist de Verificación ({step.checklist.length}):
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                    {step.checklist.map((item, cIdx) => (
+                                      <div key={item.id || cIdx} style={{ fontSize: '0.78rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#27BEA5', flexShrink: 0 }} />
+                                        <span>{item.text || item}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>

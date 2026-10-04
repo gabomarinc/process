@@ -918,6 +918,34 @@ function App() {
     }
   };
 
+  const handleToggleStepChecklist = async (instanceId, stepId, checklistItemId) => {
+    const inst = instances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    const updatedSteps = inst.steps.map(s => {
+      if (s.id !== stepId) return s;
+      const currentList = s.checklist || [];
+      const updatedList = currentList.map((c, idx) => {
+        const matches = (c.id && c.id === checklistItemId) || idx === checklistItemId;
+        if (!matches) return c;
+        return { ...c, isCompleted: !c.isCompleted };
+      });
+      return { ...s, checklist: updatedList };
+    });
+
+    setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
+
+    try {
+      await fetch(`/api/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: updatedSteps })
+      });
+    } catch (err) {
+      console.error("Error saving step checklist toggle:", err);
+    }
+  };
+
   const handleRequestHelp = async (instanceId, stepId) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
@@ -1660,7 +1688,12 @@ const handleDeleteMember = async (id) => {
           dueDate,
           isCompleted: false,
           completedAt: null,
-          uploadedFileName: null
+          uploadedFileName: null,
+          checklist: (step.checklist || []).map((c, cIdx) => ({
+            id: c.id || `chk_${idx}_${cIdx}_${Date.now()}`,
+            text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+            isCompleted: false
+          }))
         };
       })
     };
@@ -2352,6 +2385,7 @@ const handleDeleteMember = async (id) => {
         2. Escribe saludos y mensajes de motivación empáticos y profesionales.
         3. Identifica cuáles pasos son físicos/manuales (deben ser "manual" en el tipo) y cuáles requieren subir un documento o entregable (deben ser "digital").
         4. Define un relativeOffsetDays (entero, ej: 1 para primer día, 3 para tercer día) para cada paso, lo cual servirá para calcular plazos a partir de una fecha de inicio.
+        5. ANÁLISIS DE CHECKLIST POR PASO (CRÍTICO): Analiza si cada paso contiene múltiples acciones secundarias, requisitos o puntos de verificación para completarlo con éxito. Si es así, incluye el campo "checklist" con un array de strings (ej: ["Verificar datos del cliente", "Adjuntar comprobante", "Notificar al líder"]). Si un paso es complejo pero el texto no especifica exactamente qué verificar, incluye en "checklistQuestion" una pregunta breve consultando qué cosas colocar para que el usuario pueda responder y definirlo en la vista previa.
         
         REGLAS DE TONO Y ESTILO (CRÍTICO):
         - NO utilices adjetivos ni palabras exageradas o floridas como "blindada", "imparable", "impecable", "espectacular", "increíble", "maravilloso", "cálido", "bonito".
@@ -2385,7 +2419,9 @@ const handleDeleteMember = async (id) => {
               "acceptedFormats": [".pdf", ".docx", ".png", ".jpg"],
               "relativeOffsetDays": 1,
               "durationLabel": "Día 1",
-              "motivation": "Frase de motivación empática específica para este paso"
+              "motivation": "Frase de motivación empática específica para este paso",
+              "checklist": ["Sub-tarea o verificación 1", "Sub-tarea 2"],
+              "checklistQuestion": "Pregunta opcional si requiere aclaración del usuario"
             }
           ]
         }
@@ -2445,9 +2481,20 @@ const handleDeleteMember = async (id) => {
 
       const tempId = "t_ai_" + Date.now();
       
+      const normalizedSteps = (parsedTemplate.steps || []).map((s, idx) => ({
+        ...s,
+        id: s.id || `step_${idx + 1}_${Date.now()}`,
+        checklist: Array.isArray(s.checklist) ? s.checklist.map((c, cIdx) => ({
+          id: `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
+          text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+          isCompleted: false
+        })) : []
+      }));
+
       const finalTemplate = {
         ...parsedTemplate,
-        id: tempId
+        id: tempId,
+        steps: normalizedSteps
       };
 
       setPreviewTemplate(finalTemplate);
@@ -5941,6 +5988,7 @@ const handleDeleteMember = async (id) => {
         addToast={addToast}
         clients={clients}
         onOpenClientChecklist={(cl) => setChecklistModalClient(cl)}
+        handleToggleStepChecklist={handleToggleStepChecklist}
       />
 
       <ProjectDetailsModal
@@ -5958,6 +6006,7 @@ const handleDeleteMember = async (id) => {
         handleStepComplete={handleStepComplete}
         handleAssignStepMember={handleAssignStepMember}
         handleUpdateStepComments={handleUpdateStepComments}
+        handleToggleStepChecklist={handleToggleStepChecklist}
         currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}

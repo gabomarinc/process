@@ -3339,7 +3339,12 @@ const AGENT_TOOLS_DECLARATIONS = [
               title: { type: 'STRING', description: 'Nombre claro de la acción o paso' },
               description: { type: 'STRING', description: 'Instrucciones precisas de ejecución' },
               motivation: { type: 'STRING', description: 'El por qué hacemos este paso (valor de negocio)' },
-              durationDays: { type: 'NUMBER', description: 'Plazo en días estimado para este paso' }
+              durationDays: { type: 'NUMBER', description: 'Plazo en días estimado para este paso' },
+              checklist: { 
+                type: 'ARRAY', 
+                description: 'Lista de ítems de checklist, sub-tareas o verificaciones que componen o validan este paso (ej. ["Verificar accesos", "Confirmar pago", "Enviar contrato firmado"])',
+                items: { type: 'STRING' }
+              }
             },
             required: ['title']
           }
@@ -3541,15 +3546,26 @@ async function executeAgentTool(toolName, args, user) {
 
       const id = 'tmpl_' + Date.now();
       const status = userRole === 'gerente' ? 'pending_approval' : 'approved';
-      const steps = (args.steps || []).map((s, idx) => ({
-        id: `step_${idx + 1}_${Date.now()}`,
-        title: s.title,
-        description: s.description || '',
-        motivation: s.motivation || '',
-        durationDays: s.durationDays || 1,
-        isCompleted: false,
-        comments: []
-      }));
+      const steps = (args.steps || []).map((s, idx) => {
+        let stepChecklist = [];
+        if (Array.isArray(s.checklist) && s.checklist.length > 0) {
+          stepChecklist = s.checklist.map((c, cIdx) => ({
+            id: `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
+            text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+            isCompleted: false
+          }));
+        }
+        return {
+          id: `step_${idx + 1}_${Date.now()}`,
+          title: s.title,
+          description: s.description || '',
+          motivation: s.motivation || '',
+          durationDays: s.durationDays || 1,
+          isCompleted: false,
+          comments: [],
+          checklist: stepChecklist
+        };
+      });
 
       await pool.query(
         `INSERT INTO templates (id, organization_id, title, description, duration_days, companion_name, companion_avatar, companion_greeting, category, steps, status)
@@ -3758,6 +3774,48 @@ async function executeAgentTool(toolName, args, user) {
   }
 }
 
+// Suggest checklist for a step using AI (analiza si amerita checklist y sugiere ítems)
+app.post('/api/ai/suggest-step-checklist', authenticateToken, async (req, res) => {
+  const { title, description } = req.body;
+  if (!title) return res.status(400).json({ error: 'El título del paso es requerido.' });
+
+  try {
+    const orgRes = await pool.query('SELECT gemini_api_key FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const geminiKey = orgRes.rows[0]?.gemini_api_key || process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      return res.status(400).json({ error: 'Configura tu Gemini API Key en Kônsul para sugerir checklists con IA.' });
+    }
+
+    const prompt = `Analiza este paso de un proceso de negocio y genera un checklist conciso de entre 2 y 4 sub-tareas, entregables o verificaciones clave necesarias para completarlo con éxito.
+Título del paso: "${title}"
+Descripción: "${description || ''}"
+
+Responde ÚNICAMENTE con un array JSON de strings con las tareas, por ejemplo:
+["Revisar requerimientos", "Ejecutar validación", "Confirmar con el cliente"]`;
+
+    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
+    const geminiRes = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      return res.status(500).json({ error: 'Error al consultar Gemini API: ' + errText });
+    }
+
+    const data = await geminiRes.json();
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const checklist = JSON.parse(text);
+    res.json({ checklist: Array.isArray(checklist) ? checklist : [] });
+  } catch (err) {
+    console.error('Error in suggest-step-checklist:', err);
+    res.status(500).json({ error: 'Error al generar sugerencias de checklist.' });
+  }
+});
+
 // Agentic Chat Endpoint with Gemini Tool Calling & RBAC (Pilar 2)
 app.post('/api/agent/chat', authenticateToken, async (req, res) => {
   try {
@@ -3812,6 +3870,12 @@ TUS DOS FUNCIONES PRINCIPALES:
 2. COPILOTO AGÉNTICO Y ACCIONES OPERATIVAS (Tool Calling):
    - Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o registrar clientes/miembros, DEBES invocar la herramienta correspondiente del catálogo.
    - NUNCA inventes que creaste o modificaste algo sin haber ejecutado la herramienta.
+
+3. ANÁLISIS Y CREACIÓN DE CHECKLISTS EN LOS PASOS DE LAS PLANTILLAS:
+   - Al diseñar o crear plantillas con "create_process_template", analiza cada paso detenidamente.
+   - Si un paso involucra varias sub-tareas, requisitos o puntos de control que ameritan un checklist, genera el array de sub-tareas en el campo "checklist" de ese paso.
+   - Si no sabes o tienes dudas de qué cosas colocar en el checklist para un paso particular al interactuar en el chat con el usuario, PREGÚNTALE primero antes de invocar la herramienta (ej. "Para el paso 'Validación legal', ¿qué ítems o verificaciones te gustaría que tenga su checklist?").
+   - En cambio, si la petición es una automatización o proceso desatendido, infiere y genera el checklist automáticamente sin preguntar para no pausar el flujo.
 
 REGLAS DE COMUNICACIÓN:
 - Responde en español con formato Markdown limpio y profesional.
