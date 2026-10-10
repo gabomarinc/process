@@ -4472,9 +4472,15 @@ Responde ÚNICAMENTE con un array JSON de strings con las tareas, por ejemplo:
 // Agentic Chat Endpoint with Gemini Tool Calling & RBAC (Pilar 2)
 app.post('/api/agent/chat', authenticateToken, async (req, res) => {
   try {
-    const { message, history } = req.body;
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ success: false, error: 'El mensaje es obligatorio.' });
+    const { message, history, attachments } = req.body;
+    const effectiveMessage = (message && typeof message === 'string' && message.trim()) 
+      ? message.trim() 
+      : (Array.isArray(attachments) && attachments.length > 0 
+        ? 'Analiza el archivo o audio adjunto y asísteme con las acciones o consultas operativas necesarias.' 
+        : '');
+
+    if (!effectiveMessage) {
+      return res.status(400).json({ success: false, error: 'El mensaje o un archivo/audio adjunto es obligatorio.' });
     }
 
     const orgId = req.user?.organizationId;
@@ -4515,7 +4521,7 @@ app.post('/api/agent/chat', authenticateToken, async (req, res) => {
 Usuario interactuando: "${req.user?.name || req.user?.email || 'Colega'}" (Rol: ${req.user?.role || 'colaborador'}).
 Filosofía de Kônsul: "La app trabaja para el usuario, no el usuario para la app".
 
-TUS DOS FUNCIONES PRINCIPALES:
+TUS FUNCIONES PRINCIPALES:
 1. GUÍA Y CONSULTOR DE PROCESOS (Asistente Kônsul):
    - Responde cualquier duda sobre los procesos de la empresa, qué se hace en cada paso, los entregables, objetivos y mejores prácticas.
    - Si el usuario pregunta dudas sobre un proceso (ej. "¿Cómo hago el paso 2 de Onboarding?", "¿Qué pasos tiene Ventas?"), invoca "get_template_details" o "list_templates" para consultar los pasos reales en la base de datos y guiarlo paso a paso de forma directa, concisa y profesional.
@@ -4524,10 +4530,15 @@ TUS DOS FUNCIONES PRINCIPALES:
    - Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o registrar clientes/miembros, DEBES invocar la herramienta correspondiente del catálogo.
    - NUNCA inventes que creaste o modificaste algo sin haber ejecutado la herramienta.
 
-3. ANÁLISIS Y CREACIÓN DE CHECKLISTS EN LOS PASOS DE LAS PLANTILLAS:
+3. ANÁLISIS DE ARCHIVOS ADJUNTOS Y AUDIOS:
+   - Si el usuario adjunta documentos (PDF, DOCX, TXT, CSV), audios de voz o imágenes con flujos de trabajo, ANALÍZALOS a fondo.
+   - Si el usuario o el audio pide estructurar una plantilla a partir del archivo o nota de voz, extrae los pasos lógicos, títulos claros, descripciones y duraciones recomendadas, e invoca "create_process_template".
+   - Si falta información o deseas corroborar qué checklist requiere algún paso del documento, pregúntaselo amablemente al usuario.
+
+4. ANÁLISIS Y CREACIÓN DE CHECKLISTS EN LOS PASOS DE LAS PLANTILLAS:
    - Al diseñar o crear plantillas con "create_process_template", analiza cada paso detenidamente.
    - Si un paso involucra varias sub-tareas, requisitos o puntos de control que ameritan un checklist, genera el array de sub-tareas en el campo "checklist" de ese paso.
-   - Si no sabes o tienes dudas de qué cosas colocar en el checklist para un paso particular al interactuar en el chat con el usuario, PREGÚNTALE primero antes de invocar la herramienta (ej. "Para el paso 'Validación legal', ¿qué ítems o verificaciones te gustaría que tenga su checklist?").
+   - Si no sabes o tienes dudas de qué cosas colocar en el checklist para un paso particular al interactuar en el chat con el usuario, PREGÚNTALE primero antes de invocar la herramienta.
    - En cambio, si la petición es una automatización o proceso desatendido, infiere y genera el checklist automáticamente sin preguntar para no pausar el flujo.
 
 REGLAS DE COMUNICACIÓN:
@@ -4547,7 +4558,7 @@ REGLAS DE COMUNICACIÓN:
         }
       });
     }
-    rawTurns.push({ role: 'user', text: message.trim() });
+    rawTurns.push({ role: 'user', text: effectiveMessage });
 
     const sanitizedTurns = [];
     for (const turn of rawTurns) {
@@ -4566,13 +4577,41 @@ REGLAS DE COMUNICACIÓN:
     }
 
     if (sanitizedTurns.length === 0) {
-      sanitizedTurns.push({ role: 'user', text: message });
+      sanitizedTurns.push({ role: 'user', text: effectiveMessage });
     }
 
-    const contents = sanitizedTurns.map(t => ({
-      role: t.role,
-      parts: [{ text: t.text }]
-    }));
+    // Prepare attachments parts for current turn:
+    const attachmentParts = [];
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.base64Data && att.mimeType) {
+          attachmentParts.push({
+            inline_data: {
+              mime_type: att.mimeType,
+              data: att.base64Data
+            }
+          });
+        }
+        if (att.textContent) {
+          attachmentParts.push({
+            text: `[DOCUMENTO ADJUNTO: "${att.name || 'archivo'}" (${att.type || 'documento'})]:\n${att.textContent.substring(0, 35000)}\n---`
+          });
+        }
+      }
+    }
+
+    const contents = sanitizedTurns.map((t, idx) => {
+      if (idx === sanitizedTurns.length - 1 && t.role === 'user' && attachmentParts.length > 0) {
+        return {
+          role: t.role,
+          parts: [...attachmentParts, { text: t.text }]
+        };
+      }
+      return {
+        role: t.role,
+        parts: [{ text: t.text }]
+      };
+    });
 
     // Multi-model endpoint fallback
     const candidateModels = [

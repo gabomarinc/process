@@ -15,7 +15,11 @@ import {
   Trash2, 
   Bot,
   Zap,
-  BookOpen
+  BookOpen,
+  Paperclip,
+  Mic,
+  Music,
+  Image as ImageIcon
 } from 'lucide-react';
 import './AgentCopilot.css';
 
@@ -26,6 +30,41 @@ const DEFAULT_CHIPS = [
   { label: '📋 Añadir columna al Kanban', prompt: 'Agrega una columna llamada "En Revisión Legal" al tablero Kanban.' },
   { label: '👥 Registrar nuevo cliente', prompt: 'Crea un nuevo cliente llamado "InnovaTech Global".' }
 ];
+
+const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = reject;
+  r.readAsDataURL(file);
+});
+
+const readFileAsArrayBuffer = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = reject;
+  r.readAsArrayBuffer(file);
+});
+
+const readFileAsText = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = reject;
+  r.readAsText(file);
+});
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + (sizes[i] || 'B');
+};
+
+const formatTimer = (secs) => {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+};
 
 export default function AgentCopilot({ 
   user, 
@@ -42,7 +81,7 @@ export default function AgentCopilot({
   const defaultWelcome = {
     id: 'welcome',
     role: 'model',
-    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico y Consultor de Procesos** de Kônsul.\n\nPuedo guiarte paso a paso en cualquier plantilla, crear procesos, mover tarjetas en el Kanban, registrar clientes y analizar tu workspace en tiempo real. ¿En qué te ayudo hoy?`,
+    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico y Consultor de Procesos** de Kônsul.\n\nPuedo guiarte paso a paso en cualquier plantilla, crear procesos, mover tarjetas en el Kanban, registrar clientes, analizar documentos adjuntos y escuchar tus instrucciones por notas de voz. ¿En qué te ayudo hoy?`,
     actions: []
   };
 
@@ -50,6 +89,34 @@ export default function AgentCopilot({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // File Attachments States
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Audio Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const mediaRecorderRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerIntervalRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+    };
+  }, []);
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -97,17 +164,277 @@ export default function AgentCopilot({
     }
   }, [messages, isOpen]);
 
-  const handleSendMessage = async (textToSend) => {
+  // File Selection and Parser
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    setIsProcessingFiles(true);
+    const parsedList = [];
+
+    for (const file of files) {
+      try {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const isImg = file.type.startsWith('image/');
+        const isAud = file.type.startsWith('audio/');
+
+        if (isImg) {
+          const dataUrl = await readFileAsDataURL(file);
+          const base64Data = dataUrl.split(',')[1];
+          parsedList.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: file.type || 'image/png',
+            mimeType: file.type || 'image/png',
+            isImage: true,
+            dataUrl,
+            base64Data
+          });
+        } else if (isAud) {
+          const dataUrl = await readFileAsDataURL(file);
+          const base64Data = dataUrl.split(',')[1];
+          parsedList.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: file.type || 'audio/webm',
+            mimeType: file.type || 'audio/webm',
+            isAudio: true,
+            dataUrl,
+            base64Data
+          });
+        } else if (ext === 'docx') {
+          let text = '';
+          const arrayBuffer = await readFileAsArrayBuffer(file);
+          if (window.mammoth) {
+            const res = await window.mammoth.extractRawText({ arrayBuffer });
+            text = res.value || '';
+          }
+          parsedList.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: 'docx',
+            textContent: text,
+            isDocument: true
+          });
+        } else if (ext === 'pdf') {
+          let text = '';
+          const arrayBuffer = await readFileAsArrayBuffer(file);
+          if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              text += content.items.map(it => it.str).join(' ') + '\n';
+            }
+          }
+          parsedList.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: 'pdf',
+            textContent: text,
+            isDocument: true
+          });
+        } else {
+          // txt, md, csv, json, code
+          const text = await readFileAsText(file);
+          parsedList.push({
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: ext,
+            textContent: text,
+            isDocument: true
+          });
+        }
+      } catch (err) {
+        console.error('Error parsing file:', file.name, err);
+        if (addToast) addToast(`No se pudo leer el archivo ${file.name}`, 'warning');
+      }
+    }
+
+    setAttachedFiles(prev => [...prev, ...parsedList]);
+    setIsProcessingFiles(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Audio Recording Handlers
+  const startVoiceRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (addToast) addToast('Tu navegador no soporta grabación de micrófono.', 'warning');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+        else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.start(100);
+
+      // Start Speech Recognition in Spanish
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'es-ES';
+
+        rec.onresult = (event) => {
+          let text = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            text += event.results[i][0].transcript + ' ';
+          }
+          setLiveTranscript(text.trim());
+        };
+
+        rec.onerror = (e) => {
+          console.warn('Speech recognition warning:', e.error);
+        };
+
+        try {
+          rec.start();
+          recognitionRef.current = rec;
+        } catch (recErr) {
+          console.warn('Could not start recognition:', recErr);
+        }
+      }
+
+      setIsRecording(true);
+      setRecordSeconds(0);
+      setLiveTranscript('');
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordSeconds(s => s + 1);
+      }, 1000);
+
+    } catch (err) {
+      console.error('Error starting audio recording:', err);
+      if (addToast) addToast('Permiso de micrófono denegado o no disponible.', 'error');
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+    }
+    setIsRecording(false);
+    setRecordSeconds(0);
+    setLiveTranscript('');
+    audioChunksRef.current = [];
+  };
+
+  const stopAndSendVoiceRecording = () => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+    }
+
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') {
+      cancelVoiceRecording();
+      return;
+    }
+
+    mr.onstop = async () => {
+      const mimeType = mr.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      let base64Data = '';
+      try {
+        const dataUrl = await readFileAsDataURL(audioBlob);
+        base64Data = dataUrl.split(',')[1];
+      } catch (e) {
+        console.warn('Could not convert audio to base64', e);
+      }
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+
+      const transcriptText = liveTranscript.trim() || '🎤 Nota de voz grabada';
+      setIsRecording(false);
+      setRecordSeconds(0);
+      setLiveTranscript('');
+
+      const audioAttachment = {
+        id: 'aud_' + Date.now(),
+        name: 'Nota_de_voz.webm',
+        size: formatFileSize(audioBlob.size),
+        type: mimeType,
+        mimeType: mimeType,
+        base64Data,
+        isAudio: true,
+        dataUrl: audioUrl
+      };
+
+      // Dispatch message immediately with audio metadata
+      handleSendMessage(
+        transcriptText,
+        [audioAttachment],
+        { audioUrl, duration: recordSeconds }
+      );
+    };
+
+    mr.stop();
+  };
+
+  const handleSendMessage = async (textToSend, customAttachments = null, audioMeta = null) => {
+    const attachmentsToSend = customAttachments !== null ? customAttachments : attachedFiles;
     const query = (textToSend || inputValue).trim();
-    if (!query || isLoading) return;
+
+    if ((!query && (!attachmentsToSend || attachmentsToSend.length === 0)) || isLoading) return;
+
+    const effectiveText = query || (attachmentsToSend.length > 0 ? (attachmentsToSend[0].isAudio ? '🎤 Nota de voz grabada' : '📎 Archivo adjunto') : '');
 
     const userMsgId = 'usr_' + Date.now();
-    const newMessages = [
-      ...messages,
-      { id: userMsgId, role: 'user', text: query }
-    ];
+    const newMsg = {
+      id: userMsgId,
+      role: 'user',
+      text: effectiveText,
+      attachments: attachmentsToSend.map(a => ({
+        name: a.name,
+        size: a.size,
+        type: a.type,
+        isImage: a.isImage,
+        isAudio: a.isAudio,
+        dataUrl: a.dataUrl
+      })),
+      audioUrl: audioMeta?.audioUrl || (attachmentsToSend.find(a => a.isAudio)?.dataUrl) || null
+    };
+
+    const newMessages = [...messages, newMsg];
     setMessages(newMessages);
     setInputValue('');
+    setAttachedFiles([]);
     setIsLoading(true);
 
     try {
@@ -119,7 +446,14 @@ export default function AgentCopilot({
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          message: query,
+          message: effectiveText,
+          attachments: attachmentsToSend.map(a => ({
+            name: a.name,
+            type: a.type,
+            mimeType: a.mimeType,
+            base64Data: a.base64Data,
+            textContent: a.textContent
+          })),
           geminiApiKey: apiKey || localStorage.getItem('gemini_api_key'),
           history: newMessages.slice(-6).map(m => ({
             role: m.role === 'model' ? 'model' : 'user',
@@ -421,8 +755,39 @@ export default function AgentCopilot({
                   {msg.role === 'model' ? (user?.companionAvatar || '⚡') : (user?.name?.[0] || 'U')}
                 </div>
                 <div className="agent-msg-bubble">
-                  {msg.text.split('\n\n').map((paragraph, pIdx) => {
-                    // Simple bold renderer
+                  {/* Render Attached Files inside Message Bubble */}
+                  {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
+                    <div className="agent-msg-attachments-container">
+                      {msg.attachments.map((att, aIdx) => (
+                        att.isImage ? (
+                          <div key={aIdx} className="agent-msg-att-img-wrap">
+                            <img src={att.dataUrl} alt={att.name} className="agent-msg-att-img" />
+                            <span className="agent-msg-att-name">{att.name} ({att.size})</span>
+                          </div>
+                        ) : att.isAudio ? null : (
+                          <div key={aIdx} className="agent-msg-att-file-pill">
+                            <FileText size={14} className="icon-blue" />
+                            <span className="agent-msg-att-file-name" title={att.name}>{att.name}</span>
+                            <span className="agent-msg-att-file-size">{att.size}</span>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Render Voice Note Audio Player if present */}
+                  {msg.audioUrl && (
+                    <div className="agent-msg-audio-wrapper">
+                      <div className="agent-audio-badge">
+                        <Mic size={13} color="#27BEA5" />
+                        <span>Mensaje de Voz</span>
+                      </div>
+                      <audio controls src={msg.audioUrl} className="agent-inline-audio" />
+                    </div>
+                  )}
+
+                  {/* Message Text */}
+                  {msg.text && msg.text.split('\n\n').map((paragraph, pIdx) => {
                     const parts = paragraph.split(/(\*\*.*?\*\*)/g);
                     return (
                       <p key={pIdx}>
@@ -485,30 +850,119 @@ export default function AgentCopilot({
 
           {/* Footer Input */}
           <div className="agent-copilot-footer">
-            <form 
-              className="agent-input-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendMessage();
-              }}
-            >
-              <input
-                type="text"
-                className="agent-chat-input"
-                placeholder="Pídele crear plantillas, columnas, mover tarjetas..."
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                disabled={isLoading}
-              />
-              <button 
-                type="submit" 
-                className="agent-send-btn"
-                disabled={!inputValue.trim() || isLoading}
-                title="Enviar mensaje"
+            {/* Attachment Preview Strip */}
+            {attachedFiles.length > 0 && (
+              <div className="agent-attachment-strip">
+                {attachedFiles.map((file) => (
+                  <div key={file.id} className="agent-attachment-pill">
+                    {file.isImage ? (
+                      <img src={file.dataUrl} alt={file.name} className="agent-att-mini-thumb" />
+                    ) : file.isAudio ? (
+                      <Music size={14} className="icon-green" />
+                    ) : (
+                      <FileText size={14} className="icon-blue" />
+                    )}
+                    <span className="agent-att-name" title={file.name}>{file.name}</span>
+                    <span className="agent-att-size">{file.size}</span>
+                    <button
+                      type="button"
+                      className="agent-att-remove-btn"
+                      onClick={() => setAttachedFiles(prev => prev.filter(f => f.id !== file.id))}
+                      title="Eliminar archivo"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Recording Bar (Active when recording audio) */}
+            {isRecording ? (
+              <div className="agent-recording-bar">
+                <div className="agent-recording-indicator">
+                  <div className="agent-rec-dot" />
+                  <span className="agent-rec-timer">{formatTimer(recordSeconds)}</span>
+                </div>
+
+                <div className="agent-rec-transcript">
+                  {liveTranscript || "Grabando audio... habla ahora"}
+                </div>
+
+                <div className="agent-rec-actions">
+                  <button
+                    type="button"
+                    className="agent-rec-cancel-btn"
+                    onClick={cancelVoiceRecording}
+                    title="Cancelar grabación"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="agent-rec-send-btn"
+                    onClick={stopAndSendVoiceRecording}
+                    title="Finalizar y enviar audio"
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form 
+                className="agent-input-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendMessage();
+                }}
               >
-                <Send size={15} />
-              </button>
-            </form>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  multiple
+                  accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,audio/*"
+                  onChange={handleFileSelect}
+                />
+                <button
+                  type="button"
+                  className="agent-icon-action-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Adjuntar archivo o documento (.pdf, .docx, .png, .txt, etc.)"
+                  disabled={isLoading || isProcessingFiles}
+                >
+                  <Paperclip size={17} />
+                </button>
+
+                <input
+                  type="text"
+                  className="agent-chat-input"
+                  placeholder={isProcessingFiles ? "Procesando archivo..." : "Escribe o adjunta un proceso/audio..."}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  disabled={isLoading || isProcessingFiles}
+                />
+
+                <button
+                  type="button"
+                  className="agent-icon-action-btn mic-btn"
+                  onClick={startVoiceRecording}
+                  title="Grabar y enviar nota de voz"
+                  disabled={isLoading || isProcessingFiles}
+                >
+                  <Mic size={17} />
+                </button>
+
+                <button 
+                  type="submit" 
+                  className="agent-send-btn"
+                  disabled={(!inputValue.trim() && attachedFiles.length === 0) || isLoading || isProcessingFiles}
+                  title="Enviar mensaje"
+                >
+                  <Send size={15} />
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}
