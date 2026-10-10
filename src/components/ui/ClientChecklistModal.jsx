@@ -46,6 +46,7 @@ export default function ClientChecklistModal({
 
   const [activeTab, setActiveTab] = useState('checklist'); // 'checklist' | 'active' | 'completed'
   const [items, setItems] = useState(() => normalizeChecklistItems(client.checklist));
+  const [clientEmail, setClientEmail] = useState(client.email || '');
   const [expandedSection, setExpandedSection] = useState(null);
   const [editSettingsItemId, setEditSettingsItemId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -62,6 +63,7 @@ export default function ClientChecklistModal({
   useEffect(() => {
     if (client) {
       setItems(normalizeChecklistItems(client.checklist));
+      setClientEmail(client.email || '');
     }
   }, [client]);
 
@@ -208,7 +210,7 @@ export default function ClientChecklistModal({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSaveChecklist(client.id, { items });
+      await onSaveChecklist(client.id, { items }, clientEmail);
       onClose();
     } catch (err) {
       console.error('Error saving checklist', err);
@@ -235,7 +237,7 @@ export default function ClientChecklistModal({
         {/* Header */}
         <div className="checklist-modal-header">
           <div className="checklist-client-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h2>{client.name}</h2>
               <div 
                 style={{ 
@@ -255,9 +257,31 @@ export default function ClientChecklistModal({
                 {semaforo.statusLabel} ({semaforo.percentage}%)
               </div>
             </div>
-            <span className="checklist-client-subtitle">
-              {activeInstances.length} Activas • {completedInstances.length} Completadas
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <span className="checklist-client-subtitle">
+                {activeInstances.length} Activas • {completedInstances.length} Completadas
+              </span>
+              <span style={{ color: '#CBD5E1' }}>•</span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>✉ Correo:</span>
+                <input
+                  type="email"
+                  placeholder="cliente@empresa.com"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  style={{
+                    border: '1px solid #CBD5E1',
+                    borderRadius: '6px',
+                    padding: '2px 8px',
+                    fontSize: '0.75rem',
+                    color: '#0F172A',
+                    background: '#FFFFFF',
+                    width: '180px'
+                  }}
+                  title="Correo para envíos automáticos de hitos"
+                />
+              </div>
+            </div>
           </div>
 
           <button className="checklist-close-btn" onClick={onClose}>

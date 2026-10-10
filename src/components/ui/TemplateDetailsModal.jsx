@@ -259,6 +259,47 @@ export const TemplateDetailsModal = ({
                               </div>
                             </div>
 
+                            {/* Client Email Notification Trigger */}
+                            <div className="tdm-form-group" style={{ marginTop: '0.5rem', background: '#F0FDFA', padding: '0.85rem', borderRadius: '10px', border: '1px solid #CCFBF1' }}>
+                              <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700, color: '#0F766E' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!editingStepData.notifyClientEmail}
+                                  onChange={(e) => setEditingStepData({ ...editingStepData, notifyClientEmail: e.target.checked })}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#0D9488' }}
+                                />
+                                <span>📧 Notificar automáticamente al cliente por correo al completar este paso</span>
+                              </label>
+                              <p style={{ margin: '4px 0 0 24px', fontSize: '0.75rem', color: '#115E59' }}>
+                                Cuando el operador complete este paso, el sistema enviará un correo con el progreso o solicitando acción al email registrado del cliente.
+                              </p>
+
+                              {editingStepData.notifyClientEmail && (
+                                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '24px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#0F766E', display: 'block', marginBottom: '2px' }}>Asunto Personalizado (Opcional):</label>
+                                    <input
+                                      type="text"
+                                      placeholder={`Actualización: ${editingStepData.title || 'Paso completado'}`}
+                                      value={editingStepData.clientEmailSubject || ''}
+                                      onChange={(e) => setEditingStepData({ ...editingStepData, clientEmailSubject: e.target.value })}
+                                      style={{ width: '100%', background: '#FFFFFF', border: '1px solid #99F6E4', borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#0F766E', display: 'block', marginBottom: '2px' }}>Mensaje / Indicaciones para el cliente (Opcional):</label>
+                                    <textarea
+                                      rows={2}
+                                      placeholder="Ej. Hemos completado este hito. Por favor revisa la plataforma o facilítanos el siguiente documento para continuar."
+                                      value={editingStepData.clientEmailBody || ''}
+                                      onChange={(e) => setEditingStepData({ ...editingStepData, clientEmailBody: e.target.value })}
+                                      style={{ width: '100%', background: '#FFFFFF', border: '1px solid #99F6E4', borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
                             {/* Checklist Section in Step Editor */}
                             <div className="tdm-form-group" style={{ marginTop: '0.5rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>

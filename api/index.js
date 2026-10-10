@@ -59,6 +59,7 @@ const pool = new Pool({
       name VARCHAR(255) NOT NULL,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR(255)`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{"carrusel":{"checked":false,"current":0,"target":4},"post":{"checked":false,"current":0,"target":12},"video":{"checked":false,"current":0,"target":6},"facturaPaga":{"checked":false},"adsRating":"Excelente"}'::jsonb`,
 
     `CREATE TABLE IF NOT EXISTS clickup_rules (
@@ -998,7 +999,7 @@ app.get('/api/clients', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/clients', authenticateToken, async (req, res) => {
-  const { name } = req.body;
+  const { name, email } = req.body;
   if (!name) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
   try {
     // Ensure table exists (Safe for Vercel Serverless cold starts)
@@ -1010,16 +1011,51 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR(255);`);
     
     const clientId = 'cli_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
     const result = await pool.query(
-      'INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3) RETURNING *',
-      [clientId, req.user.organizationId, name]
+      'INSERT INTO clients (id, organization_id, name, email) VALUES ($1, $2, $3, $4) RETURNING *',
+      [clientId, req.user.organizationId, name, email || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear el cliente' });
+  }
+});
+
+app.put('/api/clients/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { name, email, checklist } = req.body;
+  try {
+    const updates = [];
+    const params = [];
+    let pIdx = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${pIdx++}`);
+      params.push(name);
+    }
+    if (email !== undefined) {
+      updates.push(`email = $${pIdx++}`);
+      params.push(email || null);
+    }
+    if (checklist !== undefined) {
+      updates.push(`checklist = $${pIdx++}`);
+      params.push(JSON.stringify(checklist));
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'Nada para actualizar' });
+
+    params.push(id, req.user.organizationId);
+    const query = `UPDATE clients SET ${updates.join(', ')} WHERE id = $${pIdx++} AND organization_id = $${pIdx++} RETURNING *`;
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error al actualizar cliente:', err);
+    res.status(500).json({ error: 'Error al actualizar cliente' });
   }
 });
 
@@ -1124,7 +1160,7 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
       const allCompleted = steps.every(s => s.isCompleted);
       const newlyCompletedSteps = steps.filter(s => s.isCompleted && !prevSteps.some(ps => ps.id === s.id && ps.isCompleted));
       
-      // Notify Suite for each completed step
+      // Notify Suite & Client Email for each completed step
       for (const newlyCompleted of newlyCompletedSteps) {
         triggerProcessAutomation('Paso de Tarea Completado', req.user, {
           'ID de Ejecución': id,
@@ -1132,6 +1168,73 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
           'Título del Paso': newlyCompleted.title || newlyCompleted.label || 'Paso',
           'Título de Ejecución': prevInst.instance_name || prevInst.title || `Ejecución #${id}`
         });
+
+        // Check if this step is configured to email the client automatically
+        if (newlyCompleted.notifyClientEmail) {
+          (async () => {
+            try {
+              let clientEmail = null;
+              let clientName = prevInst.instance_name || 'Estimado Cliente';
+
+              if (prevInst.client_id) {
+                const cliRes = await pool.query('SELECT name, email FROM clients WHERE id = $1 AND organization_id = $2', [prevInst.client_id, req.user.organizationId]);
+                if (cliRes.rows.length > 0) {
+                  clientEmail = cliRes.rows[0].email;
+                  clientName = cliRes.rows[0].name || clientName;
+                }
+              }
+
+              // Fallback: search client by instance name
+              if (!clientEmail && prevInst.instance_name) {
+                const cliRes = await pool.query('SELECT name, email FROM clients WHERE organization_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1', [req.user.organizationId, prevInst.instance_name.trim()]);
+                if (cliRes.rows.length > 0) {
+                  clientEmail = cliRes.rows[0].email;
+                  clientName = cliRes.rows[0].name || clientName;
+                }
+              }
+
+              if (clientEmail) {
+                const subject = newlyCompleted.clientEmailSubject || `Actualización de tu Proceso: ${newlyCompleted.title || 'Paso Completado'}`;
+                const bodyText = newlyCompleted.clientEmailBody || `Hola ${clientName},\n\nTe informamos que se ha completado el paso "${newlyCompleted.title}" correspondiente al proceso "${prevInst.instance_name || prevInst.title}".\n\n${newlyCompleted.description ? 'Detalle: ' + newlyCompleted.description + '\n\n' : ''}Seguimos avanzando con la ejecución de tu servicio. Si tienes dudas, contáctanos.\n\nSaludos cordiales,\nEquipo de Operaciones`;
+
+                const htmlContent = `
+                  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <div style="background-color: #27bea7; padding: 24px; text-align: center;">
+                      <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700;">Kônsul Process</h1>
+                      <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">Notificación Operativa de Avance</p>
+                    </div>
+                    <div style="padding: 28px; color: #1e293b;">
+                      <h2 style="font-size: 17px; margin-top: 0; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+                        ${newlyCompleted.title || 'Hito Operativo'}
+                      </h2>
+                      <div style="font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-wrap; margin: 16px 0;">
+                        ${bodyText.replace(/\n/g, '<br/>')}
+                      </div>
+                      <div style="background-color: #f8fafc; border-left: 4px solid #27bea7; padding: 12px 16px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+                        <span style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Estado del Proceso</span>
+                        <p style="margin: 4px 0 0 0; font-size: 14px; font-weight: 600; color: #0f172a;">${prevInst.instance_name || prevInst.title}</p>
+                      </div>
+                    </div>
+                    <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">
+                      Enviado automáticamente por el motor de procesos de Kônsul.
+                    </div>
+                  </div>
+                `;
+
+                await sendEmail({
+                  to: clientEmail,
+                  subject,
+                  html: htmlContent
+                });
+                console.log(`[Process] Correo automático enviado al cliente ${clientEmail} por paso "${newlyCompleted.title}".`);
+              } else {
+                console.log(`[Process] Paso configurado con notifyClientEmail pero el cliente no tiene email registrado.`);
+              }
+            } catch (mailErr) {
+              console.error('[Process] Error al enviar email automático al cliente:', mailErr);
+            }
+          })();
+        }
       }
 
       // Notify Suite for full process completion

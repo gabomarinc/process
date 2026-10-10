@@ -14,6 +14,7 @@ import { ProjectDetailsModal } from "./components/ui/ProjectDetailsModal";
 import { LandingPage } from "./components/ui/LandingPage";
 import { DestinationCard } from "./components/ui/DestinationCard";
 import ClientChecklistModal from "./components/ui/ClientChecklistModal";
+import AdminDashboard from "./components/ui/AdminDashboard";
 import { getClientTrafficLightStatus, getBlockingChecklistItemsForInstance } from "./utils/clientSemaforo";
 import AgentCopilot from "./components/ui/AgentCopilot";
 import "./App.css";
@@ -467,28 +468,38 @@ function App() {
   // Client Checklist Modal State
   const [checklistModalClient, setChecklistModalClient] = useState(null);
 
-  const handleSaveClientChecklist = async (clientId, newChecklist) => {
+  const handleSaveClientChecklist = async (clientId, newChecklist, newEmail = undefined) => {
     try {
-      const response = await fetch(`/api/clients/${clientId}/checklist`, {
+      const payload = { checklist: newChecklist };
+      if (newEmail !== undefined) payload.email = newEmail;
+
+      const response = await fetch(`/api/clients/${clientId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ checklist: newChecklist })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error('Error al guardar checklist del cliente');
+        // Fallback to /checklist endpoint if /api/clients/:id is older
+        await fetch(`/api/clients/${clientId}/checklist`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ checklist: newChecklist })
+        });
       }
 
-      const updatedClient = await response.json();
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist } : c));
-      addToast('Checklist y semáforo del cliente actualizados', 'success');
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist, email: newEmail !== undefined ? newEmail : c.email } : c));
+      addToast('Datos y semáforo del cliente actualizados', 'success');
     } catch (err) {
-      console.error('Error updating checklist:', err);
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist } : c));
-      addToast('Checklist actualizado localmente', 'info');
+      console.error('Error updating client:', err);
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist, email: newEmail !== undefined ? newEmail : c.email } : c));
+      addToast('Datos actualizados localmente', 'info');
     }
   };
 
@@ -534,6 +545,14 @@ function App() {
         const id = hash.replace('#/ejecuciones/detalle/', '');
         setActiveTab('instances');
         setSelectedInstanceId(id);
+      } else if (hash === '#/dashboard') {
+        if (user?.role === 'admin') {
+          setActiveTab('dashboard');
+          setSelectedInstanceId("");
+        } else {
+          setActiveTab('instances');
+          setSelectedInstanceId("");
+        }
       } else if (hash === '#/ejecuciones/clientes') {
         setActiveTab('clients');
         setSelectedInstanceId("");
@@ -570,12 +589,21 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [user]);
 
+  // Restrict dashboard to admin users only
+  useEffect(() => {
+    if (user && user.role !== 'admin' && activeTab === 'dashboard') {
+      setActiveTab('instances');
+    }
+  }, [user, activeTab]);
+
   // Synchronize state changes to URL Hash (breadcrumbs)
   useEffect(() => {
     if (!user) return;
     let targetHash = '#/ejecuciones';
 
-    if (activeTab === 'instances') {
+    if (activeTab === 'dashboard') {
+      targetHash = '#/dashboard';
+    } else if (activeTab === 'instances') {
       if (selectedInstanceId) {
         targetHash = `#/ejecuciones/detalle/${selectedInstanceId}`;
       } else {
@@ -797,7 +825,22 @@ function App() {
     if (!inst) return;
 
     if (isCompleted) {
-      // Check if there are any active blocking checklist items (Gates)
+      // 1. Check if the step itself has a checklist and ensure all items are completed
+      const targetStep = (inst.steps || []).find(s => s.id === stepId);
+      if (targetStep && Array.isArray(targetStep.checklist) && targetStep.checklist.length > 0) {
+        const pendingItems = targetStep.checklist.filter(c => !c.isCompleted);
+        if (pendingItems.length > 0) {
+          showAlert(
+            `Checklist Incompleto: No puedes marcar este paso como completado porque aún tienes ${pendingItems.length} verificación(es) pendiente(s) en su checklist:\n\n• ${pendingItems.map(p => p.text || p).join('\n• ')}\n\nMarca todos los checks de este paso para poder darlo por listo.`,
+            'warning',
+            'Verificaciones Pendientes en el Paso'
+          );
+          addToast(`Tienes ${pendingItems.length} checklist(s) pendientes en este paso`, 'warning');
+          return;
+        }
+      }
+
+      // 2. Check if there are any active blocking checklist items on the client level (Gates)
       const blockingItems = getBlockingChecklistItemsForInstance(inst, clients);
       if (blockingItems.length > 0) {
         const clientId = getClientForInstance(inst, clients);
@@ -2767,6 +2810,15 @@ const handleDeleteMember = async (id) => {
     );
   }
   const floatingItems = [
+    ...(user?.role === 'admin' ? [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: <TrendingUp size={20} />,
+        type: 'tab',
+        onClick: () => setActiveTab('dashboard')
+      }
+    ] : []),
     {
       id: 'instances',
       label: 'Ejecuciones',
@@ -2858,6 +2910,20 @@ const handleDeleteMember = async (id) => {
 
           {/* Desktop Navigation Menu (Middle) */}
           <nav className="desktop-nav">
+            {/* 0. Admin Dashboard (Solo Admin) */}
+            {user?.role === 'admin' && (
+              <div className="nav-menu-item-unified">
+                <button 
+                  className={`nav-trigger-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('dashboard'); setOpenDropdown(null); }}
+                  title="Dashboard ejecutivo con métricas de la organización"
+                >
+                  <TrendingUp size={15} className="icon-blue" />
+                  <span>Dashboard</span>
+                </button>
+              </div>
+            )}
+
             {/* 1. Ejecuciones Dropdown */}
             <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
               <button 
@@ -3276,14 +3342,27 @@ const handleDeleteMember = async (id) => {
       )}
 
       {/* Dashboard Grid */}
-      <div className={(activeTab === 'settings' || activeTab === 'kanban') ? '' : 'dashboard-grid'}>
+      <div className={(activeTab === 'settings' || activeTab === 'kanban' || activeTab === 'dashboard') ? '' : 'dashboard-grid'}>
         
         {/* Left Side: Display based on Active Tab */}
         <div className="card-section" style={
           activeTab === 'settings' ? { maxWidth: '1000px', margin: '0 auto 3rem auto' } : 
-          activeTab === 'kanban' ? { width: '100%', maxWidth: 'none', margin: 0, padding: '0 0.5rem' } : {}
+          activeTab === 'kanban' ? { width: '100%', maxWidth: 'none', margin: 0, padding: '0 0.5rem' } : 
+          activeTab === 'dashboard' ? { width: '100%', maxWidth: '1440px', margin: '0 auto 3rem auto', padding: '0 0.5rem' } : {}
         }>
-          {activeTab === 'kanban' ? (
+          {activeTab === 'dashboard' && user?.role === 'admin' ? (
+            <AdminDashboard
+              user={user}
+              instances={instances}
+              templates={templates}
+              clients={clients}
+              teamMembers={teamMembers}
+              kanbanColumns={kanbanColumns}
+              onNavigateTab={setActiveTab}
+              onOpenInstance={(id) => setSelectedInstanceId(id)}
+              onOpenClient={(c) => setChecklistModalClient(c)}
+            />
+          ) : activeTab === 'kanban' ? (
             <KanbanBoard 
               instances={instances}
               kanbanColumns={kanbanColumns}
@@ -5858,7 +5937,7 @@ const handleDeleteMember = async (id) => {
 
 
         {/* Right Side: Operations Panel */}
-        {activeTab !== 'settings' && (
+        {activeTab !== 'settings' && activeTab !== 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
             
             {/* Uploader / Template Creator */}

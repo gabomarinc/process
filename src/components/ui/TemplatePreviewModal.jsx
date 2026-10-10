@@ -271,6 +271,37 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
                           </div>
                         </div>
 
+                        {/* Client Email Notification Trigger */}
+                        <div style={{ marginTop: '0.6rem', background: '#F0FDFA', padding: '0.75rem', borderRadius: '8px', border: '1px solid #CCFBF1' }}>
+                          <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#0F766E' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!step.notifyClientEmail}
+                              onChange={(e) => handleStepChange(index, 'notifyClientEmail', e.target.checked)}
+                              style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#0D9488' }}
+                            />
+                            <span>📧 Notificar automáticamente al cliente por correo al completar este paso</span>
+                          </label>
+                          {step.notifyClientEmail && (
+                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '22px' }}>
+                              <input
+                                type="text"
+                                placeholder={`Asunto: Actualización de ${step.title || 'Paso'}`}
+                                value={step.clientEmailSubject || ''}
+                                onChange={(e) => handleStepChange(index, 'clientEmailSubject', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #99F6E4', borderRadius: '6px', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                              />
+                              <textarea
+                                rows={2}
+                                placeholder="Mensaje / Acción requerida por el cliente (Opcional)..."
+                                value={step.clientEmailBody || ''}
+                                onChange={(e) => handleStepChange(index, 'clientEmailBody', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #99F6E4', borderRadius: '6px', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
                         {/* Checklist Section for this step */}
                         <div className="tpm-step-checklist-section">
                           {step.checklistQuestion && (
