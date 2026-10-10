@@ -3134,17 +3134,7 @@ const handleDeleteMember = async (id) => {
                 )}
               </div>
             )}
-            {user?.role !== 'guest' && (
-              <div className="nav-menu-item-unified">
-                <button 
-                  className={`nav-trigger-btn ${activeTab === 'ecosystem' ? 'active' : ''}`}
-                  onClick={() => { setActiveTab('ecosystem'); setOpenDropdown(null); }}
-                >
-                  <LayoutGrid size={15} className="icon-blue" />
-                  <span>Ecosistema</span>
-                </button>
-              </div>
-            )}
+            {/* Mi Cuenta Dropdown contains Ecosistema */}
           </nav>
 
           {/* Right Header Status / Account Dropdown */}
@@ -3165,7 +3155,8 @@ const handleDeleteMember = async (id) => {
                   padding: '0.45rem 0.9rem',
                   cursor: 'pointer',
                   fontSize: '0.8rem',
-                  transition: 'all 0.2s ease'
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap'
                 }}
                 onClick={() => setIsCopilotOpen(prev => !prev)}
                 title="Abrir Copiloto Agéntico Kônsul"
@@ -3176,7 +3167,7 @@ const handleDeleteMember = async (id) => {
               <Notifications user={user} apiUrl="/api" onNavigate={(n) => { const instId = n.instance_id || n.instanceId; if (instId) setSelectedInstanceId(instId); }} onCompleteStep={handleStepComplete} addToast={addToast} />
               <div className="nav-menu-item-unified" onMouseLeave={() => setOpenDropdown(null)}>
                 <button 
-                  className={`nav-trigger-btn ${activeTab === 'settings' ? 'active' : ''}`}
+                  className={`nav-trigger-btn ${(activeTab === 'settings' || activeTab === 'ecosystem') ? 'active' : ''}`}
                   onClick={() => setOpenDropdown(openDropdown === 'cuenta' ? null : 'cuenta')}
                   onMouseEnter={() => setOpenDropdown('cuenta')}
                 >
@@ -3227,6 +3218,19 @@ const handleDeleteMember = async (id) => {
                       </div>
 
                       <div className="grid-split-small">
+                        {user?.role !== 'guest' && (
+                          <div 
+                            className="nav-small-item-link"
+                            onClick={() => { 
+                              setActiveTab('ecosystem'); 
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            <LayoutGrid size={16} className="icon-blue" />
+                            <span>Ecosistema</span>
+                          </div>
+                        )}
+
                         {user?.role === 'admin' && (
                           <div 
                             className="nav-small-item-link"
