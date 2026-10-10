@@ -113,8 +113,10 @@ const pool = new Pool({
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Por hacer'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS client_id VARCHAR(255)`,
     
     `CREATE INDEX IF NOT EXISTS idx_instances_org ON instances(organization_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_instances_client ON instances(client_id)`,
     `CREATE INDEX IF NOT EXISTS idx_team_members_org ON team_members(organization_id)`,
     `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_clients_org ON clients(organization_id)`,
@@ -965,6 +967,7 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
       templateId: row.template_id,
       title: row.title,
       instanceName: row.instance_name,
+      clientId: row.client_id,
       startedAt: row.started_at,
       companionName: row.companion_name,
       companionAvatar: row.companion_avatar,
@@ -1041,18 +1044,20 @@ app.put('/api/clients/:id/checklist', authenticateToken, async (req, res) => {
 
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
-  const { id, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
+  const { id, templateId, title, instanceName, clientId, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
   try {
     await pool.query(
-      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [id, req.user.organizationId, templateId, title, instanceName, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, client_id, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [id, req.user.organizationId, templateId, title, instanceName, clientId || null, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
     );
 
     triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
       'Título de Tarea': title || instanceName || 'Nueva Tarea',
       'Descripción': `Iniciada en categoría ${category || 'General'}`,
-      'Miembro Asignado': req.user?.email || 'Admin'
+      'Miembro Asignado': req.user?.email || 'Admin',
+      'ID de Ejecución': id,
+      'Cliente': instanceName
     });
 
     res.status(201).json({ message: 'Ejecución iniciada con éxito' });
@@ -1065,8 +1070,13 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
 // 5. Update an instance (steps, status, priority, or attachments changes)
 app.put('/api/instances/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { steps, status, priority, attachments } = req.body;
+  const { steps, status, priority, attachments, clientId } = req.body;
   try {
+    // Read previous instance state for automation diffing
+    const prevInstRes = await pool.query('SELECT instance_name, title, category, client_id, steps FROM instances WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    const prevInst = prevInstRes.rows[0] || {};
+    const prevSteps = typeof prevInst.steps === 'string' ? JSON.parse(prevInst.steps) : (prevInst.steps || []);
+
     let query = 'UPDATE instances SET ';
     const params = [];
     let paramIdx = 1;
@@ -1088,6 +1098,10 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
       updates.push(`attachments = $${paramIdx++}`);
       params.push(JSON.stringify(attachments));
     }
+    if (clientId !== undefined) {
+      updates.push(`client_id = $${paramIdx++}`);
+      params.push(clientId || null);
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No se enviaron campos para actualizar.' });
@@ -1100,14 +1114,36 @@ app.put('/api/instances/:id', authenticateToken, async (req, res) => {
 
     if (status !== undefined) {
       triggerProcessAutomation('Estado de Tarea Cambiado', req.user, {
-        'Título de Tarea': req.body.title || `Ejecución #${id}`,
+        'Título de Tarea': req.body.title || prevInst.instance_name || `Ejecución #${id}`,
         'Columna Actual': status
       });
     }
     
-    // Trigger ReactivaLeads if all steps are completed
+    // Trigger Suite & ReactivaLeads if steps are updated
     if (steps && Array.isArray(steps)) {
       const allCompleted = steps.every(s => s.isCompleted);
+      const newlyCompletedSteps = steps.filter(s => s.isCompleted && !prevSteps.some(ps => ps.id === s.id && ps.isCompleted));
+      
+      // Notify Suite for each completed step
+      for (const newlyCompleted of newlyCompletedSteps) {
+        triggerProcessAutomation('Paso de Tarea Completado', req.user, {
+          'ID de Ejecución': id,
+          'ID del Paso': newlyCompleted.id,
+          'Título del Paso': newlyCompleted.title || newlyCompleted.label || 'Paso',
+          'Título de Ejecución': prevInst.instance_name || prevInst.title || `Ejecución #${id}`
+        });
+      }
+
+      // Notify Suite for full process completion
+      if (allCompleted && !prevSteps.every(ps => ps.isCompleted)) {
+        triggerProcessAutomation('Proceso Completado', req.user, {
+          'ID de Ejecución': id,
+          'Título de Ejecución': prevInst.instance_name || prevInst.title || `Ejecución #${id}`,
+          'Plantilla': prevInst.title || 'Proceso',
+          'Categoría': prevInst.category || 'General',
+          'Fecha de Finalización': new Date().toISOString()
+        });
+      }
       if (allCompleted) {
         // Find instance to get template_id
         const instRes = await pool.query('SELECT template_id FROM instances WHERE id = $1', [id]);
@@ -3017,9 +3053,107 @@ app.get('/api/v1/team-members', authenticateApiKey, async (req, res) => {
   }
 });
 
+// Helper for computing client traffic light status
+function computeClientTrafficLight(checklist) {
+  if (!checklist) return { statusKey: 'red', percentage: 0, completedCount: 0, totalCount: 0, items: [] };
+  let items = [];
+  if (Array.isArray(checklist.items)) items = checklist.items;
+  else if (Array.isArray(checklist)) items = checklist;
+  else if (typeof checklist === 'object') {
+    if (checklist.carrusel) items.push({ ...checklist.carrusel, name: 'Carrusel', type: 'counter' });
+    if (checklist.post) items.push({ ...checklist.post, name: 'Post', type: 'counter' });
+    if (checklist.video) items.push({ ...checklist.video, name: 'Video', type: 'counter' });
+    if (checklist.facturaPaga) items.push({ checked: !!checklist.facturaPaga.checked, name: 'Factura Paga', type: 'boolean' });
+    if (checklist.adsRating !== undefined) items.push({ rating: checklist.adsRating, name: 'Ads Según Cliente', type: 'rating' });
+  }
+
+  if (items.length === 0) return { statusKey: 'red', percentage: 0, completedCount: 0, totalCount: 0, items: [] };
+
+  let completed = 0;
+  for (const it of items) {
+    if (it.type === 'counter') {
+      const tgt = Number(it.target) || 1;
+      const curr = Number(it.current) || 0;
+      if (it.checked || (tgt > 0 && curr >= tgt)) completed++;
+    } else if (it.type === 'rating') {
+      if (it.rating === 'Excelente' || it.rating === 'Bueno') completed++;
+    } else {
+      if (it.checked) completed++;
+    }
+  }
+
+  const pct = Math.round((completed / items.length) * 100);
+  const statusKey = pct >= 80 ? 'green' : pct >= 40 ? 'yellow' : 'red';
+  return { statusKey, percentage: pct, completedCount: completed, totalCount: items.length, items };
+}
+
+// ----------------------------------------------------------------------------
+// EXECUTIONS API V1
+// ----------------------------------------------------------------------------
+
+// List all process executions (instances) with optional filtering
+app.get('/api/v1/executions', authenticateApiKey, async (req, res) => {
+  const { client_id, status, limit = 50, offset = 0 } = req.query;
+  try {
+    let query = 'SELECT * FROM instances WHERE organization_id = $1';
+    const params = [req.user.organizationId];
+    let pIdx = 2;
+
+    if (client_id) {
+      query += ` AND client_id = $${pIdx++}`;
+      params.push(client_id);
+    }
+    if (status) {
+      query += ` AND status = $${pIdx++}`;
+      params.push(status);
+    }
+
+    query += ` ORDER BY started_at DESC LIMIT $${pIdx++} OFFSET $${pIdx++}`;
+    params.push(parseInt(limit, 10), parseInt(offset, 10));
+
+    const result = await pool.query(query, params);
+    const data = result.rows.map(row => {
+      const steps = typeof row.steps === 'string' ? JSON.parse(row.steps) : (row.steps || []);
+      const completedSteps = steps.filter(s => s.isCompleted).length;
+      const totalSteps = steps.length;
+      const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+      return {
+        id: row.id,
+        templateId: row.template_id,
+        title: row.title,
+        instanceName: row.instance_name,
+        clientId: row.client_id,
+        status: row.status || 'Por hacer',
+        priority: row.priority || 'Media',
+        startedAt: row.started_at,
+        totalSteps,
+        completedSteps,
+        progressPercentage: progress
+      };
+    });
+
+    res.json({
+      success: true,
+      data,
+      meta: {
+        app: "konsulprocess",
+        version: "1",
+        count: data.length
+      }
+    });
+  } catch (err) {
+    console.error('API v1 List Executions error:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Error al listar ejecuciones' }
+    });
+  }
+});
+
 // Create/trigger a new process execution (instance)
 app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
-  const { templateId, instanceName } = req.body;
+  const { templateId, instanceName, clientId, clientName, category, priority, variables, assignedTo } = req.body;
   if (!templateId || !instanceName) {
     return res.status(422).json({
       success: false,
@@ -3049,41 +3183,82 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     const template = templateRes.rows[0];
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
     const startedAt = new Date().toISOString();
+
+    // Resolve or auto-register client
+    let resolvedClientId = clientId || null;
+    let resolvedClientName = clientName || instanceName;
+    if (!resolvedClientId && resolvedClientName) {
+      const findCli = await pool.query('SELECT id, name FROM clients WHERE organization_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1', [req.user.organizationId, resolvedClientName.trim()]);
+      if (findCli.rows.length > 0) {
+        resolvedClientId = findCli.rows[0].id;
+        resolvedClientName = findCli.rows[0].name;
+      } else {
+        resolvedClientId = 'cli_' + resolvedClientName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
+        await pool.query(
+          `INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
+          [resolvedClientId, req.user.organizationId, resolvedClientName.trim()]
+        );
+      }
+    }
     
-    // Map dates to template steps
-    const stepsWithDates = template.steps.map((step, idx) => {
+    // Map dates and checklists to template steps
+    const rawTemplateSteps = typeof template.steps === 'string' ? JSON.parse(template.steps) : (template.steps || []);
+    const stepsWithDates = rawTemplateSteps.map((step, idx) => {
       const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + (step.durationDays || 1));
+      dueDate.setDate(dueDate.getDate() + (step.durationDays || step.relativeOffsetDays || 1));
+      
+      const rawChecklist = Array.isArray(step.checklist) ? step.checklist : [];
+      const checklist = rawChecklist.map((c, cIdx) => ({
+        id: c.id || `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
+        text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+        isCompleted: false
+      }));
+
       return {
-        id: step.id || `step_${idx + 1}`,
-        label: step.label,
-        type: step.type || 'text',
-        assignedTo: step.assignedTo || 'Unassigned',
+        id: step.id || `step_${idx + 1}_${Date.now()}`,
+        title: replaceVariables(step.title || step.label || `Paso ${idx + 1}`, variables),
+        description: replaceVariables(step.description || '', variables),
+        motivation: step.motivation || '',
+        type: step.type || 'manual',
+        assignedTo: step.assignedTo || assignedTo || 'Unassigned',
         isCompleted: false,
         completedAt: null,
         completedBy: null,
         dueDate: dueDate.toISOString(),
-        options: step.options || []
+        options: step.options || [],
+        checklist: checklist
       };
     });
 
     await pool.query(
-      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, client_id, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         instId,
         req.user.organizationId,
         templateId,
         template.title,
         instanceName,
+        resolvedClientId,
         startedAt,
         template.companion_name,
         template.companion_avatar,
         template.companion_greeting,
-        template.category,
-        JSON.stringify(stepsWithDates)
+        category || template.category || 'General',
+        JSON.stringify(stepsWithDates),
+        'Por hacer',
+        priority || 'Media'
       ]
     );
+
+    // Notify Suite Automations engine
+    triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+      'Título de Tarea': instanceName,
+      'Descripción': `Plantilla "${template.title}" ejecutada vía API v1`,
+      'Plantilla': template.title,
+      'Cliente': resolvedClientName,
+      'ID de Ejecución': instId
+    });
 
     res.status(201).json({
       success: true,
@@ -3091,7 +3266,11 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
         id: instId,
         title: template.title,
         instanceName,
+        clientId: resolvedClientId,
         startedAt,
+        status: 'Por hacer',
+        priority: priority || 'Media',
+        totalSteps: stepsWithDates.length,
         steps: stepsWithDates
       },
       meta: {
@@ -3100,7 +3279,7 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error(err);
+    console.error('API v1 Create Execution error:', err);
     res.status(500).json({
       success: false,
       error: {
@@ -3131,6 +3310,12 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
     }
 
     const row = result.rows[0];
+    const steps = typeof row.steps === 'string' ? JSON.parse(row.steps) : (row.steps || []);
+    const completedSteps = steps.filter(s => s.isCompleted).length;
+    const totalSteps = steps.length;
+    const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+    const currentStep = steps.find(s => !s.isCompleted) || null;
+
     res.json({
       success: true,
       data: {
@@ -3138,10 +3323,17 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
         templateId: row.template_id,
         title: row.title,
         instanceName: row.instance_name,
+        clientId: row.client_id,
         startedAt: row.started_at,
         companionName: row.companion_name,
         category: row.category,
-        steps: row.steps
+        status: row.status || 'Por hacer',
+        priority: row.priority || 'Media',
+        totalSteps,
+        completedSteps,
+        progressPercentage: progress,
+        currentStep: currentStep ? { id: currentStep.id, title: currentStep.title || currentStep.label, dueDate: currentStep.dueDate } : null,
+        steps: steps
       },
       meta: {
         app: "konsulprocess",
@@ -3149,7 +3341,7 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error(err);
+    console.error('API v1 Get Execution Details error:', err);
     res.status(500).json({
       success: false,
       error: {
@@ -3159,6 +3351,325 @@ app.get('/api/v1/executions/:id', authenticateApiKey, async (req, res) => {
     });
   }
 });
+
+// Complete a step programmatically from LeadsHUB or Suite
+app.post('/api/v1/executions/:id/steps/:stepId/complete', authenticateApiKey, async (req, res) => {
+  const { id, stepId } = req.params;
+  const { completedBy, notes, uploadedFileName, uploadedFileUrl } = req.body;
+  try {
+    const instRes = await pool.query('SELECT * FROM instances WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (instRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Ejecución no encontrada' } });
+    }
+
+    const inst = instRes.rows[0];
+    const steps = typeof inst.steps === 'string' ? JSON.parse(inst.steps) : (inst.steps || []);
+    const stepIndex = steps.findIndex(s => String(s.id) === String(stepId));
+
+    if (stepIndex === -1) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Paso no encontrado en esta ejecución' } });
+    }
+
+    steps[stepIndex].isCompleted = true;
+    steps[stepIndex].completedAt = new Date().toISOString();
+    steps[stepIndex].completedBy = completedBy || 'API / LeadsHUB';
+    if (uploadedFileName) steps[stepIndex].uploadedFileName = uploadedFileName;
+    if (uploadedFileUrl) steps[stepIndex].uploadedFileUrl = uploadedFileUrl;
+    if (notes) {
+      steps[stepIndex].comments = steps[stepIndex].comments || [];
+      steps[stepIndex].comments.push({
+        id: `c_${Date.now()}`,
+        userName: completedBy || 'API',
+        text: notes,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Auto-mark checklist items as completed if step is completed
+    if (Array.isArray(steps[stepIndex].checklist)) {
+      steps[stepIndex].checklist = steps[stepIndex].checklist.map(c => ({ ...c, isCompleted: true }));
+    }
+
+    const allCompleted = steps.every(s => s.isCompleted);
+    let newStatus = inst.status || 'Por hacer';
+    if (allCompleted && inst.status !== 'Terminado') {
+      newStatus = 'Terminado';
+    }
+
+    await pool.query(
+      'UPDATE instances SET steps = $1, status = $2 WHERE id = $3 AND organization_id = $4',
+      [JSON.stringify(steps), newStatus, id, req.user.organizationId]
+    );
+
+    // Notify Suite
+    triggerProcessAutomation('Paso de Tarea Completado', req.user, {
+      'ID de Ejecución': id,
+      'ID del Paso': stepId,
+      'Título del Paso': steps[stepIndex].title || steps[stepIndex].label || 'Paso',
+      'Título de Ejecución': inst.instance_name || inst.title,
+      'Completado Por': completedBy || 'API'
+    });
+
+    if (allCompleted) {
+      triggerProcessAutomation('Proceso Completado', req.user, {
+        'ID de Ejecución': id,
+        'Título de Ejecución': inst.instance_name || inst.title,
+        'Plantilla': inst.title,
+        'Fecha de Finalización': new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        stepId,
+        isCompleted: true,
+        completedAt: steps[stepIndex].completedAt,
+        allCompleted,
+        currentStatus: newStatus
+      },
+      meta: { app: 'konsulprocess', version: '1' }
+    });
+  } catch (err) {
+    console.error('API Complete Step error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al completar el paso' } });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// CLIENTS & SEMAFORO API V1
+// ----------------------------------------------------------------------------
+
+// List all clients with traffic light / health score
+app.get('/api/v1/clients', authenticateApiKey, async (req, res) => {
+  try {
+    const clientsRes = await pool.query(
+      'SELECT id, name, checklist, created_at FROM clients WHERE organization_id = $1 ORDER BY name ASC',
+      [req.user.organizationId]
+    );
+
+    // Get execution counts per client
+    const instCountsRes = await pool.query(
+      `SELECT client_id, 
+              COUNT(*) as total, 
+              COUNT(*) FILTER (WHERE status = 'Terminado') as completed,
+              COUNT(*) FILTER (WHERE status != 'Terminado') as active
+       FROM instances 
+       WHERE organization_id = $1 AND client_id IS NOT NULL 
+       GROUP BY client_id`,
+      [req.user.organizationId]
+    );
+    const countMap = {};
+    instCountsRes.rows.forEach(r => {
+      countMap[r.client_id] = {
+        total: parseInt(r.total, 10),
+        active: parseInt(r.active, 10),
+        completed: parseInt(r.completed, 10)
+      };
+    });
+
+    const clientsWithSemaforo = clientsRes.rows.map(c => {
+      const semaforo = computeClientTrafficLight(c.checklist);
+      const counts = countMap[c.id] || { total: 0, active: 0, completed: 0 };
+      return {
+        id: c.id,
+        name: c.name,
+        createdAt: c.created_at,
+        trafficLight: semaforo.statusKey,
+        checklistPercentage: semaforo.percentage,
+        checklistCompletedCount: semaforo.completedCount,
+        checklistTotalCount: semaforo.totalCount,
+        activeExecutions: counts.active,
+        completedExecutions: counts.completed,
+        totalExecutions: counts.total
+      };
+    });
+
+    res.json({
+      success: true,
+      data: clientsWithSemaforo,
+      meta: { app: 'konsulprocess', version: '1', count: clientsWithSemaforo.length }
+    });
+  } catch (err) {
+    console.error('API v1 List Clients error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al listar clientes' } });
+  }
+});
+
+// Create or update a client
+app.post('/api/v1/clients', authenticateApiKey, async (req, res) => {
+  const { id, name, checklist } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(422).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'El nombre del cliente es requerido.' } });
+  }
+  try {
+    const clientId = id || ('cli_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now());
+    const defaultChecklist = checklist || [
+      { id: 'item_carrusel', name: 'Carrusel', type: 'counter', checked: false, current: 0, target: 4 },
+      { id: 'item_post', name: 'Post', type: 'counter', checked: false, current: 0, target: 12 },
+      { id: 'item_video', name: 'Video', type: 'counter', checked: false, current: 0, target: 6 },
+      { id: 'item_factura', name: 'Factura Paga', type: 'boolean', checked: false },
+      { id: 'item_ads', name: 'Ads Según Cliente', type: 'rating', rating: 'Excelente' }
+    ];
+
+    const result = await pool.query(
+      `INSERT INTO clients (id, organization_id, name, checklist)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET 
+         name = EXCLUDED.name,
+         checklist = COALESCE(EXCLUDED.checklist, clients.checklist)
+       RETURNING *`,
+      [clientId, req.user.organizationId, name.trim(), JSON.stringify(defaultChecklist)]
+    );
+
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      meta: { app: 'konsulprocess', version: '1' }
+    });
+  } catch (err) {
+    console.error('API v1 Create Client error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al crear cliente' } });
+  }
+});
+
+// Get client by id
+app.get('/api/v1/clients/:id', authenticateApiKey, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const clientRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (clientRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Cliente no encontrado' } });
+    }
+    const client = clientRes.rows[0];
+    const semaforo = computeClientTrafficLight(client.checklist);
+    res.json({
+      success: true,
+      data: {
+        id: client.id,
+        name: client.name,
+        createdAt: client.created_at,
+        checklist: client.checklist,
+        trafficLight: semaforo.statusKey,
+        percentage: semaforo.percentage,
+        completedCount: semaforo.completedCount,
+        totalCount: semaforo.totalCount
+      },
+      meta: { app: 'konsulprocess', version: '1' }
+    });
+  } catch (err) {
+    console.error('API v1 Get Client error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al obtener cliente' } });
+  }
+});
+
+// Get all executions for a specific client
+app.get('/api/v1/clients/:id/executions', authenticateApiKey, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const clientRes = await pool.query('SELECT name FROM clients WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    const clientName = clientRes.rows[0]?.name;
+
+    let instRes;
+    if (clientName) {
+      instRes = await pool.query(
+        `SELECT * FROM instances 
+         WHERE organization_id = $1 AND (client_id = $2 OR LOWER(instance_name) ILIKE LOWER($3))
+         ORDER BY started_at DESC`,
+        [req.user.organizationId, id, `%${clientName}%`]
+      );
+    } else {
+      instRes = await pool.query(
+        'SELECT * FROM instances WHERE organization_id = $1 AND client_id = $2 ORDER BY started_at DESC',
+        [req.user.organizationId, id]
+      );
+    }
+
+    const data = instRes.rows.map(row => {
+      const steps = typeof row.steps === 'string' ? JSON.parse(row.steps) : (row.steps || []);
+      const completedSteps = steps.filter(s => s.isCompleted).length;
+      const totalSteps = steps.length;
+      return {
+        id: row.id,
+        templateId: row.template_id,
+        title: row.title,
+        instanceName: row.instance_name,
+        status: row.status || 'Por hacer',
+        priority: row.priority || 'Media',
+        startedAt: row.started_at,
+        totalSteps,
+        completedSteps,
+        progressPercentage: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
+        steps: steps.map(s => ({
+          id: s.id,
+          title: s.title || s.label,
+          isCompleted: !!s.isCompleted,
+          dueDate: s.dueDate
+        }))
+      };
+    });
+
+    res.json({
+      success: true,
+      data,
+      meta: { app: 'konsulprocess', version: '1', count: data.length }
+    });
+  } catch (err) {
+    console.error('API v1 Get Client Executions error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al obtener ejecuciones del cliente' } });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// OPERATIONAL SUMMARY API V1
+// ----------------------------------------------------------------------------
+
+app.get('/api/v1/summary', authenticateApiKey, async (req, res) => {
+  try {
+    const [instRes, clientRes, tmplRes] = await Promise.all([
+      pool.query('SELECT status, steps FROM instances WHERE organization_id = $1', [req.user.organizationId]),
+      pool.query('SELECT checklist FROM clients WHERE organization_id = $1', [req.user.organizationId]),
+      pool.query('SELECT COUNT(*) as count FROM templates WHERE organization_id = $1 AND status = $2', [req.user.organizationId, 'approved'])
+    ]);
+
+    const statusCounts = {};
+    let totalCompletedSteps = 0;
+    let totalSteps = 0;
+    instRes.rows.forEach(r => {
+      const st = r.status || 'Por hacer';
+      statusCounts[st] = (statusCounts[st] || 0) + 1;
+      const steps = typeof r.steps === 'string' ? JSON.parse(r.steps) : (r.steps || []);
+      totalSteps += steps.length;
+      totalCompletedSteps += steps.filter(s => s.isCompleted).length;
+    });
+
+    const trafficLights = { green: 0, yellow: 0, red: 0 };
+    clientRes.rows.forEach(c => {
+      const s = computeClientTrafficLight(c.checklist);
+      trafficLights[s.statusKey] = (trafficLights[s.statusKey] || 0) + 1;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalInstances: instRes.rows.length,
+        instancesByStatus: statusCounts,
+        overallStepsProgress: totalSteps > 0 ? Math.round((totalCompletedSteps / totalSteps) * 100) : 0,
+        totalTemplates: parseInt(tmplRes.rows[0]?.count || 0, 10),
+        totalClients: clientRes.rows.length,
+        clientsHealth: trafficLights
+      },
+      meta: { app: 'konsulprocess', version: '1' }
+    });
+  } catch (err) {
+    console.error('API v1 Summary error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al generar resumen' } });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// LEADSHUB WEBHOOK INTEGRATION
+// ----------------------------------------------------------------------------
 
 // Webhook for LeadsHUB CRM integration
 app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
@@ -3192,6 +3703,7 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
     if (event.includes('process') || event.includes('execution') || event.includes('start') || event.includes('deal')) {
       const templateId = data.templateId || data.template_id;
       const instanceName = data.instanceName || data.name || data.clientName || 'Ejecución iniciada desde LeadsHUB';
+      let resolvedClientId = data.clientId || data.client_id || (data.id ? `leadshub_${data.id}` : null);
 
       let templateRes;
       if (templateId) {
@@ -3210,43 +3722,79 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
         });
       }
 
+      // Auto-ensure client exists if clientName is provided
+      if (!resolvedClientId && instanceName) {
+        const findCli = await pool.query('SELECT id FROM clients WHERE organization_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1', [orgId, instanceName.trim()]);
+        if (findCli.rows.length > 0) {
+          resolvedClientId = findCli.rows[0].id;
+        } else {
+          resolvedClientId = 'cli_' + instanceName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
+          await pool.query(
+            `INSERT INTO clients (id, organization_id, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
+            [resolvedClientId, orgId, instanceName.trim()]
+          );
+        }
+      }
+
       const template = templateRes.rows[0];
       const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
       const startedAt = new Date().toISOString();
 
-      const stepsWithDates = (template.steps || []).map((step, idx) => {
+      const rawTemplateSteps = typeof template.steps === 'string' ? JSON.parse(template.steps) : (template.steps || []);
+      const stepsWithDates = rawTemplateSteps.map((step, idx) => {
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || step.durationDays || 1));
+        
+        const rawChecklist = Array.isArray(step.checklist) ? step.checklist : [];
+        const checklist = rawChecklist.map((c, cIdx) => ({
+          id: c.id || `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
+          text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
+          isCompleted: false
+        }));
+
         return {
           ...step,
-          id: step.id || `step_${idx + 1}`,
+          id: step.id || `step_${idx + 1}_${Date.now()}`,
           title: step.title || step.label || `Paso ${idx + 1}`,
           description: step.description || '',
           assignedTo: step.assignedTo || 'Unassigned',
           isCompleted: false,
           completedAt: null,
           completedBy: null,
-          dueDate: dueDate.toISOString()
+          dueDate: dueDate.toISOString(),
+          checklist: checklist
         };
       });
 
       await pool.query(
-        `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO instances (id, organization_id, template_id, title, instance_name, client_id, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           instId,
           orgId,
           template.id,
           template.title,
           instanceName,
+          resolvedClientId,
           startedAt,
           template.companion_name,
           template.companion_avatar,
           template.companion_greeting,
-          template.category,
-          JSON.stringify(stepsWithDates)
+          template.category || 'General',
+          JSON.stringify(stepsWithDates),
+          'Por hacer',
+          'Media'
         ]
       );
+
+      // Trigger Suite automation
+      triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+        'Título de Tarea': instanceName,
+        'Descripción': `Iniciado vía webhook LeadsHUB (${event})`,
+        'Plantilla': template.title,
+        'Cliente': instanceName,
+        'ID de Ejecución': instId
+      });
 
       return res.status(201).json({
         success: true,
@@ -3256,7 +3804,9 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
           id: instId,
           templateId: template.id,
           instanceName,
+          clientId: resolvedClientId,
           startedAt,
+          totalSteps: stepsWithDates.length,
           steps: stepsWithDates
         },
         meta: {

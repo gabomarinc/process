@@ -1668,12 +1668,18 @@ const handleDeleteMember = async (id) => {
       }
     }
 
-    
+    let resolvedClientId = (data && data.clientId) || null;
+    if (!resolvedClientId && clients && instanceName) {
+      const match = clients.find(c => c.name && c.name.toLowerCase() === instanceName.toLowerCase().trim());
+      if (match) resolvedClientId = match.id;
+    }
+
     const newInstance = {
       id: "inst_" + Date.now(),
       templateId: templateToUse.id,
       title: templateToUse.title,
       instanceName: instanceName,
+      clientId: resolvedClientId,
       startedAt: new Date(startDateTime).toISOString(),
       companionName: templateToUse.companionName,
       companionAvatar: templateToUse.companionAvatar,
