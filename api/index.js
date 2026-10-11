@@ -311,26 +311,34 @@ const authenticateApiKey = async (req, res, next) => {
   const internalKey = process.env.INTERNAL_API_KEY || 'konsul_ecosystem_secret_key';
   if (apiKey === internalKey || apiKey.startsWith('konsul_sso_') || apiKey.startsWith('kp_live_sso_') || apiKey.startsWith('konsul_ecosystem_')) {
     let orgId = 1;
-    const kindeUserEmail = req.headers['x-user-email'] || req.query.user_email;
-    const kindeUserId = req.headers['x-user-id'] || req.query.user_id;
+    const kindeUserEmail = (req.headers['x-user-email'] || req.query.user_email || '').trim();
+    const kindeUserId = (req.headers['x-user-id'] || req.query.user_id || '').trim();
 
     if (kindeUserEmail || kindeUserId) {
       try {
         const uRes = await pool.query(
-          'SELECT organization_id, email FROM users WHERE email = $1 OR kinde_id = $2 LIMIT 1',
-          [kindeUserEmail || '', kindeUserId || '']
+          "SELECT organization_id, email FROM users WHERE ($1 <> '' AND LOWER(TRIM(email)) = LOWER($1)) OR ($2 <> '' AND kinde_id = $2) LIMIT 1",
+          [kindeUserEmail, kindeUserId]
         );
         if (uRes.rows.length > 0) {
           orgId = uRes.rows[0].organization_id;
         } else if (kindeUserEmail) {
-          // JIT (Just-In-Time Provisioning): auto-crear organización y usuario si entra por primera vez desde Suite
-          const orgName = `Organización de ${kindeUserEmail.split('@')[0]}`;
-          const orgRes = await pool.query('INSERT INTO organizations (name) VALUES ($1) RETURNING id', [orgName]);
-          orgId = orgRes.rows[0].id;
-          await pool.query(
-            'INSERT INTO users (organization_id, name, email, kinde_id, role) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (email) DO UPDATE SET kinde_id = EXCLUDED.kinde_id',
-            [orgId, kindeUserEmail.split('@')[0], kindeUserEmail, kindeUserId, 'owner']
+          const tmRes = await pool.query(
+            "SELECT organization_id, email FROM team_members WHERE LOWER(TRIM(email)) = LOWER($1) LIMIT 1",
+            [kindeUserEmail]
           );
+          if (tmRes.rows.length > 0) {
+            orgId = tmRes.rows[0].organization_id;
+          } else {
+            // JIT (Just-In-Time Provisioning): auto-crear organización y usuario si entra por primera vez desde Suite
+            const orgName = `Organización de ${kindeUserEmail.split('@')[0]}`;
+            const orgRes = await pool.query('INSERT INTO organizations (name) VALUES ($1) RETURNING id', [orgName]);
+            orgId = orgRes.rows[0].id;
+            await pool.query(
+              'INSERT INTO users (organization_id, name, email, kinde_id, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO UPDATE SET kinde_id = EXCLUDED.kinde_id',
+              [orgId, kindeUserEmail.split('@')[0], kindeUserEmail, kindeUserId || null, 'sso_kinde_managed', 'owner']
+            );
+          }
         }
       } catch (jitErr) {
         console.error('Error en JIT Provisioning de usuario/org en Process:', jitErr);
@@ -2957,12 +2965,23 @@ function replaceVariables(text, variables) {
   return typeof text === 'object' ? JSON.parse(result) : result;
 }
 
-// Get all templates for the organization
+// Get all templates for the organization (including multi-workspace memberships by email)
 app.get('/api/v1/templates', authenticateApiKey, async (req, res) => {
   try {
+    const userEmail = (req.headers['x-user-email'] || req.user?.email || '').trim();
     const result = await pool.query(
-      "SELECT * FROM templates WHERE organization_id = $1 AND status = 'approved'",
-      [req.user.organizationId]
+      `SELECT * FROM templates
+       WHERE status = 'approved'
+         AND (
+           organization_id = $1
+           OR ($2 <> '' AND organization_id IN (
+             SELECT organization_id FROM users WHERE LOWER(TRIM(email)) = LOWER($2)
+             UNION
+             SELECT organization_id FROM team_members WHERE LOWER(TRIM(email)) = LOWER($2)
+           ))
+         )
+       ORDER BY created_at DESC`,
+      [req.user.organizationId, userEmail]
     );
     const mapped = result.rows.map(row => {
       const templateVars = extractVariables(row);
@@ -3018,9 +3037,19 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
   }
 
   try {
+    const userEmail = (req.headers['x-user-email'] || req.user?.email || '').trim();
     const templateRes = await pool.query(
-      'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
-      [template_id, req.user.organizationId]
+      `SELECT * FROM templates
+       WHERE id = $1
+         AND (
+           organization_id = $2
+           OR ($3 <> '' AND organization_id IN (
+             SELECT organization_id FROM users WHERE LOWER(TRIM(email)) = LOWER($3)
+             UNION
+             SELECT organization_id FROM team_members WHERE LOWER(TRIM(email)) = LOWER($3)
+           ))
+         )`,
+      [template_id, req.user.organizationId, userEmail]
     );
 
     if (templateRes.rows.length === 0) {
@@ -3034,6 +3063,7 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     }
 
     const template = templateRes.rows[0];
+    req.user.organizationId = template.organization_id;
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
 
     // Resolve custom start date from variables
