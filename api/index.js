@@ -175,10 +175,11 @@ if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_konsul_token_2026';
 
 // --- EMAIL SERVICES (KÔNSUL MAILING AWS SES + RESEND FALLBACK) ---
-const sendEmail = async ({ to, subject, html }) => {
+const sendEmail = async ({ to, subject, html, senderName }) => {
   if (!to) return false;
   const mailingUrl = process.env.MAILING_URL || process.env.NEXT_PUBLIC_MAILING_URL || 'https://mailing.konsul.digital';
   const internalKey = process.env.INTERNAL_API_KEY || process.env.KONSUL_ECOSYSTEM_SECRET_KEY || 'konsul_ecosystem_secret_key';
+  const resolvedSenderName = senderName || 'Kônsul Process';
 
   // 1. Primary: Kônsul Mailing Transactional API (AWS SES with verified konsul.digital domain)
   try {
@@ -193,7 +194,7 @@ const sendEmail = async ({ to, subject, html }) => {
         subject,
         html,
         senderEmail: process.env.SES_SENDER_EMAIL || 'notificaciones@konsul.digital',
-        senderName: 'Kônsul Process'
+        senderName: resolvedSenderName
       })
     });
 
@@ -227,7 +228,7 @@ const sendEmail = async ({ to, subject, html }) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Kônsul Process <somos@konsul.digital>',
+        from: `${resolvedSenderName} <somos@konsul.digital>`,
         to,
         subject,
         html
@@ -243,7 +244,7 @@ const sendEmail = async ({ to, subject, html }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'Kônsul Process <onboarding@resend.dev>',
+          from: `${resolvedSenderName} <onboarding@resend.dev>`,
           to,
           subject,
           html
@@ -265,26 +266,47 @@ const sendEmail = async ({ to, subject, html }) => {
   }
 };
 
-// Helper to notify Suite Automations engine
+// Helper to notify Suite Automations engine across any SaaS workspace/user
 const triggerProcessAutomation = async (triggerName, user, data = {}) => {
   try {
     const suiteUrl = process.env.SUITE_URL || 'https://suite.konsul.digital';
-    let userIdentifier = user?.email || user?.id;
+    let userEmail = (user?.email && user.email !== 'api-caller@konsul.digital') ? user.email : '';
+    let kindeId = user?.kinde_id || '';
 
-    if (!userIdentifier && user?.organizationId) {
-      const uRes = await pool.query("SELECT email FROM users WHERE organization_id = $1 LIMIT 1", [user.organizationId]);
-      if (uRes.rows.length > 0) userIdentifier = uRes.rows[0].email;
+    if (user?.organizationId) {
+      const uRes = await pool.query(
+        `SELECT email, kinde_id FROM users
+         WHERE organization_id = $1
+         ORDER BY
+           CASE WHEN LOWER(TRIM(email)) = LOWER(TRIM($2)) THEN 0 ELSE 1 END,
+           CASE WHEN kinde_id IS NOT NULL AND kinde_id <> '' THEN 0 ELSE 1 END,
+           role = 'admin' DESC,
+           id ASC
+         LIMIT 1`,
+        [user.organizationId, userEmail]
+      );
+      if (uRes.rows.length > 0) {
+        if (!userEmail) userEmail = uRes.rows[0].email || '';
+        if (!kindeId) kindeId = uRes.rows[0].kinde_id || '';
+      }
     }
 
+    const userIdentifier = kindeId || userEmail || user?.id;
     if (!userIdentifier) return;
 
     fetch(`${suiteUrl}/api/v1/automations/trigger`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(userEmail ? { 'x-user-email': userEmail } : {}),
+        ...(kindeId ? { 'x-user-id': kindeId } : {})
+      },
       body: JSON.stringify({
         appCode: 'process',
         triggerName,
         userId: userIdentifier,
+        userEmail: userEmail || undefined,
+        organizationId: user?.organizationId || undefined,
         data
       })
     }).catch(err => console.error(`Error triggering Suite automation (${triggerName}):`, err.message));
@@ -353,11 +375,14 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
     const steps = Array.isArray(instanceData.steps) ? instanceData.steps : [];
     if (steps.length === 0) return;
 
-    const [teamRes, usersRes] = await Promise.all([
+    const [orgRes, teamRes, usersRes] = await Promise.all([
+      pool.query('SELECT name FROM organizations WHERE id = $1 LIMIT 1', [orgId]),
       pool.query('SELECT id, name, email, role FROM team_members WHERE organization_id = $1', [orgId]),
       pool.query('SELECT id, name, email, role FROM users WHERE organization_id = $1', [orgId])
     ]);
 
+    const orgName = orgRes.rows[0]?.name || '';
+    const senderName = orgName ? `${orgName} (Kônsul Process)` : 'Kônsul Process';
     const teamRows = teamRes.rows || [];
     const userRows = usersRes.rows || [];
 
@@ -475,14 +500,28 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
       const hasFirstStep = assignedSteps.some(s => s.isFirstActive);
       const firstActiveStep = assignedSteps.find(s => s.isFirstActive);
 
-      // 2a. Create in-app notification in `notifications` table for this user
+      // 2a. Create in-app notification in `notifications` table for this user (auto-provision user row if needed)
       let targetUserId = person.userId;
       if (!targetUserId && person.email) {
         const uLookup = await pool.query(
-          'SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND organization_id = $2 LIMIT 1',
-          [person.email, orgId]
+          'SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1',
+          [person.email]
         );
-        if (uLookup.rows.length > 0) targetUserId = uLookup.rows[0].id;
+        if (uLookup.rows.length > 0) {
+          targetUserId = uLookup.rows[0].id;
+        } else {
+          try {
+            const jitUser = await pool.query(
+              `INSERT INTO users (organization_id, name, email, password_hash, role)
+               VALUES ($1, $2, $3, 'INVITED_PENDING', 'guest')
+               RETURNING id`,
+              [orgId, person.name || person.email.split('@')[0], person.email.trim()]
+            );
+            if (jitUser.rows.length > 0) targetUserId = jitUser.rows[0].id;
+          } catch (jitErr) {
+            console.warn('JIT user creation skipped in notifyTeamOnExecutionLaunch:', jitErr.message);
+          }
+        }
       }
 
       if (targetUserId && instanceId) {
@@ -538,7 +577,7 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
               <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 40px; object-fit: contain;" />
             </div>
             <h2 style="color: #111827; margin-bottom: 0.75rem; font-size: 1.35rem; font-weight: 700;">
-              🚀 Nueva Ejecución en Marcha
+              🚀 Nueva Ejecución en Marcha${orgName ? ` • ${orgName}` : ''}
             </h2>
             <p style="color: #4b5563; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1rem;">
               Hola <strong>${person.name}</strong>, se ha iniciado una nueva ejecución del proceso <strong>"${templateTitle}"</strong> para <strong>"${instanceTitle}"</strong> en la que participas como ${hasLeadRole ? '<strong>Encargado Principal de paso</strong>' : '<strong>Colaborador asignado</strong>'}.
@@ -554,7 +593,7 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
             </div>
             <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 1.5rem 0;" />
             <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
-              Kônsul Process &copy; 2026 • Gestión Operativa Inteligente
+              ${senderName} &copy; 2026 • Gestión Operativa Inteligente
             </p>
           </div>
         `;
@@ -562,7 +601,8 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
         await sendEmail({
           to: person.email,
           subject,
-          html: htmlContent
+          html: htmlContent,
+          senderName
         });
       }
     }
@@ -715,11 +755,14 @@ const authenticateApiKey = async (req, res, next) => {
     if (kindeUserEmail || kindeUserId) {
       try {
         const uRes = await pool.query(
-          "SELECT organization_id, email FROM users WHERE ($1 <> '' AND LOWER(TRIM(email)) = LOWER($1)) OR ($2 <> '' AND kinde_id = $2) LIMIT 1",
+          "SELECT id, organization_id, email, kinde_id FROM users WHERE ($1 <> '' AND LOWER(TRIM(email)) = LOWER($1)) OR ($2 <> '' AND kinde_id = $2) LIMIT 1",
           [kindeUserEmail, kindeUserId]
         );
         if (uRes.rows.length > 0) {
           orgId = uRes.rows[0].organization_id;
+          if (kindeUserId && !uRes.rows[0].kinde_id) {
+            await pool.query('UPDATE users SET kinde_id = $1 WHERE id = $2', [kindeUserId, uRes.rows[0].id]).catch(() => {});
+          }
         } else if (kindeUserEmail) {
           // Unificar por dominio empresarial o miembro existente
           orgId = await resolveOrCreateOrganizationByEmail(
@@ -3786,9 +3829,19 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
   }
 
   try {
+    const userEmail = (req.headers['x-user-email'] || req.user?.email || '').trim();
     const templateRes = await pool.query(
-      'SELECT * FROM templates WHERE id = $1 AND organization_id = $2',
-      [templateId, req.user.organizationId]
+      `SELECT * FROM templates
+       WHERE id = $1
+         AND (
+           organization_id = $2
+           OR ($3 <> '' AND organization_id IN (
+             SELECT organization_id FROM users WHERE LOWER(TRIM(email)) = LOWER($3)
+             UNION
+             SELECT organization_id FROM team_members WHERE LOWER(TRIM(email)) = LOWER($3)
+           ))
+         )`,
+      [templateId, req.user.organizationId, userEmail]
     );
 
     if (templateRes.rows.length === 0) {
@@ -3802,6 +3855,7 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     }
 
     const template = templateRes.rows[0];
+    req.user.organizationId = template.organization_id;
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
     const startedAt = new Date().toISOString();
 
