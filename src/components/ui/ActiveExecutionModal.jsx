@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 
 const getFileType = (name, fallbackType) => {
@@ -60,8 +60,16 @@ export const ActiveExecutionModal = ({
   const [showMotivationStepId, setShowMotivationStepId] = useState(null);
   const [showAttachmentsDropdown, setShowAttachmentsDropdown] = useState(false);
 
-  const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null) => {
-    handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName);
+  // Google Drive states for Execution & Steps
+  const [localDriveFolderUrl, setLocalDriveFolderUrl] = useState(null);
+  const [isEnsuringDriveFolder, setIsEnsuringDriveFolder] = useState(false);
+  const [driveLinkingStepId, setDriveLinkingStepId] = useState(null);
+  const [driveLinkInput, setDriveLinkInput] = useState('');
+  const [driveFilesForStep, setDriveFilesForStep] = useState([]);
+  const [isLoadingDriveFilesForStep, setIsLoadingDriveFilesForStep] = useState(false);
+
+  const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null, uploadedUrl = null) => {
+    handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName, uploadedUrl);
     const targetStep = activeInstance.steps.find(s => s.id === stepId);
     if (isCompleted && targetStep?.motivation) {
       setShowMotivationStepId(stepId);
@@ -69,6 +77,118 @@ export const ActiveExecutionModal = ({
         setShowMotivationStepId(null);
       }, 8000);
     }
+  };
+
+  const handleOpenExecutionDriveFolder = async () => {
+    const existingUrl = activeInstance?.driveFolderUrl || localDriveFolderUrl;
+    if (existingUrl) {
+      window.open(existingUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setIsEnsuringDriveFolder(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/ensure-instance-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceId: activeInstance.id })
+      });
+      const data = await res.json();
+      if (res.ok && data.folderUrl) {
+        setLocalDriveFolderUrl(data.folderUrl);
+        window.open(data.folderUrl, '_blank', 'noopener,noreferrer');
+        if (addToast) addToast('Carpeta de Google Drive vinculada y abierta', 'success');
+      } else {
+        if (addToast) addToast(data.error || 'Configura Google Drive en Integraciones > Externas para vincular carpetas.', 'info');
+      }
+    } catch (err) {
+      if (addToast) addToast('No se pudo abrir la carpeta de Google Drive.', 'error');
+    } finally {
+      setIsEnsuringDriveFolder(false);
+    }
+  };
+
+  const handleUploadStepFileWithDrive = async (step, file) => {
+    if (!file) return;
+    const fileUrl = URL.createObjectURL(file);
+    setFileStore(prev => ({
+      ...prev,
+      [step.id]: { url: fileUrl, name: file.name, type: file.type }
+    }));
+
+    // Complete locally first for snappy UX
+    onCompleteStepLocal(step.id, true, file.name, fileUrl);
+
+    // Attempt background upload to Google Drive if connected
+    try {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result || '').toString().split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      if (base64Data) {
+        const res = await fetch('/api/integrations/google-drive/upload-step-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceId: activeInstance.id,
+            stepId: step.id,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64Data
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.webViewLink) {
+            setFileStore(prev => ({
+              ...prev,
+              [step.id]: { url: data.webViewLink, name: file.name, type: file.type }
+            }));
+            onCompleteStepLocal(step.id, true, file.name, data.webViewLink);
+            if (addToast) addToast(`☁️ Archivo "${file.name}" sincronizado en Google Drive`, 'success');
+          }
+        }
+      }
+    } catch (driveErr) {
+      console.warn('Optional Drive step upload skipped:', driveErr);
+    }
+  };
+
+  const handleToggleStepDriveLinker = async (stepId) => {
+    if (driveLinkingStepId === stepId) {
+      setDriveLinkingStepId(null);
+      return;
+    }
+    setDriveLinkingStepId(stepId);
+    setDriveLinkInput('');
+    setIsLoadingDriveFilesForStep(true);
+    try {
+      const folderParam = activeInstance?.driveFolderId ? `?folderId=${encodeURIComponent(activeInstance.driveFolderId)}` : '';
+      const res = await fetch(`/api/integrations/google-drive/files${folderParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDriveFilesForStep(data.files || []);
+      }
+    } catch (err) {
+      console.warn('Error loading Drive files for step:', err);
+    } finally {
+      setIsLoadingDriveFilesForStep(false);
+    }
+  };
+
+  const handleLinkDriveFileToStep = (step, fileUrl, fileName) => {
+    const cleanUrl = (fileUrl || driveLinkInput || '').trim();
+    if (!cleanUrl) return;
+    const displayTitle = fileName || (cleanUrl.includes('docs.google.com/document') ? 'Google Doc (Drive)' : cleanUrl.includes('docs.google.com/spreadsheets') ? 'Google Sheet (Drive)' : 'Archivo de Google Drive');
+    setFileStore(prev => ({
+      ...prev,
+      [step.id]: { url: cleanUrl, name: displayTitle, type: 'drive_link' }
+    }));
+    onCompleteStepLocal(step.id, true, displayTitle, cleanUrl);
+    setDriveLinkingStepId(null);
+    setDriveLinkInput('');
+    if (addToast) addToast(`🔗 "${displayTitle}" vinculado al paso desde Google Drive`, 'success');
   };
 
   // Email sub-modal states
@@ -302,6 +422,30 @@ export const ActiveExecutionModal = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.15rem 2rem', background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
              <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '1.1rem' }}>Detalles de la Ejecución</span>
+             <button
+               type="button"
+               onClick={handleOpenExecutionDriveFolder}
+               disabled={isEnsuringDriveFolder}
+               style={{
+                 border: '1px solid #BFDBFE',
+                 background: (activeInstance?.driveFolderUrl || localDriveFolderUrl) ? '#EFF6FF' : '#F8FAFC',
+                 color: '#2563EB',
+                 padding: '4px 10px',
+                 borderRadius: '20px',
+                 fontSize: '0.75rem',
+                 fontWeight: 700,
+                 cursor: 'pointer',
+                 display: 'inline-flex',
+                 alignItems: 'center',
+                 gap: '5px',
+                 transition: 'all 0.15s ease'
+               }}
+               title="Abrir o crear carpeta de esta ejecución en Google Drive"
+             >
+               <FolderOpen size={13} color="#2563EB" />
+               <span>{isEnsuringDriveFolder ? 'Abriendo Drive...' : (activeInstance?.driveFolderUrl || localDriveFolderUrl) ? 'Carpeta Drive' : 'Vincular Carpeta Drive'}</span>
+               <ExternalLink size={11} />
+             </button>
              {uniqueAttachments.length > 0 && (
                <button
                  onClick={() => setShowAttachmentsDropdown(!showAttachmentsDropdown)}
@@ -785,23 +929,37 @@ export const ActiveExecutionModal = ({
                                           {step.uploadedFileName || 'Cargado'}
                                         </span>
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
-                                          setPreviewFile(fileStore[step.id] || { 
-                                            name: step.uploadedFileName || 'Documento.pdf', 
-                                            url: url,
-                                            type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
-                                            mock: !url
-                                          });
-                                        }}
-                                        className="close-btn-aesthetic"
-                                        style={{ width: '24px', height: '24px', padding: 0 }}
-                                        title="Previsualizar archivo"
-                                      >
-                                        <Eye size={12} />
-                                      </button>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {(step.uploadedFileUrl && step.uploadedFileUrl.startsWith('http')) && (
+                                          <a
+                                            href={step.uploadedFileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="close-btn-aesthetic"
+                                            style={{ width: '24px', height: '24px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                                            title="Abrir en Google Drive / Pestaña nueva"
+                                          >
+                                            <ExternalLink size={12} />
+                                          </a>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
+                                            setPreviewFile(fileStore[step.id] || { 
+                                              name: step.uploadedFileName || 'Documento.pdf', 
+                                              url: url,
+                                              type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
+                                              mock: !url
+                                            });
+                                          }}
+                                          className="close-btn-aesthetic"
+                                          style={{ width: '24px', height: '24px', padding: 0 }}
+                                          title="Previsualizar archivo"
+                                        >
+                                          <Eye size={12} />
+                                        </button>
+                                      </div>
                                     </div>
                                   ) : (
                                     <>
@@ -813,12 +971,7 @@ export const ActiveExecutionModal = ({
                                           onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (file) {
-                                              const fileUrl = URL.createObjectURL(file);
-                                              setFileStore(prev => ({
-                                                ...prev,
-                                                [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                              }));
-                                              onCompleteStepLocal(step.id, true, file.name);
+                                              handleUploadStepFileWithDrive(step, file);
                                             }
                                           }}
                                         />
@@ -829,6 +982,70 @@ export const ActiveExecutionModal = ({
                                           </span>
                                         </div>
                                       </label>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggleStepDriveLinker(step.id);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          gap: '5px',
+                                          width: '100%',
+                                          fontSize: '0.76rem',
+                                          padding: '0.42rem',
+                                          marginTop: '0.45rem',
+                                          background: '#EFF6FF',
+                                          border: '1px solid #BFDBFE',
+                                          color: '#2563EB',
+                                          borderRadius: '8px',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <FolderOpen size={13} /> Vincular de Google Drive
+                                      </button>
+                                      {driveLinkingStepId === step.id && (
+                                        <div style={{ marginTop: '0.5rem', background: '#fff', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '8px', fontSize: '0.75rem' }}>
+                                          <div style={{ display: 'flex', gap: '4px', marginBottom: driveFilesForStep.length > 0 ? '6px' : '0' }}>
+                                            <input
+                                              type="text"
+                                              placeholder="Pega link de Google Drive / Docs..."
+                                              value={driveLinkInput}
+                                              onChange={(e) => setDriveLinkInput(e.target.value)}
+                                              style={{ flex: 1, padding: '5px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.73rem' }}
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleLinkDriveFileToStep(step, driveLinkInput)}
+                                              style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
+                                            >
+                                              Vincular
+                                            </button>
+                                          </div>
+                                          {isLoadingDriveFilesForStep ? (
+                                            <div style={{ color: '#64748B', fontSize: '0.7rem' }}>Cargando archivos de Google Drive...</div>
+                                          ) : driveFilesForStep.length > 0 ? (
+                                            <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                              {driveFilesForStep.slice(0, 10).map(df => (
+                                                <div
+                                                  key={df.id}
+                                                  onClick={() => handleLinkDriveFileToStep(step, df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`, df.name)}
+                                                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderRadius: '5px', background: '#F8FAFC', cursor: 'pointer', border: '1px solid #E2E8F0' }}
+                                                >
+                                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px', fontWeight: 600 }}>
+                                                    {df.isFolder ? '📁' : '📄'} {df.name}
+                                                  </span>
+                                                  <span style={{ color: '#2563EB', fontWeight: 700, fontSize: '0.68rem' }}>Elegir</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      )}
                                       <button
                                         type="button"
                                         className="btn btn-secondary"
@@ -1368,22 +1585,36 @@ export const ActiveExecutionModal = ({
                                             {step.uploadedFileName || 'Cargado'}
                                           </span>
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
-                                            setPreviewFile(fileStore[step.id] || { 
-                                              name: step.uploadedFileName || 'Documento.pdf', 
-                                              url: url,
-                                              type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
-                                              mock: !url
-                                            });
-                                          }}
-                                          className="close-btn-aesthetic"
-                                          style={{ width: '24px', height: '24px', padding: 0 }}
-                                        >
-                                          <Eye size={12} />
-                                        </button>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          {(step.uploadedFileUrl && step.uploadedFileUrl.startsWith('http')) && (
+                                            <a
+                                              href={step.uploadedFileUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="close-btn-aesthetic"
+                                              style={{ width: '24px', height: '24px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                                              title="Abrir en Google Drive / Pestaña nueva"
+                                            >
+                                              <ExternalLink size={12} />
+                                            </a>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
+                                              setPreviewFile(fileStore[step.id] || { 
+                                                name: step.uploadedFileName || 'Documento.pdf', 
+                                                url: url,
+                                                type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
+                                                mock: !url
+                                              });
+                                            }}
+                                            className="close-btn-aesthetic"
+                                            style={{ width: '24px', height: '24px', padding: 0 }}
+                                          >
+                                            <Eye size={12} />
+                                          </button>
+                                        </div>
                                       </div>
                                     ) : (
                                       <>
@@ -1395,12 +1626,7 @@ export const ActiveExecutionModal = ({
                                             onChange={(e) => {
                                               const file = e.target.files?.[0];
                                               if (file) {
-                                                const fileUrl = URL.createObjectURL(file);
-                                                setFileStore(prev => ({
-                                                  ...prev,
-                                                  [step.id]: { url: fileUrl, name: file.name, type: file.type }
-                                                }));
-                                                handleStepComplete(activeInstance.id, step.id, true, file.name);
+                                                handleUploadStepFileWithDrive(step, file);
                                               }
                                             }}
                                           />
@@ -1409,6 +1635,70 @@ export const ActiveExecutionModal = ({
                                             <span>Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})</span>
                                           </div>
                                         </label>
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleStepDriveLinker(step.id);
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '5px',
+                                            width: '100%',
+                                            fontSize: '0.75rem',
+                                            padding: '0.4rem',
+                                            marginTop: '0.45rem',
+                                            background: '#EFF6FF',
+                                            border: '1px solid #BFDBFE',
+                                            color: '#2563EB',
+                                            borderRadius: '8px',
+                                            fontWeight: 600,
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          <FolderOpen size={13} /> Vincular de Google Drive
+                                        </button>
+                                        {driveLinkingStepId === step.id && (
+                                          <div style={{ marginTop: '0.5rem', background: '#fff', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '8px', fontSize: '0.75rem' }}>
+                                            <div style={{ display: 'flex', gap: '4px', marginBottom: driveFilesForStep.length > 0 ? '6px' : '0' }}>
+                                              <input
+                                                type="text"
+                                                placeholder="Pega link de Google Drive / Docs..."
+                                                value={driveLinkInput}
+                                                onChange={(e) => setDriveLinkInput(e.target.value)}
+                                                style={{ flex: 1, padding: '5px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.73rem' }}
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => handleLinkDriveFileToStep(step, driveLinkInput)}
+                                                style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
+                                              >
+                                                Vincular
+                                              </button>
+                                            </div>
+                                            {isLoadingDriveFilesForStep ? (
+                                              <div style={{ color: '#64748B', fontSize: '0.7rem' }}>Cargando archivos de Google Drive...</div>
+                                            ) : driveFilesForStep.length > 0 ? (
+                                              <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                {driveFilesForStep.slice(0, 10).map(df => (
+                                                  <div
+                                                    key={df.id}
+                                                    onClick={() => handleLinkDriveFileToStep(step, df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`, df.name)}
+                                                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderRadius: '5px', background: '#F8FAFC', cursor: 'pointer', border: '1px solid #E2E8F0' }}
+                                                  >
+                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px', fontWeight: 600 }}>
+                                                      {df.isFolder ? '📁' : '📄'} {df.name}
+                                                    </span>
+                                                    <span style={{ color: '#2563EB', fontWeight: 700, fontSize: '0.68rem' }}>Elegir</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        )}
                                         <button
                                           type="button"
                                           className="btn btn-secondary"

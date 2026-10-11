@@ -61,7 +61,7 @@ import {
   Mic,
   Building, Rocket, Globe, Laptop, TrendingUp, Handshake, Wrench, Gem,
   Bot, Trophy, Heart, Plus, Mail, Edit, CheckCircle, Lightbulb, PartyPopper, User, Settings, LayoutGrid,
-  Copy, RefreshCw, Database, ExternalLink, Download, Layers, Target, BookOpen, List, CheckSquare, Square
+  Copy, RefreshCw, Database, ExternalLink, Download, Layers, Target, BookOpen, List, CheckSquare, Square, FolderOpen
 } from 'lucide-react';
 
 let modifiedTemplateIds = new Set();
@@ -171,6 +171,21 @@ function App() {
       setResetToken(tokenParam);
       setAuthView('reset');
       setShowAuthScreen(true);
+    }
+
+    if (params.get('drive_connected') === '1') {
+      setActiveTab('ecosystem');
+      setEcosystemSubTab('externas');
+      setShowGoogleDriveModal(true);
+      setTimeout(() => showAlert('¡Cuenta de Google Drive conectada exitosamente a tu Workspace!', 'success'), 400);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    } else if (params.get('drive_error')) {
+      setActiveTab('ecosystem');
+      setEcosystemSubTab('externas');
+      setShowGoogleDriveModal(true);
+      const errMsg = decodeURIComponent(params.get('drive_error'));
+      setTimeout(() => showAlert(`Error al conectar Google Drive: ${errMsg}`, 'error'), 400);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
     }
     
     const savedUser = localStorage.getItem('user');
@@ -316,6 +331,33 @@ function App() {
   const [isEditingClickupToken, setIsEditingClickupToken] = useState(false);
   const [ecosystemSubTab, setEcosystemSubTab] = useState('oficiales'); // 'oficiales' or 'ondemand'
   const [showClickupModal, setShowClickupModal] = useState(false);
+
+  // Google Drive Integration States
+  const [showGoogleDriveModal, setShowGoogleDriveModal] = useState(false);
+  const [googleDriveConfig, setGoogleDriveConfig] = useState({
+    connected: false,
+    mode: 'none',
+    email: '',
+    rootFolderId: '',
+    rootFolderUrl: '',
+    rootFolderName: '',
+    autoCreateClientFolders: true,
+    autoUploadStepFiles: true,
+    clientId: '',
+    clientSecret: '',
+    hasOAuthToken: false
+  });
+  const [googleDriveRules, setGoogleDriveRules] = useState([]);
+  const [newGoogleDriveRule, setNewGoogleDriveRule] = useState({
+    ruleName: '',
+    driveFolderId: '',
+    driveFolderName: '',
+    templateId: '',
+    titlePattern: '{template_title} - {file_name}'
+  });
+  const [isTestingGoogleDrive, setIsTestingGoogleDrive] = useState(false);
+  const [googleDriveTestStatus, setGoogleDriveTestStatus] = useState(null);
+  const [isSyncingGoogleDriveRules, setIsSyncingGoogleDriveRules] = useState(false);
   
   // ClickUp Integration Dynamic Selectors
   const [clickupTeams, setClickupTeams] = useState([]);
@@ -703,6 +745,19 @@ function App() {
           setClickupRules(data.clickupRules);
         }
 
+        if (data.googleDrive) {
+          setGoogleDriveConfig(prev => ({
+            ...prev,
+            ...data.googleDrive,
+            clientId: '',
+            clientSecret: ''
+          }));
+        }
+
+        if (data.googleDriveRules) {
+          setGoogleDriveRules(data.googleDriveRules);
+        }
+
         const savedUser = localStorage.getItem('user');
         if (savedUser) {
           const parsed = JSON.parse(savedUser);
@@ -827,7 +882,7 @@ function App() {
     }
   };
 
-  const handleStepComplete = async (instanceId, stepId, isCompleted, uploadedName = null) => {
+  const handleStepComplete = async (instanceId, stepId, isCompleted, uploadedName = null, uploadedUrl = null) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
 
@@ -869,7 +924,8 @@ function App() {
         ...s,
         isCompleted,
         completedAt: isCompleted ? new Date().toISOString() : null,
-        uploadedFileName: uploadedName || s.uploadedFileName
+        uploadedFileName: uploadedName || s.uploadedFileName,
+        uploadedFileUrl: uploadedUrl || s.uploadedFileUrl || null
       };
     });
 
@@ -1399,6 +1455,183 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     }
   };
 
+  // --- Google Drive Integration Handlers ---
+  const handleSaveGoogleDriveSettings = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    try {
+      const res = await fetch('/api/organization/google-drive', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
+          rootFolderUrl: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
+          rootFolderName: googleDriveConfig.rootFolderName,
+          autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
+          autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
+          ...(googleDriveConfig.clientId ? { clientId: googleDriveConfig.clientId } : {}),
+          ...(googleDriveConfig.clientSecret ? { clientSecret: googleDriveConfig.clientSecret } : {})
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo guardar la configuración de Google Drive.');
+      if (data.googleDrive) {
+        setGoogleDriveConfig(prev => ({
+          ...prev,
+          ...data.googleDrive,
+          clientId: '',
+          clientSecret: ''
+        }));
+      }
+      showAlert('Configuración de Google Drive guardada con éxito para tu Workspace.', 'success');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  const handleConnectGoogleDriveOAuth = async () => {
+    try {
+      // Save optional custom clientId / clientSecret first if user entered them
+      if (googleDriveConfig.clientId || googleDriveConfig.clientSecret || googleDriveConfig.rootFolderUrl) {
+        await fetch('/api/organization/google-drive', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
+            rootFolderName: googleDriveConfig.rootFolderName,
+            autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
+            autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
+            ...(googleDriveConfig.clientId ? { clientId: googleDriveConfig.clientId } : {}),
+            ...(googleDriveConfig.clientSecret ? { clientSecret: googleDriveConfig.clientSecret } : {})
+          })
+        });
+      }
+
+      const res = await fetch('/api/integrations/google-drive/oauth/url');
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo iniciar la conexión OAuth con Google Drive.');
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      showAlert(err.message, 'warning');
+    }
+  };
+
+  const handleDisconnectGoogleDrive = async () => {
+    if (!window.confirm('¿Deseas desconectar Google Drive de este Workspace?')) return;
+    try {
+      const res = await fetch('/api/organization/google-drive', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disconnect: true })
+      });
+      if (res.ok) {
+        setGoogleDriveConfig({
+          connected: false,
+          mode: 'none',
+          email: '',
+          rootFolderId: '',
+          rootFolderUrl: '',
+          rootFolderName: '',
+          autoCreateClientFolders: true,
+          autoUploadStepFiles: true,
+          clientId: '',
+          clientSecret: '',
+          hasOAuthToken: false
+        });
+        setGoogleDriveTestStatus(null);
+        showAlert('Google Drive desconectado.', 'info');
+      }
+    } catch (err) {
+      showAlert('Error al desconectar Google Drive.', 'error');
+    }
+  };
+
+  const handleTestGoogleDrive = async () => {
+    setIsTestingGoogleDrive(true);
+    setGoogleDriveTestStatus(null);
+    try {
+      const res = await fetch('/api/integrations/google-drive/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folderUrlOrId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId
+        })
+      });
+      const data = await res.json();
+      setIsTestingGoogleDrive(false);
+      if (res.ok) {
+        setGoogleDriveTestStatus({ success: true, message: data.message, folderUrl: data.folderUrl });
+      } else {
+        setGoogleDriveTestStatus({ success: false, message: data.error || 'No se pudo verificar la conexión.' });
+      }
+    } catch (err) {
+      setIsTestingGoogleDrive(false);
+      setGoogleDriveTestStatus({ success: false, message: 'Error de red al probar Google Drive.' });
+    }
+  };
+
+  const handleCreateGoogleDriveRule = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/integrations/google-drive/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newGoogleDriveRule)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo crear la regla de Google Drive.');
+      setGoogleDriveRules(prev => [data, ...prev]);
+      setNewGoogleDriveRule({
+        ruleName: '',
+        driveFolderId: '',
+        driveFolderName: '',
+        templateId: '',
+        titlePattern: '{template_title} - {file_name}'
+      });
+      showAlert('Regla de automatización de Google Drive creada con éxito.', 'success');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  const handleDeleteGoogleDriveRule = async (ruleId) => {
+    try {
+      const res = await fetch(`/api/integrations/google-drive/rules/${ruleId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('No se pudo eliminar la regla.');
+      setGoogleDriveRules(prev => prev.filter(r => r.id !== ruleId));
+      showAlert('Regla de Google Drive eliminada.', 'success');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  const handleSyncGoogleDriveRules = async () => {
+    setIsSyncingGoogleDriveRules(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/sync-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al sincronizar carpetas de Google Drive.');
+      if (data.triggeredCount > 0) {
+        await loadData();
+        showAlert(`¡Sincronización completada! Se iniciaron ${data.triggeredCount} nueva(s) ejecución(es) desde archivos nuevos en Google Drive.`, 'success');
+      } else {
+        showAlert('Sincronización completada. No se detectaron archivos nuevos pendientes de disparar procesos.', 'info');
+      }
+    } catch (err) {
+      showAlert(err.message, 'warning');
+    } finally {
+      setIsSyncingGoogleDriveRules(false);
+    }
+  };
+
   // Load Spaces when Team changes
   useEffect(() => {
     if (!selectedClickupTeamId) {
@@ -1795,11 +2028,21 @@ const handleDeleteMember = async (id) => {
 
     // Persist instance to Express backend (triggers notifyTeamOnExecutionLaunch emails + per-user in-app notifications with their steps)
     try {
-      await fetch('/api/instances', {
+      const postRes = await fetch('/api/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newInstance)
       });
+      if (postRes.ok) {
+        const postData = await postRes.json().catch(() => ({}));
+        if (postData.driveFolderUrl || postData.driveFolderId) {
+          setInstances(prev => prev.map(inst => inst.id === newInstance.id ? {
+            ...inst,
+            driveFolderId: postData.driveFolderId || inst.driveFolderId,
+            driveFolderUrl: postData.driveFolderUrl || inst.driveFolderUrl
+          } : inst));
+        }
+      }
 
       const launchLogId = `launch-${newInstance.id}`;
       const newLogEntry = {
@@ -4998,6 +5241,62 @@ const handleDeleteMember = async (id) => {
                       {clickupToken ? 'CONFIGURAR' : 'ACTIVAR'}
                     </button>
                   </div>
+
+                  {/* Google Drive Integration Card */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: '260px',
+                    position: 'relative'
+                  }}>
+                    <div>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #2563EB, #10B981)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '1.1rem',
+                        marginBottom: '1.25rem'
+                      }}>
+                        <FolderOpen size={24} />
+                      </div>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>Google Drive</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                        Crea carpetas automáticas por Cliente y Ejecución, sube entregables de pasos, lee Google Docs con Copilot y dispara procesos al subir archivos.
+                      </p>
+                      {googleDriveConfig.connected && (
+                        <span className="badge success" style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
+                          {googleDriveConfig.mode === 'oauth' ? 'OAuth Conectado' : 'Carpeta Vinculada'}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setShowGoogleDriveModal(true)}
+                      style={{
+                        width: '100%',
+                        borderRadius: '30px',
+                        padding: '0.65rem',
+                        marginTop: '1.5rem',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      {googleDriveConfig.connected ? 'CONFIGURAR' : 'ACTIVAR'}
+                    </button>
+                  </div>
                 </div>
               ) : (
 
@@ -6988,6 +7287,366 @@ const handleDeleteMember = async (id) => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Google Drive Integration & Automation Modal */}
+      <Dialog open={showGoogleDriveModal} onOpenChange={setShowGoogleDriveModal}>
+        <DialogContent style={{ maxWidth: '56rem', maxHeight: '88vh', overflowY: 'auto', borderRadius: '24px', padding: '2rem' }}>
+          <DialogHeader>
+            <DialogTitle style={{ fontSize: '1.35rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #2563EB, #10B981)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff'
+              }}>
+                <FolderOpen size={20} />
+              </div>
+              Integración Multi-Workspace con Google Drive
+            </DialogTitle>
+            <DialogDescription style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Conecta la cuenta o carpeta raíz de Google Drive de tu organización para crear carpetas por cliente/ejecución, subir archivos de pasos, permitir que Kônsul Copilot lea documentos y disparar procesos automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
+            {/* 1. OAuth 2.0 Connection Section */}
+            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '1rem' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Key size={18} style={{ color: '#2563EB' }} />
+                    Opción A: Conexión Completa con Google OAuth 2.0 (1 Clic)
+                  </h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Permite crear subcarpetas automáticas por Cliente y Ejecución, subir entregables directamente a Drive y sincronizar archivos nuevos.
+                  </p>
+                </div>
+                {googleDriveConfig.hasOAuthToken ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="badge success" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
+                      Conectado {googleDriveConfig.email ? `(${googleDriveConfig.email})` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGoogleDrive}
+                      className="btn btn-danger"
+                      style={{ borderRadius: '20px', padding: '6px 14px', fontSize: '0.78rem' }}
+                    >
+                      Desconectar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConnectGoogleDriveOAuth}
+                    className="btn btn-primary"
+                    style={{
+                      background: '#2563EB',
+                      borderRadius: '30px',
+                      padding: '0.6rem 1.4rem',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <FolderOpen size={16} /> Conectar con Google Drive
+                  </button>
+                )}
+              </div>
+
+              {/* Optional Custom OAuth App Credentials per Workspace */}
+              <details style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#334155' }}>
+                  ⚙️ Avanzado: Usar credenciales OAuth propias de Google Cloud para este Workspace (Opcional)
+                </summary>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '12px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Google Client ID</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="123456-abc.apps.googleusercontent.com"
+                      value={googleDriveConfig.clientId || ''}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, clientId: e.target.value }))}
+                      style={{ margin: 0, height: '38px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Google Client Secret</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="GOCSPX-..."
+                      value={googleDriveConfig.clientSecret || ''}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, clientSecret: e.target.value }))}
+                      style={{ margin: 0, height: '38px', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+                <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748B' }}>
+                  URI de redirección autorizada en Google Cloud Console: <code>{window.location.origin}/api/integrations/google-drive/oauth/callback</code>
+                </p>
+              </details>
+            </div>
+
+            {/* 2. Root Folder Link/ID & Workspace Behavior */}
+            <form onSubmit={handleSaveGoogleDriveSettings} style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FolderOpen size={18} style={{ color: '#10B981' }} />
+                  Opción B: Carpeta Raíz de Google Drive (por Link o ID) y Automatización de Archivos
+                </h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Pega el enlace o ID de la carpeta raíz de Google Drive de tu empresa. Puedes usarla sola (modo directo por link) o combinada con OAuth 2.0 para que todas las subcarpetas de Clientes y Ejecuciones se creen dentro de ella.
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
+                    Enlace o ID de Carpeta Raíz en Google Drive
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="https://drive.google.com/drive/folders/1AbC..."
+                    value={googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId || ''}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderUrl: e.target.value, rootFolderId: e.target.value }))}
+                    style={{ margin: 0, height: '42px' }}
+                  />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
+                    Nombre de la Carpeta Raíz (Etiqueta)
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ej. Kônsul Operaciones Drive"
+                    value={googleDriveConfig.rootFolderName || ''}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderName: e.target.value }))}
+                    style={{ margin: 0, height: '42px' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#F8FAFC', padding: '12px 16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}>
+                  <input
+                    type="checkbox"
+                    checked={googleDriveConfig.autoCreateClientFolders !== false}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoCreateClientFolders: e.target.checked }))}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  <span>Crear/vincular automáticamente carpeta en Google Drive por Cliente y Ejecución al lanzar un proceso</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}>
+                  <input
+                    type="checkbox"
+                    checked={googleDriveConfig.autoUploadStepFiles !== false}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoUploadStepFiles: e.target.checked }))}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  <span>Subir automáticamente a Google Drive los archivos entregables cargados en los pasos de cada ejecución</span>
+                </label>
+              </div>
+
+              {googleDriveTestStatus && (
+                <div style={{
+                  backgroundColor: googleDriveTestStatus.success ? '#ECFDF5' : '#FEF2F2',
+                  color: googleDriveTestStatus.success ? '#065F46' : '#991B1B',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>{googleDriveTestStatus.message}</span>
+                  {googleDriveTestStatus.folderUrl && (
+                    <a href={googleDriveTestStatus.folderUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }}>
+                      Abrir Carpeta
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleTestGoogleDrive}
+                  disabled={isTestingGoogleDrive}
+                  className="btn btn-secondary"
+                  style={{ borderRadius: '30px', padding: '0.55rem 1.4rem', fontWeight: 600, fontSize: '0.82rem' }}
+                >
+                  {isTestingGoogleDrive ? 'Probando...' : 'Probar Conexión'}
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ borderRadius: '30px', padding: '0.55rem 1.6rem', fontWeight: 600, fontSize: '0.82rem' }}
+                >
+                  Guardar Configuración Drive
+                </button>
+              </div>
+            </form>
+
+            {/* 3. Automation Rules: Trigger Process when a file is uploaded to a Drive Folder */}
+            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '1rem' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap size={18} style={{ color: 'var(--color-primary)' }} />
+                    3. Disparar Ejecución al Subir Archivo a una Carpeta de Google Drive
+                  </h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Cuando se detecte un archivo nuevo en la carpeta vigilada (vía API Sync o Webhook), Kônsul iniciará automáticamente la plantilla elegida con el archivo adjunto y notificará al equipo.
+                  </p>
+                </div>
+                {googleDriveRules.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncGoogleDriveRules}
+                    disabled={isSyncingGoogleDriveRules}
+                    className="btn btn-secondary"
+                    style={{ borderRadius: '30px', padding: '0.45rem 1.1rem', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#2563EB', borderColor: '#BFDBFE', background: '#EFF6FF' }}
+                  >
+                    <RefreshCw size={14} /> {isSyncingGoogleDriveRules ? 'Sincronizando Drive...' : 'Sincronizar Archivos Nuevos Ahora'}
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleCreateGoogleDriveRule} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: '#F8FAFC', padding: '1.25rem', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Nombre de la Regla</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Ej. Nuevo Contrato en Carpeta Legal"
+                      value={newGoogleDriveRule.ruleName}
+                      onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, ruleName: e.target.value }))}
+                      required
+                      style={{ margin: 0, height: '38px', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Link o ID de Carpeta a Vigilar</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="https://drive.google.com/drive/folders/..."
+                      value={newGoogleDriveRule.driveFolderId}
+                      onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, driveFolderId: e.target.value }))}
+                      required
+                      style={{ margin: 0, height: '38px', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Plantilla de Proceso a Lanzar</label>
+                    <select
+                      className="form-input"
+                      value={newGoogleDriveRule.templateId}
+                      onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, templateId: e.target.value }))}
+                      required
+                      style={{ margin: 0, height: '38px', fontSize: '0.82rem', cursor: 'pointer' }}
+                    >
+                      <option value="">-- Seleccionar Plantilla --</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Patrón del Nombre de Ejecución</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="{template_title} - {file_name}"
+                      value={newGoogleDriveRule.titlePattern}
+                      onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, titlePattern: e.target.value }))}
+                      style={{ margin: 0, height: '38px', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <span style={{ fontSize: '0.73rem', color: '#64748B' }}>
+                    Webhook también disponible: <code>POST {window.location.origin}/api/webhooks/google-drive</code>
+                  </span>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ borderRadius: '30px', padding: '0.5rem 1.4rem', fontSize: '0.8rem', fontWeight: 600 }}
+                  >
+                    + Agregar Regla de Carpeta
+                  </button>
+                </div>
+              </form>
+
+              {/* Active Google Drive Rules Table */}
+              {googleDriveRules.length === 0 ? (
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                  No hay carpetas de Google Drive configuradas como disparadores automáticos aún.
+                </p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)' }}>
+                        <th style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>Regla</th>
+                        <th style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>Carpeta Drive</th>
+                        <th style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>Plantilla</th>
+                        <th style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>Patrón de Título</th>
+                        <th style={{ padding: '8px 10px', color: 'var(--text-muted)', textAlign: 'right' }}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {googleDriveRules.map(rule => {
+                        const tpl = templates.find(t => t.id === rule.templateId);
+                        return (
+                          <tr key={rule.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                            <td style={{ padding: '10px', fontWeight: 600 }}>{rule.ruleName}</td>
+                            <td style={{ padding: '10px' }}>
+                              <a
+                                href={`https://drive.google.com/drive/folders/${rule.driveFolderId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <FolderOpen size={13} /> {rule.driveFolderName || rule.driveFolderId.slice(0, 12) + '...'} <ExternalLink size={11} />
+                              </a>
+                            </td>
+                            <td style={{ padding: '10px' }}>{tpl ? tpl.title : rule.templateId}</td>
+                            <td style={{ padding: '10px', fontFamily: 'monospace', fontSize: '0.76rem' }}>{rule.titlePattern}</td>
+                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                className="btn btn-danger"
+                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                onClick={() => handleDeleteGoogleDriveRule(rule.id)}
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Toast Notification Container */}
       <div style={{
         position: 'fixed',

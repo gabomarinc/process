@@ -19,16 +19,18 @@ import {
   Paperclip,
   Mic,
   Music,
-  Image as ImageIcon
+  Image as ImageIcon,
+  FolderOpen,
+  ExternalLink
 } from 'lucide-react';
 import './AgentCopilot.css';
 
 const DEFAULT_CHIPS = [
   { label: '📊 Resumen del Workspace', prompt: 'Dame un resumen del estado actual de la organización, plantillas y ejecuciones activas.' },
+  { label: '📁 Archivos en Google Drive', prompt: 'Lista los archivos y documentos disponibles en nuestra carpeta de Google Drive.' },
   { label: '📖 Guía de Procesos', prompt: 'Explícame las plantillas de procesos disponibles y cómo ejecutarlas paso a paso.' },
   { label: '➕ Crear plantilla de Onboarding', prompt: 'Crea una nueva plantilla para "Onboarding de Nuevos Clientes" con 4 pasos clave en la categoría Operaciones.' },
-  { label: '📋 Añadir columna al Kanban', prompt: 'Agrega una columna llamada "En Revisión Legal" al tablero Kanban.' },
-  { label: '👥 Registrar nuevo cliente', prompt: 'Crea un nuevo cliente llamado "InnovaTech Global".' }
+  { label: '📋 Añadir columna al Kanban', prompt: 'Agrega una columna llamada "En Revisión Legal" al tablero Kanban.' }
 ];
 
 const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
@@ -81,7 +83,7 @@ export default function AgentCopilot({
   const defaultWelcome = {
     id: 'welcome',
     role: 'model',
-    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico y Consultor de Procesos** de Kônsul.\n\nPuedo guiarte paso a paso en cualquier plantilla, crear procesos, mover tarjetas en el Kanban, registrar clientes, analizar documentos adjuntos y escuchar tus instrucciones por notas de voz. ¿En qué te ayudo hoy?`,
+    text: `👋 ¡Hola **${user?.name?.split(' ')[0] || 'Colega'}**! Soy el **Copiloto Agéntico y Consultor de Procesos** de Kônsul.\n\nPuedo guiarte paso a paso en cualquier plantilla, crear procesos, mover tarjetas en el Kanban, leer documentos de **Google Drive**, analizar archivos adjuntos y escuchar tus instrucciones por notas de voz. ¿En qué te ayudo hoy?`,
     actions: []
   };
 
@@ -94,6 +96,12 @@ export default function AgentCopilot({
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Google Drive Picker States
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
+  const [driveUrlInput, setDriveUrlInput] = useState('');
+  const [driveFilesList, setDriveFilesList] = useState([]);
+  const [isLoadingDriveFiles, setIsLoadingDriveFiles] = useState(false);
 
   // Audio Recording States
   const [isRecording, setIsRecording] = useState(false);
@@ -260,6 +268,62 @@ export default function AgentCopilot({
     setAttachedFiles(prev => [...prev, ...parsedList]);
     setIsProcessingFiles(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Google Drive File Picker & Reader
+  const handleOpenDrivePicker = async () => {
+    const nextState = !showDrivePicker;
+    setShowDrivePicker(nextState);
+    if (nextState) {
+      setIsLoadingDriveFiles(true);
+      try {
+        const res = await fetch('/api/integrations/google-drive/files');
+        if (res.ok) {
+          const data = await res.json();
+          setDriveFilesList((data.files || []).filter(f => !f.isFolder));
+        }
+      } catch (err) {
+        console.warn('Error fetching Drive files for Copilot:', err);
+      } finally {
+        setIsLoadingDriveFiles(false);
+      }
+    }
+  };
+
+  const handleAttachDriveFile = async (fileIdOrUrl, customName = '') => {
+    const target = (fileIdOrUrl || driveUrlInput || '').trim();
+    if (!target) return;
+
+    setIsProcessingFiles(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/read-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileIdOrUrl: target })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo leer el documento de Google Drive.');
+      }
+      setAttachedFiles(prev => [
+        ...prev,
+        {
+          id: 'drive_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          name: customName || data.name || 'Documento Google Drive',
+          size: 'Google Drive',
+          type: 'drive_doc',
+          textContent: data.textContent || '',
+          isDocument: true
+        }
+      ]);
+      setDriveUrlInput('');
+      setShowDrivePicker(false);
+      if (addToast) addToast(`Documento "${customName || data.name || 'Google Drive'}" adjuntado al Copilot`, 'success');
+    } catch (err) {
+      if (addToast) addToast(err.message || 'Error al adjuntar documento de Google Drive', 'error');
+    } finally {
+      setIsProcessingFiles(false);
+    }
   };
 
   // Audio Recording Handlers
@@ -558,11 +622,56 @@ export default function AgentCopilot({
             <div className="agent-action-details">
               Plantilla: <strong>{result?.templateTitle}</strong> • Prioridad: {result?.priority}
             </div>
+            {result?.driveFolderUrl && (
+              <a
+                href={result.driveFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="agent-action-cta-btn"
+                style={{ textDecoration: 'none', marginBottom: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <FolderOpen size={12} /> Abrir Carpeta en Google Drive <ExternalLink size={11} />
+              </a>
+            )}
             {isSuccess && onNavigate && (
               <button className="agent-action-cta-btn" onClick={() => { onNavigate('kanban'); setIsOpen(false); }}>
                 Ver en Tablero Kanban <ArrowRight size={12} />
               </button>
             )}
+          </div>
+        );
+
+      case 'read_google_drive_document':
+        return (
+          <div key={idx} className={`agent-action-card ${isSuccess ? 'success' : 'error'}`}>
+            <div className="agent-action-header">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <FolderOpen size={14} /> Google Drive
+              </span>
+              <span>{isSuccess ? '📄 Documento Leído' : '❌ Error'}</span>
+            </div>
+            <div className="agent-action-title">{result?.name || 'Documento de Google Drive'}</div>
+            <div className="agent-action-details">
+              {isSuccess ? 'Contenido extraído y analizado por Copilot' : (act.error || 'No se pudo leer el archivo')}
+            </div>
+          </div>
+        );
+
+      case 'list_google_drive_files':
+        return (
+          <div key={idx} className={`agent-action-card ${isSuccess ? 'success' : 'error'}`}>
+            <div className="agent-action-header">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <FolderOpen size={14} /> Google Drive
+              </span>
+              <span>{isSuccess ? `📁 ${(result?.files || []).length} Archivos` : '❌ Error'}</span>
+            </div>
+            <div className="agent-action-title">Explorador de Carpeta Drive</div>
+            <div className="agent-action-details">
+              {isSuccess
+                ? (result?.files || []).slice(0, 4).map(f => f.name).join(', ') || 'Carpeta vacía'
+                : (act.error || 'Error al listar archivos')}
+            </div>
           </div>
         );
 
@@ -850,6 +959,92 @@ export default function AgentCopilot({
 
           {/* Footer Input */}
           <div className="agent-copilot-footer">
+            {/* Google Drive Quick Picker Drawer */}
+            {showDrivePicker && (
+              <div style={{
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                padding: '10px',
+                marginBottom: '8px',
+                fontSize: '0.78rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <FolderOpen size={14} color="#2563EB" /> Adjuntar desde Google Drive
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDrivePicker(false)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: 0 }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '6px', marginBottom: driveFilesList.length > 0 ? '8px' : '0' }}>
+                  <input
+                    type="text"
+                    placeholder="Pega enlace de Google Docs / Sheets / Drive o ID..."
+                    value={driveUrlInput}
+                    onChange={(e) => setDriveUrlInput(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '0.75rem'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!driveUrlInput.trim() || isProcessingFiles}
+                    onClick={() => handleAttachDriveFile(driveUrlInput)}
+                    style={{
+                      background: '#2563EB',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Leer
+                  </button>
+                </div>
+
+                {isLoadingDriveFiles ? (
+                  <div style={{ color: '#64748B', fontSize: '0.72rem', padding: '4px 0' }}>Cargando archivos de tu carpeta Google Drive...</div>
+                ) : driveFilesList.length > 0 ? (
+                  <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {driveFilesList.slice(0, 12).map(df => (
+                      <div
+                        key={df.id}
+                        onClick={() => handleAttachDriveFile(df.id, df.name)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '5px 8px',
+                          background: '#FFFFFF',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span style={{ fontWeight: 600, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }}>
+                          📄 {df.name}
+                        </span>
+                        <span style={{ color: '#2563EB', fontSize: '0.7rem', fontWeight: 700 }}>Adjuntar</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             {/* Attachment Preview Strip */}
             {attachedFiles.length > 0 && (
               <div className="agent-attachment-strip">
@@ -928,16 +1123,27 @@ export default function AgentCopilot({
                   type="button"
                   className="agent-icon-action-btn"
                   onClick={() => fileInputRef.current?.click()}
-                  title="Adjuntar archivo o documento (.pdf, .docx, .png, .txt, etc.)"
+                  title="Adjuntar archivo local (.pdf, .docx, .png, .txt, etc.)"
                   disabled={isLoading || isProcessingFiles}
                 >
                   <Paperclip size={17} />
                 </button>
 
+                <button
+                  type="button"
+                  className="agent-icon-action-btn"
+                  onClick={handleOpenDrivePicker}
+                  title="Adjuntar o leer documento desde Google Drive"
+                  disabled={isLoading || isProcessingFiles}
+                  style={{ color: showDrivePicker ? '#2563EB' : undefined }}
+                >
+                  <FolderOpen size={17} />
+                </button>
+
                 <input
                   type="text"
                   className="agent-chat-input"
-                  placeholder={isProcessingFiles ? "Procesando archivo..." : "Escribe o adjunta un proceso/audio..."}
+                  placeholder={isProcessingFiles ? "Procesando archivo..." : "Escribe o adjunta un proceso/Drive/audio..."}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   disabled={isLoading || isProcessingFiles}

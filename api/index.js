@@ -117,6 +117,26 @@ const pool = new Pool({
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'Media'`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS client_id VARCHAR(255)`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS drive_folder_id VARCHAR(255)`,
+    `ALTER TABLE instances ADD COLUMN IF NOT EXISTS drive_folder_url TEXT`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS drive_folder_id VARCHAR(255)`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS drive_folder_url TEXT`,
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS google_drive_config JSONB DEFAULT '{}'::jsonb`,
+    `CREATE TABLE IF NOT EXISTS google_drive_rules (
+      id SERIAL PRIMARY KEY,
+      organization_id INT REFERENCES organizations(id) ON DELETE CASCADE,
+      rule_name VARCHAR(255) NOT NULL,
+      drive_folder_id VARCHAR(255) NOT NULL,
+      drive_folder_name VARCHAR(255) NOT NULL,
+      file_type_filter VARCHAR(100) DEFAULT 'any',
+      template_id VARCHAR(100) NOT NULL,
+      title_pattern VARCHAR(255) DEFAULT '{template_title} - {file_name}',
+      active BOOLEAN DEFAULT TRUE,
+      status VARCHAR(50) DEFAULT 'approved',
+      last_checked_at TIMESTAMPTZ,
+      processed_file_ids JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`,
     
     `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS domain VARCHAR(255)`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS kinde_id VARCHAR(255)`,
@@ -625,6 +645,323 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
   } catch (err) {
     console.error('Error enviando correos y notificaciones de lanzamiento de ejecución:', err);
   }
+};
+
+// ==========================================
+// GOOGLE DRIVE MULTI-TENANT HELPERS
+// ==========================================
+const extractDriveIdFromInput = (input) => {
+  if (!input || typeof input !== 'string') return '';
+  const trimmed = input.trim();
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+  const fileMatch = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return fileMatch[1];
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParamMatch) return idParamMatch[1];
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(trimmed)) return trimmed;
+  return '';
+};
+
+const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
+  try {
+    let config = existingConfig;
+    if (!config) {
+      const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+      config = orgRes.rows[0]?.google_drive_config || {};
+    }
+    if (!config || typeof config !== 'object') return null;
+
+    if (config.accessToken) {
+      const now = Date.now();
+      if (!config.tokenExpiry || config.tokenExpiry > now + 60000) {
+        return config.accessToken;
+      }
+    }
+
+    if (config.refreshToken) {
+      const clientId = config.clientId || process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = config.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
+      if (clientId && clientSecret) {
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            refresh_token: config.refreshToken,
+            grant_type: 'refresh_token'
+          })
+        });
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          const updatedConfig = {
+            ...config,
+            accessToken: tokenData.access_token,
+            tokenExpiry: Date.now() + ((tokenData.expires_in || 3600) * 1000)
+          };
+          await pool.query(
+            'UPDATE organizations SET google_drive_config = $1 WHERE id = $2',
+            [JSON.stringify(updatedConfig), orgId]
+          );
+          return tokenData.access_token;
+        }
+      }
+    }
+
+    return config.accessToken || null;
+  } catch (err) {
+    console.warn('Error resolving Google Drive access token:', err.message);
+    return null;
+  }
+};
+
+const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId = null) => {
+  if (!accessToken || !folderName) return null;
+  const safeName = folderName.replace(/'/g, "\\'").trim();
+  let q = `mimeType = 'application/vnd.google-apps.folder' and name = '${safeName}' and trashed = false`;
+  if (parentFolderId) {
+    q += ` and '${parentFolderId}' in parents`;
+  }
+
+  try {
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=1`;
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        const f = searchData.files[0];
+        return {
+          id: f.id,
+          name: f.name,
+          webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`
+        };
+      }
+    }
+
+    const body = {
+      name: folderName.trim(),
+      mimeType: 'application/vnd.google-apps.folder',
+      ...(parentFolderId ? { parents: [parentFolderId] } : {})
+    };
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (createRes.ok) {
+      const created = await createRes.json();
+      return {
+        id: created.id,
+        name: created.name,
+        webViewLink: created.webViewLink || `https://drive.google.com/drive/folders/${created.id}`
+      };
+    }
+  } catch (err) {
+    console.warn('Error in findOrCreateDriveFolder:', err.message);
+  }
+  return null;
+};
+
+const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') => {
+  try {
+    if (!orgId || !instanceData?.id) return null;
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+    const config = orgRes.rows[0]?.google_drive_config || {};
+    if (!config.connected || config.autoCreateFolders === false) return null;
+
+    const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
+    const instanceName = instanceData.instanceName || instanceData.instance_name || instanceData.title || 'Ejecución';
+    const templateTitle = instanceData.title || 'Proceso';
+    const effectiveClientName = (clientName || instanceName).trim();
+
+    if (accessToken) {
+      let rootId = config.rootFolderId || null;
+      if (!rootId) {
+        const rootFolder = await findOrCreateDriveFolder(accessToken, 'Kônsul Process');
+        if (rootFolder) {
+          rootId = rootFolder.id;
+          config.rootFolderId = rootFolder.id;
+          config.rootFolderUrl = rootFolder.webViewLink;
+          config.rootFolderName = rootFolder.name;
+          await pool.query('UPDATE organizations SET google_drive_config = $1 WHERE id = $2', [JSON.stringify(config), orgId]);
+        }
+      }
+
+      let parentId = rootId;
+      if (effectiveClientName) {
+        const clientFolder = await findOrCreateDriveFolder(accessToken, effectiveClientName, rootId);
+        if (clientFolder) {
+          parentId = clientFolder.id;
+          await pool.query(
+            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND LOWER(name) = LOWER($4)',
+            [clientFolder.id, clientFolder.webViewLink, orgId, effectiveClientName]
+          ).catch(() => {});
+        }
+      }
+
+      const execFolderName = effectiveClientName && effectiveClientName !== instanceName
+        ? `${instanceName} (${templateTitle})`
+        : `${instanceName} - ${templateTitle}`;
+      const execFolder = await findOrCreateDriveFolder(accessToken, execFolderName, parentId);
+
+      if (execFolder) {
+        await pool.query(
+          'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+          [execFolder.id, execFolder.webViewLink, instanceData.id, orgId]
+        );
+        return { folderId: execFolder.id, folderUrl: execFolder.webViewLink, folderName: execFolder.name };
+      }
+    }
+
+    // Fallback for Folder Link / ID mode without OAuth token
+    if (config.rootFolderId) {
+      const folderUrl = config.rootFolderUrl || `https://drive.google.com/drive/folders/${config.rootFolderId}`;
+      await pool.query(
+        'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+        [config.rootFolderId, folderUrl, instanceData.id, orgId]
+      );
+      return { folderId: config.rootFolderId, folderUrl, folderName: config.rootFolderName || 'Carpeta Drive' };
+    }
+  } catch (err) {
+    console.warn('Error in ensureExecutionDriveFolder:', err.message);
+  }
+  return null;
+};
+
+const uploadBase64FileToDrive = async (orgId, { fileName, mimeType, base64Data, parentFolderId }) => {
+  const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+  const config = orgRes.rows[0]?.google_drive_config || {};
+  const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
+
+  const targetFolderId = parentFolderId || config.rootFolderId || null;
+  if (!accessToken) {
+    if (targetFolderId) {
+      return {
+        uploadedToDrive: false,
+        fallbackFolderUrl: config.rootFolderUrl || `https://drive.google.com/drive/folders/${targetFolderId}`,
+        reason: 'Modo Carpeta por Link activo (conecta OAuth 2.0 para subida directa automática vía API).'
+      };
+    }
+    return { uploadedToDrive: false, reason: 'Google Drive no conectado.' };
+  }
+
+  const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const metadata = {
+    name: fileName || `Entregable_${Date.now()}`,
+    ...(targetFolderId ? { parents: [targetFolderId] } : {})
+  };
+
+  const boundary = '-------KonsulDriveBoundary' + Date.now();
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const multipartBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    `Content-Type: ${mimeType || 'application/octet-stream'}\r\n` +
+    'Content-Transfer-Encoding: base64\r\n\r\n' +
+    cleanBase64 +
+    closeDelimiter;
+
+  const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,mimeType', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body: multipartBody
+  });
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    throw new Error(`Error subiendo a Google Drive (${uploadRes.status}): ${errText.substring(0, 150)}`);
+  }
+
+  const fileData = await uploadRes.json();
+  return {
+    uploadedToDrive: true,
+    fileId: fileData.id,
+    fileName: fileData.name,
+    webViewLink: fileData.webViewLink || `https://drive.google.com/file/d/${fileData.id}/view`
+  };
+};
+
+const fetchDriveFileTextContent = async (orgId, fileIdOrUrl) => {
+  const fileId = extractDriveIdFromInput(fileIdOrUrl);
+  if (!fileId) {
+    throw new Error('No se pudo identificar un ID o enlace válido de Google Drive.');
+  }
+
+  const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+  const config = orgRes.rows[0]?.google_drive_config || {};
+  const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
+
+  // 1. Try via Google Drive API v3 if OAuth token is available
+  if (accessToken) {
+    try {
+      const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,webViewLink`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        let textRes;
+        if (meta.mimeType === 'application/vnd.google-apps.document') {
+          textRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+        } else if (meta.mimeType === 'application/vnd.google-apps.spreadsheet') {
+          textRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+        } else {
+          textRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+        }
+        if (textRes && textRes.ok) {
+          const content = await textRes.text();
+          return {
+            fileId: meta.id,
+            name: meta.name,
+            mimeType: meta.mimeType,
+            webViewLink: meta.webViewLink,
+            content: content.substring(0, 40000)
+          };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Drive API read fallback:', apiErr.message);
+    }
+  }
+
+  // 2. Fallback: Public / Shared Google Docs or Sheets export endpoints (works without OAuth!)
+  const isSheet = String(fileIdOrUrl).includes('spreadsheets');
+  const exportUrl = isSheet
+    ? `https://docs.google.com/spreadsheets/d/${fileId}/export?format=csv`
+    : `https://docs.google.com/document/d/${fileId}/export?format=txt`;
+
+  const pubRes = await fetch(exportUrl);
+  if (pubRes.ok) {
+    const content = await pubRes.text();
+    return {
+      fileId,
+      name: isSheet ? `Google Sheet (${fileId.substring(0, 8)})` : `Google Doc (${fileId.substring(0, 8)})`,
+      mimeType: isSheet ? 'text/csv' : 'text/plain',
+      webViewLink: String(fileIdOrUrl).startsWith('http') ? fileIdOrUrl : `https://drive.google.com/file/d/${fileId}/view`,
+      content: content.substring(0, 40000)
+    };
+  }
+
+  throw new Error('No se pudo leer el documento de Google Drive. Verifica que el archivo tenga acceso compartido ("Cualquier persona con el enlace") o conecta Google Drive con OAuth 2.0 en Integraciones.');
 };
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
@@ -1145,11 +1482,15 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
     // 6. Organization details
     const orgPromise = pool.query('SELECT * FROM organizations WHERE id = $1', [orgId]);
 
-    // 7. ClickUp rules query
+    // 7. ClickUp & Google Drive rules query
     const clickupRulesPromise = pool.query(
       'SELECT id, rule_name as "ruleName", clickup_list_id as "clickupListId", clickup_list_name as "clickupListName", clickup_status as "clickupStatus", template_id as "templateId", active, status, title_pattern as "titlePattern" FROM clickup_rules WHERE organization_id = $1 ORDER BY created_at DESC',
       [orgId]
     );
+    const driveRulesPromise = pool.query(
+      'SELECT id, rule_name as "ruleName", drive_folder_id as "driveFolderId", drive_folder_name as "driveFolderName", file_type_filter as "fileTypeFilter", template_id as "templateId", active, status, title_pattern as "titlePattern", last_checked_at as "lastCheckedAt" FROM google_drive_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      [orgId]
+    ).catch(() => ({ rows: [] }));
 
     // 8. Admin only: users & api tokens
     const usersPromise = isAdmin 
@@ -1170,6 +1511,7 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       adminsRes,
       orgRes,
       clickupRulesRes,
+      driveRulesRes,
       usersRes,
       devTokensRes
     ] = await Promise.all([
@@ -1181,11 +1523,13 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       adminsPromise,
       orgPromise,
       clickupRulesPromise,
+      driveRulesPromise,
       usersPromise,
       developerTokensPromise
     ]);
 
     const orgRow = orgRes.rows[0] || {};
+    const rawDriveConfig = orgRow.google_drive_config || {};
 
     // Map Templates
     const templatesMapped = templatesRes.rows.map(row => ({
@@ -1213,6 +1557,9 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
       templateId: row.template_id,
       title: row.title,
       instanceName: row.instance_name,
+      clientId: row.client_id || null,
+      driveFolderId: row.drive_folder_id || null,
+      driveFolderUrl: row.drive_folder_url || null,
       startedAt: row.started_at,
       companionName: row.companion_name,
       companionAvatar: row.companion_avatar,
@@ -1292,6 +1639,19 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         clickupWorkspaceId: orgRow.clickup_workspace_id || ''
       },
       clickupRules: clickupRulesRes.rows,
+      googleDrive: {
+        connected: !!rawDriveConfig.connected,
+        mode: rawDriveConfig.mode || 'both',
+        rootFolderId: rawDriveConfig.rootFolderId || '',
+        rootFolderUrl: rawDriveConfig.rootFolderUrl || '',
+        rootFolderName: rawDriveConfig.rootFolderName || '',
+        autoCreateFolders: rawDriveConfig.autoCreateFolders !== false,
+        autoUploadStepFiles: rawDriveConfig.autoUploadStepFiles !== false,
+        hasOAuthToken: !!(rawDriveConfig.accessToken || rawDriveConfig.refreshToken),
+        connectedEmail: rawDriveConfig.connectedEmail || '',
+        clientId: rawDriveConfig.clientId || ''
+      },
+      googleDriveRules: driveRulesRes.rows,
       users: usersRes.rows,
       apiTokens: devTokensRes.rows
     });
@@ -1422,6 +1782,8 @@ app.get('/api/instances', authenticateToken, async (req, res) => {
       title: row.title,
       instanceName: row.instance_name,
       clientId: row.client_id,
+      driveFolderId: row.drive_folder_id || null,
+      driveFolderUrl: row.drive_folder_url || null,
       startedAt: row.started_at,
       companionName: row.companion_name,
       companionAvatar: row.companion_avatar,
@@ -1541,6 +1903,8 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
       [id, req.user.organizationId, templateId, title, instanceName, clientId || null, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
     );
 
+    const driveInfo = await ensureExecutionDriveFolder(req.user.organizationId, { id, title, instanceName }, instanceName);
+
     const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
     await notifyTeamOnExecutionLaunch(req.user.organizationId, { id, title, instanceName, steps }, origin);
 
@@ -1552,7 +1916,11 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
       'Cliente': instanceName
     });
 
-    res.status(201).json({ message: 'Ejecución iniciada con éxito' });
+    res.status(201).json({
+      message: 'Ejecución iniciada con éxito',
+      driveFolderId: driveInfo?.folderId || null,
+      driveFolderUrl: driveInfo?.folderUrl || null
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear la ejecución en la base de datos' });
@@ -3397,6 +3765,683 @@ app.delete('/api/integrations/reactivaleads/rules/:id', authenticateToken, async
   }
 });
 
+// ==========================================
+// GOOGLE DRIVE INTEGRATION (OAUTH 2.0 + FOLDER LINK + AUTOMATIONS)
+// ==========================================
+
+app.get('/api/organization/google-drive', authenticateToken, async (req, res) => {
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const rulesRes = await pool.query(
+      'SELECT id, rule_name as "ruleName", drive_folder_id as "driveFolderId", drive_folder_name as "driveFolderName", file_type_filter as "fileTypeFilter", template_id as "templateId", active, status, title_pattern as "titlePattern", last_checked_at as "lastCheckedAt" FROM google_drive_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.user.organizationId]
+    );
+    res.json({
+      googleDrive: {
+        connected: !!cfg.connected,
+        mode: cfg.mode || 'both',
+        rootFolderId: cfg.rootFolderId || '',
+        rootFolderUrl: cfg.rootFolderUrl || '',
+        rootFolderName: cfg.rootFolderName || '',
+        autoCreateFolders: cfg.autoCreateFolders !== false,
+        autoUploadStepFiles: cfg.autoUploadStepFiles !== false,
+        hasOAuthToken: !!(cfg.accessToken || cfg.refreshToken),
+        connectedEmail: cfg.connectedEmail || '',
+        clientId: cfg.clientId || ''
+      },
+      rules: rulesRes.rows
+    });
+  } catch (err) {
+    console.error('Error getting Google Drive config:', err);
+    res.status(500).json({ error: 'Error al obtener configuración de Google Drive' });
+  }
+});
+
+app.put('/api/organization/google-drive', authenticateToken, async (req, res) => {
+  const {
+    rootFolderInput,
+    rootFolderName,
+    autoCreateFolders,
+    autoUploadStepFiles,
+    accessToken,
+    refreshToken,
+    clientId,
+    clientSecret,
+    disconnect
+  } = req.body;
+
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const prev = orgRes.rows[0]?.google_drive_config || {};
+
+    if (disconnect) {
+      await pool.query('UPDATE organizations SET google_drive_config = $1 WHERE id = $2', [JSON.stringify({}), req.user.organizationId]);
+      return res.json({ message: 'Google Drive desconectado.', googleDrive: { connected: false } });
+    }
+
+    const extractedFolderId = rootFolderInput !== undefined
+      ? extractDriveIdFromInput(rootFolderInput)
+      : (prev.rootFolderId || '');
+
+    const resolvedFolderUrl = extractedFolderId
+      ? (String(rootFolderInput || '').startsWith('http') ? rootFolderInput.trim() : `https://drive.google.com/drive/folders/${extractedFolderId}`)
+      : (prev.rootFolderUrl || '');
+
+    const nextAccessToken = accessToken !== undefined ? (accessToken.trim() || null) : (prev.accessToken || null);
+    const nextRefreshToken = refreshToken !== undefined ? (refreshToken.trim() || null) : (prev.refreshToken || null);
+    const nextClientId = clientId !== undefined ? (clientId.trim() || null) : (prev.clientId || null);
+    const nextClientSecret = clientSecret !== undefined ? (clientSecret.trim() || null) : (prev.clientSecret || null);
+
+    const isConnected = !!(extractedFolderId || nextAccessToken || nextRefreshToken);
+
+    const updated = {
+      ...prev,
+      connected: isConnected,
+      mode: (nextAccessToken || nextRefreshToken) && extractedFolderId ? 'both' : ((nextAccessToken || nextRefreshToken) ? 'oauth' : 'folder_link'),
+      rootFolderId: extractedFolderId,
+      rootFolderUrl: resolvedFolderUrl,
+      rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
+      autoCreateFolders: autoCreateFolders !== undefined ? !!autoCreateFolders : (prev.autoCreateFolders !== false),
+      autoUploadStepFiles: autoUploadStepFiles !== undefined ? !!autoUploadStepFiles : (prev.autoUploadStepFiles !== false),
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+      clientId: nextClientId,
+      clientSecret: nextClientSecret
+    };
+
+    await pool.query(
+      'UPDATE organizations SET google_drive_config = $1 WHERE id = $2',
+      [JSON.stringify(updated), req.user.organizationId]
+    );
+
+    res.json({
+      message: 'Configuración de Google Drive guardada con éxito.',
+      googleDrive: {
+        connected: updated.connected,
+        mode: updated.mode,
+        rootFolderId: updated.rootFolderId,
+        rootFolderUrl: updated.rootFolderUrl,
+        rootFolderName: updated.rootFolderName,
+        autoCreateFolders: updated.autoCreateFolders,
+        autoUploadStepFiles: updated.autoUploadStepFiles,
+        hasOAuthToken: !!(updated.accessToken || updated.refreshToken),
+        connectedEmail: updated.connectedEmail || '',
+        clientId: updated.clientId || ''
+      }
+    });
+  } catch (err) {
+    console.error('Error saving Google Drive config:', err);
+    res.status(500).json({ error: 'Error al guardar configuración de Google Drive' });
+  }
+});
+
+// Generate OAuth 2.0 Authorization URL for 1-click Google Drive connection
+app.get('/api/integrations/google-drive/oauth/url', authenticateToken, async (req, res) => {
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const clientId = (req.query.client_id || cfg.clientId || process.env.GOOGLE_CLIENT_ID || '').trim();
+
+    if (!clientId) {
+      return res.status(400).json({
+        error: 'Falta Google Client ID. Puedes ingresarlo en las opciones avanzadas de OAuth o conectar directamente pegando el Link/ID de tu carpeta de Google Drive.'
+      });
+    }
+
+    const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    const redirectUri = `${origin}/api/integrations/google-drive/oauth/callback`;
+    const stateToken = jwt.sign(
+      { orgId: req.user.organizationId, userId: req.user.id, redirectOrigin: origin },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email');
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'consent');
+    authUrl.searchParams.set('state', stateToken);
+
+    res.json({ url: authUrl.toString(), redirectUri });
+  } catch (err) {
+    console.error('Error generating Google Drive OAuth URL:', err);
+    res.status(500).json({ error: 'Error al generar URL de autorización de Google Drive' });
+  }
+});
+
+// Google OAuth 2.0 Callback
+app.get('/api/integrations/google-drive/oauth/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  if (error || !code || !state) {
+    return res.redirect('/?drive_error=' + encodeURIComponent(error || 'missing_code'));
+  }
+
+  try {
+    const decoded = jwt.verify(state, JWT_SECRET);
+    const orgId = decoded.orgId;
+    const origin = decoded.redirectOrigin || `${req.protocol}://${req.get('host')}`;
+    const redirectUri = `${origin}/api/integrations/google-drive/oauth/callback`;
+
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const clientId = cfg.clientId || process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = cfg.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.redirect('/?drive_error=missing_client_credentials');
+    }
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+      })
+    });
+
+    if (!tokenRes.ok) {
+      const errTxt = await tokenRes.text();
+      console.error('Google OAuth token exchange failed:', errTxt);
+      return res.redirect('/?drive_error=token_exchange_failed');
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+    const refreshToken = tokenData.refresh_token || cfg.refreshToken || null;
+
+    // Fetch Google user email
+    let connectedEmail = cfg.connectedEmail || '';
+    try {
+      const uInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (uInfoRes.ok) {
+        const uInfo = await uInfoRes.json();
+        connectedEmail = uInfo.email || connectedEmail;
+      }
+    } catch (_) {}
+
+    // Ensure root folder "Kônsul Process" if none is configured
+    let rootFolderId = cfg.rootFolderId || '';
+    let rootFolderUrl = cfg.rootFolderUrl || '';
+    let rootFolderName = cfg.rootFolderName || 'Kônsul Process';
+
+    if (!rootFolderId && accessToken) {
+      const folder = await findOrCreateDriveFolder(accessToken, 'Kônsul Process');
+      if (folder) {
+        rootFolderId = folder.id;
+        rootFolderUrl = folder.webViewLink;
+        rootFolderName = folder.name;
+      }
+    }
+
+    const updated = {
+      ...cfg,
+      connected: true,
+      mode: 'both',
+      accessToken,
+      refreshToken,
+      tokenExpiry: Date.now() + ((tokenData.expires_in || 3600) * 1000),
+      connectedEmail,
+      rootFolderId,
+      rootFolderUrl,
+      rootFolderName,
+      autoCreateFolders: cfg.autoCreateFolders !== false,
+      autoUploadStepFiles: cfg.autoUploadStepFiles !== false
+    };
+
+    await pool.query('UPDATE organizations SET google_drive_config = $1 WHERE id = $2', [JSON.stringify(updated), orgId]);
+    res.redirect('/?drive_connected=1');
+  } catch (err) {
+    console.error('Error in Google Drive OAuth callback:', err);
+    res.redirect('/?drive_error=callback_exception');
+  }
+});
+
+// Test Google Drive Connection (OAuth token + Folder Link/ID)
+app.post('/api/integrations/google-drive/test', authenticateToken, async (req, res) => {
+  const { rootFolderInput, accessToken: bodyToken } = req.body;
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const token = bodyToken || await getValidGoogleDriveAccessToken(req.user.organizationId, cfg);
+    const folderId = extractDriveIdFromInput(rootFolderInput || cfg.rootFolderId || '');
+
+    if (token) {
+      const aboutRes = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (aboutRes.ok) {
+        const aboutData = await aboutRes.json();
+        return res.json({
+          success: true,
+          mode: 'oauth',
+          message: `Conectado con éxito a Google Drive (${aboutData.user?.emailAddress || 'OAuth Activo'})`,
+          folderId: folderId || cfg.rootFolderId || ''
+        });
+      }
+    }
+
+    if (folderId) {
+      return res.json({
+        success: true,
+        mode: 'folder_link',
+        message: `Carpeta raíz de Google Drive vinculada correctamente (ID: ${folderId}).`,
+        folderId,
+        folderUrl: `https://drive.google.com/drive/folders/${folderId}`
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: 'Pega un enlace o ID de carpeta de Google Drive válido, o conecta mediante OAuth 2.0.'
+    });
+  } catch (err) {
+    console.error('Error testing Google Drive:', err);
+    res.status(500).json({ error: 'Error al verificar la conexión con Google Drive' });
+  }
+});
+
+// List / Search files and folders in Google Drive
+app.get('/api/integrations/google-drive/files', authenticateToken, async (req, res) => {
+  const { folder_id, q, type } = req.query;
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const accessToken = await getValidGoogleDriveAccessToken(req.user.organizationId, cfg);
+
+    if (!accessToken) {
+      return res.json({
+        success: true,
+        oauthActive: false,
+        rootFolderId: cfg.rootFolderId || '',
+        rootFolderUrl: cfg.rootFolderUrl || '',
+        files: [],
+        message: 'Modo Carpeta por Link activo. Puedes pegar directamente el enlace de cualquier archivo o carpeta de Google Drive.'
+      });
+    }
+
+    const conditions = ['trashed = false'];
+    const targetParent = folder_id ? extractDriveIdFromInput(String(folder_id)) : '';
+    if (targetParent) {
+      conditions.push(`'${targetParent}' in parents`);
+    }
+    if (type === 'folders') {
+      conditions.push(`mimeType = 'application/vnd.google-apps.folder'`);
+    }
+    if (q && String(q).trim()) {
+      const safeQ = String(q).trim().replace(/'/g, "\\'");
+      conditions.push(`name contains '${safeQ}'`);
+    }
+
+    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,iconLink,modifiedTime)&orderBy=folder,modifiedTime desc&pageSize=40`;
+    const driveRes = await fetch(driveUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!driveRes.ok) {
+      const errText = await driveRes.text();
+      return res.status(driveRes.status).json({ error: `Google Drive API Error: ${errText.substring(0, 120)}` });
+    }
+
+    const data = await driveRes.json();
+    res.json({
+      success: true,
+      oauthActive: true,
+      files: data.files || []
+    });
+  } catch (err) {
+    console.error('Error listing Google Drive files:', err);
+    res.status(500).json({ error: 'Error al consultar archivos de Google Drive' });
+  }
+});
+
+// Ensure or create Drive folder for an existing execution instance on demand
+app.post('/api/integrations/google-drive/ensure-instance-folder', authenticateToken, async (req, res) => {
+  const { instanceId } = req.body;
+  if (!instanceId) return res.status(400).json({ error: 'instanceId es requerido' });
+  try {
+    const instRes = await pool.query('SELECT * FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
+    if (instRes.rows.length === 0) return res.status(404).json({ error: 'Ejecución no encontrada' });
+    const inst = instRes.rows[0];
+
+    const folderInfo = await ensureExecutionDriveFolder(req.user.organizationId, {
+      id: inst.id,
+      title: inst.title,
+      instanceName: inst.instance_name
+    }, inst.instance_name);
+
+    if (!folderInfo) {
+      return res.status(400).json({ error: 'Google Drive no está conectado en este Workspace. Actívalo en Integraciones > Google Drive.' });
+    }
+
+    res.json({
+      success: true,
+      driveFolderId: folderInfo.folderId,
+      driveFolderUrl: folderInfo.folderUrl,
+      folderName: folderInfo.folderName
+    });
+  } catch (err) {
+    console.error('Error ensuring instance Drive folder:', err);
+    res.status(500).json({ error: 'Error al crear/vincular carpeta en Google Drive' });
+  }
+});
+
+// Upload a step deliverable directly to the execution's Google Drive folder
+app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, async (req, res) => {
+  const { instanceId, stepId, fileName, mimeType, base64Data } = req.body;
+  if (!fileName || !base64Data) {
+    return res.status(400).json({ error: 'fileName y base64Data son requeridos' });
+  }
+  try {
+    let parentFolderId = null;
+    if (instanceId) {
+      const instRes = await pool.query('SELECT id, title, instance_name, drive_folder_id FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
+      if (instRes.rows.length > 0) {
+        const inst = instRes.rows[0];
+        parentFolderId = inst.drive_folder_id;
+        if (!parentFolderId) {
+          const ensured = await ensureExecutionDriveFolder(req.user.organizationId, {
+            id: inst.id,
+            title: inst.title,
+            instanceName: inst.instance_name
+          }, inst.instance_name);
+          if (ensured?.folderId) parentFolderId = ensured.folderId;
+        }
+      }
+    }
+
+    const result = await uploadBase64FileToDrive(req.user.organizationId, {
+      fileName,
+      mimeType,
+      base64Data,
+      parentFolderId
+    });
+
+    // If uploaded to Drive and instanceId + stepId were provided, persist webViewLink on the step
+    if (result.uploadedToDrive && instanceId && stepId) {
+      const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
+      if (instRes.rows.length > 0) {
+        const steps = typeof instRes.rows[0].steps === 'string' ? JSON.parse(instRes.rows[0].steps) : (instRes.rows[0].steps || []);
+        const updatedSteps = steps.map(s => {
+          if (String(s.id) === String(stepId)) {
+            return {
+              ...s,
+              uploadedFileName: result.fileName || fileName,
+              uploadedFileUrl: result.webViewLink,
+              driveFileId: result.fileId
+            };
+          }
+          return s;
+        });
+        await pool.query('UPDATE instances SET steps = $1 WHERE id = $2 AND organization_id = $3', [JSON.stringify(updatedSteps), instanceId, req.user.organizationId]);
+      }
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Error uploading step file to Google Drive:', err);
+    res.status(500).json({ error: err.message || 'Error al subir archivo a Google Drive' });
+  }
+});
+
+// Read text content of a Google Drive file / Google Doc / Google Sheet (for Copilot and UI)
+app.post('/api/integrations/google-drive/read-file', authenticateToken, async (req, res) => {
+  const { fileIdOrUrl } = req.body;
+  if (!fileIdOrUrl) return res.status(400).json({ error: 'Enlace o ID de Google Drive requerido.' });
+  try {
+    const docData = await fetchDriveFileTextContent(req.user.organizationId, fileIdOrUrl);
+    res.json({ success: true, ...docData });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Google Drive Automation Rules CRUD (Trigger execution when a file is uploaded to a Drive folder)
+app.get('/api/integrations/google-drive/rules', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, rule_name as "ruleName", drive_folder_id as "driveFolderId", drive_folder_name as "driveFolderName", file_type_filter as "fileTypeFilter", template_id as "templateId", active, status, title_pattern as "titlePattern", last_checked_at as "lastCheckedAt" FROM google_drive_rules WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.user.organizationId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching Drive rules:', err);
+    res.status(500).json({ error: 'Error al obtener reglas de Google Drive' });
+  }
+});
+
+app.post('/api/integrations/google-drive/rules', authenticateToken, async (req, res) => {
+  const { ruleName, driveFolderInput, driveFolderName, fileTypeFilter, templateId, titlePattern } = req.body;
+  const folderId = extractDriveIdFromInput(driveFolderInput);
+  if (!ruleName || !folderId || !templateId) {
+    return res.status(400).json({ error: 'Nombre de regla, Carpeta de Drive y Plantilla son obligatorios.' });
+  }
+  const status = req.user.role === 'gerente' ? 'pending_approval' : 'approved';
+  try {
+    const result = await pool.query(
+      `INSERT INTO google_drive_rules (organization_id, rule_name, drive_folder_id, drive_folder_name, file_type_filter, template_id, title_pattern, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, rule_name as "ruleName", drive_folder_id as "driveFolderId", drive_folder_name as "driveFolderName", file_type_filter as "fileTypeFilter", template_id as "templateId", active, status, title_pattern as "titlePattern"`,
+      [
+        req.user.organizationId,
+        ruleName,
+        folderId,
+        driveFolderName || `Carpeta (${folderId.substring(0, 8)})`,
+        fileTypeFilter || 'any',
+        templateId,
+        titlePattern || '{template_title} - {file_name}',
+        status
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating Google Drive rule:', err);
+    res.status(500).json({ error: 'Error al crear regla de Google Drive' });
+  }
+});
+
+app.delete('/api/integrations/google-drive/rules/:id', authenticateToken, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM google_drive_rules WHERE id = $1 AND organization_id = $2', [req.params.id, req.user.organizationId]);
+    res.json({ message: 'Regla de Google Drive eliminada con éxito' });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar regla de Google Drive' });
+  }
+});
+
+// Helper to launch an execution from a Google Drive file event
+const launchExecutionFromDriveFile = async (rule, fileInfo, reqOrigin = 'https://process-opal.vercel.app') => {
+  const templateRes = await pool.query(
+    "SELECT * FROM templates WHERE id = $1 AND organization_id = $2 AND (status = 'approved' OR status IS NULL)",
+    [rule.template_id, rule.organization_id]
+  );
+  if (templateRes.rows.length === 0) return null;
+
+  const template = templateRes.rows[0];
+  const startedAt = new Date().toISOString();
+  const instanceId = `inst_drive_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const fileName = fileInfo.name || 'Archivo_Drive';
+  const fileUrl = fileInfo.webViewLink || (fileInfo.id ? `https://drive.google.com/file/d/${fileInfo.id}/view` : null);
+
+  const rawSteps = Array.isArray(template.steps) ? template.steps : (typeof template.steps === 'string' ? JSON.parse(template.steps) : []);
+  const steps = rawSteps.map((step, idx) => {
+    const dueDate = new Date(startedAt);
+    dueDate.setDate(dueDate.getDate() + (step.durationDays || step.relativeOffsetDays || 1));
+    const attachToFirst = idx === 0 && fileUrl;
+    return {
+      ...step,
+      id: step.id || `step_run_${idx}_${Date.now()}`,
+      dueDate: dueDate.toISOString(),
+      isCompleted: false,
+      completedAt: null,
+      uploadedFileName: attachToFirst ? fileName : (step.uploadedFileName || null),
+      uploadedFileUrl: attachToFirst ? fileUrl : (step.uploadedFileUrl || null),
+      driveFileId: attachToFirst ? (fileInfo.id || null) : null
+    };
+  });
+
+  let instanceName = rule.title_pattern || '{template_title} - {file_name}';
+  instanceName = instanceName
+    .replace(/{file_name}/g, fileName.replace(/\.[^/.]+$/, ''))
+    .replace(/{template_title}/g, template.title || '')
+    .replace(/{folder_name}/g, rule.drive_folder_name || '');
+
+  const folderUrl = `https://drive.google.com/drive/folders/${rule.drive_folder_id}`;
+
+  await pool.query(
+    `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority, drive_folder_id, drive_folder_url, attachments)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Por hacer', 'Media', $12, $13, $14)`,
+    [
+      instanceId,
+      rule.organization_id,
+      template.id,
+      template.title,
+      instanceName,
+      startedAt,
+      template.companion_name || 'Lumi',
+      template.companion_avatar || '✨',
+      template.companion_greeting || '¡Nuevo archivo detectado en Google Drive!',
+      template.category || 'General',
+      JSON.stringify(steps),
+      rule.drive_folder_id,
+      folderUrl,
+      JSON.stringify(fileUrl ? [{ id: `att_${Date.now()}`, name: fileName, url: fileUrl, source: 'google_drive' }] : [])
+    ]
+  );
+
+  await notifyTeamOnExecutionLaunch(rule.organization_id, {
+    id: instanceId,
+    title: template.title,
+    instanceName,
+    steps
+  }, reqOrigin);
+
+  return { instanceId, instanceName, templateTitle: template.title };
+};
+
+// Poll / Sync active Google Drive rules to detect newly uploaded files in watched folders
+app.post('/api/integrations/google-drive/sync-rules', authenticateToken, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const accessToken = await getValidGoogleDriveAccessToken(orgId);
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Se requiere conexión OAuth 2.0 activa para escanear carpetas automáticamente, o usa el Webhook de Google Drive.' });
+    }
+
+    const rulesRes = await pool.query(
+      "SELECT * FROM google_drive_rules WHERE organization_id = $1 AND active = TRUE AND (status = 'approved' OR status IS NULL)",
+      [orgId]
+    );
+
+    const launched = [];
+    const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+
+    for (const rule of rulesRes.rows) {
+      const processedIds = Array.isArray(rule.processed_file_ids) ? rule.processed_file_ids : [];
+      const q = `'${rule.drive_folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
+      const filesRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,createdTime)&orderBy=createdTime desc&pageSize=10`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!filesRes.ok) continue;
+
+      const filesData = await filesRes.json();
+      const files = filesData.files || [];
+
+      // On first sync, if processed_file_ids is empty, only trigger on the newest file created in the last 24h and mark older ones as seen
+      const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+      let updatedProcessed = [...processedIds];
+
+      for (const f of files) {
+        if (updatedProcessed.includes(f.id)) continue;
+        const createdMs = f.createdTime ? new Date(f.createdTime).getTime() : Date.now();
+        if (processedIds.length === 0 && createdMs < cutoff) {
+          updatedProcessed.push(f.id);
+          continue;
+        }
+
+        const execInfo = await launchExecutionFromDriveFile(rule, f, reqOrigin);
+        if (execInfo) {
+          launched.push({ file: f.name, ...execInfo });
+          updatedProcessed.push(f.id);
+        }
+      }
+
+      await pool.query(
+        'UPDATE google_drive_rules SET processed_file_ids = $1, last_checked_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [JSON.stringify(updatedProcessed.slice(-200)), rule.id]
+      );
+    }
+
+    res.json({
+      success: true,
+      launchedCount: launched.length,
+      launched
+    });
+  } catch (err) {
+    console.error('Error syncing Google Drive rules:', err);
+    res.status(500).json({ error: 'Error al sincronizar reglas de Google Drive' });
+  }
+});
+
+// Webhook receiver for Google Drive file uploads (compatible with Google Apps Script, Make, Zapier, Suite, or Drive Push)
+app.post('/api/webhooks/google-drive', async (req, res) => {
+  const { folderId, folder_id, fileId, file_id, fileName, file_name, fileUrl, file_url, mimeType } = req.body;
+  const resolvedFolderId = extractDriveIdFromInput(folderId || folder_id || '');
+  if (!resolvedFolderId) {
+    return res.status(200).json({ message: 'Sin folderId para procesar.' });
+  }
+
+  try {
+    const rulesRes = await pool.query(
+      "SELECT * FROM google_drive_rules WHERE drive_folder_id = $1 AND active = TRUE AND (status = 'approved' OR status IS NULL)",
+      [resolvedFolderId]
+    );
+    if (rulesRes.rows.length === 0) {
+      return res.status(200).json({ message: 'No hay reglas activas para esta carpeta de Google Drive.' });
+    }
+
+    const launched = [];
+    const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    const fileInfo = {
+      id: fileId || file_id || `drv_${Date.now()}`,
+      name: fileName || file_name || 'Documento_Drive',
+      webViewLink: fileUrl || file_url || null,
+      mimeType: mimeType || 'application/octet-stream'
+    };
+
+    for (const rule of rulesRes.rows) {
+      const processedIds = Array.isArray(rule.processed_file_ids) ? rule.processed_file_ids : [];
+      if (fileInfo.id && processedIds.includes(fileInfo.id)) continue;
+
+      const execInfo = await launchExecutionFromDriveFile(rule, fileInfo, reqOrigin);
+      if (execInfo) {
+        launched.push(execInfo);
+        if (fileInfo.id) {
+          await pool.query(
+            'UPDATE google_drive_rules SET processed_file_ids = $1, last_checked_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [JSON.stringify([...processedIds, fileInfo.id].slice(-200)), rule.id]
+          );
+        }
+      }
+    }
+
+    res.status(200).json({ success: true, launchedCount: launched.length, launched });
+  } catch (err) {
+    console.error('Error processing Google Drive webhook:', err);
+    res.status(500).json({ error: 'Error procesando webhook de Google Drive' });
+  }
+});
+
 
 // Developer Token Management API
 app.get('/api/developer/tokens', authenticateToken, async (req, res) => {
@@ -4663,6 +5708,28 @@ const AGENT_TOOLS_DECLARATIONS = [
       },
       required: ['name', 'role', 'email']
     }
+  },
+  {
+    name: 'read_google_drive_document',
+    description: 'Lee el contenido de texto de un documento de Google Drive (Google Docs, Google Sheets, TXT, CSV o PDF) usando su enlace/URL, su ID de archivo de Drive o buscando por su nombre en el Google Drive conectado.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        fileIdOrUrlOrName: { type: 'STRING', description: 'Enlace completo de Google Drive / Google Docs / Sheets, ID del archivo en Drive, o nombre del documento a buscar' }
+      },
+      required: ['fileIdOrUrlOrName']
+    }
+  },
+  {
+    name: 'list_google_drive_files',
+    description: 'Lista o busca archivos y carpetas dentro del Google Drive conectado de la organización o de un cliente/proceso.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'Término opcional para buscar por nombre de archivo o carpeta en Google Drive' },
+        folderId: { type: 'STRING', description: 'ID o URL opcional de la carpeta de Drive donde listar archivos' }
+      }
+    }
   }
 ];
 
@@ -4772,13 +5839,16 @@ async function executeAgentTool(toolName, args, user) {
         status: inst.status,
         priority: inst.priority,
         clientName: inst.client_name,
+        driveFolderUrl: inst.drive_folder_url || null,
         totalSteps: rawSteps.length,
         completedSteps: rawSteps.filter(s => s.isCompleted).length,
         steps: rawSteps.map((s, idx) => ({
           stepNumber: idx + 1,
           title: s.title,
           isCompleted: !!s.isCompleted,
-          description: s.description
+          description: s.description,
+          uploadedFileName: s.uploadedFileName || null,
+          uploadedFileUrl: s.uploadedFileUrl || null
         }))
       };
     }
@@ -4904,6 +5974,12 @@ async function executeAgentTool(toolName, args, user) {
         ]
       );
 
+      const driveInfo = await ensureExecutionDriveFolder(orgId, {
+        id: instId,
+        title: template.title,
+        instanceName: args.instanceName
+      }, args.clientName || args.instanceName);
+
       // Notify team members (Encargados & Asignados) via Email
       await notifyTeamOnExecutionLaunch(orgId, {
         id: instId,
@@ -4920,7 +5996,8 @@ async function executeAgentTool(toolName, args, user) {
         templateTitle: template.title,
         status: initialStatus,
         priority,
-        stepsCount: stepsWithDates.length
+        stepsCount: stepsWithDates.length,
+        driveFolderUrl: driveInfo?.folderUrl || null
       };
     }
 
@@ -5020,6 +6097,101 @@ async function executeAgentTool(toolName, args, user) {
         role: args.role,
         email: args.email
       };
+    }
+
+    case 'read_google_drive_document': {
+      const target = String(args.fileIdOrUrlOrName || '').trim();
+      if (!target) return { success: false, error: 'Especifica el enlace, ID o nombre del documento de Google Drive.' };
+
+      try {
+        // First try directly if it looks like a URL or Drive ID
+        if (target.startsWith('http') || /^[a-zA-Z0-9_-]{18,}$/.test(target)) {
+          const doc = await fetchDriveFileTextContent(orgId, target);
+          return {
+            success: true,
+            fileId: doc.fileId,
+            fileName: doc.name,
+            webViewLink: doc.webViewLink,
+            content: doc.content
+          };
+        }
+
+        // Otherwise search by name in connected Google Drive
+        const accessToken = await getValidGoogleDriveAccessToken(orgId);
+        if (accessToken) {
+          const safeQ = target.replace(/'/g, "\\'");
+          const searchRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${safeQ}' and trashed = false`)}&fields=files(id,name,mimeType,webViewLink)&pageSize=1`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          if (searchRes.ok) {
+            const sData = await searchRes.json();
+            if (sData.files && sData.files.length > 0) {
+              const doc = await fetchDriveFileTextContent(orgId, sData.files[0].id);
+              return {
+                success: true,
+                fileId: doc.fileId,
+                fileName: doc.name,
+                webViewLink: doc.webViewLink,
+                content: doc.content
+              };
+            }
+          }
+        }
+
+        return {
+          success: false,
+          error: `No se encontró el archivo "${target}". Pega el enlace directo de Google Drive/Docs o conecta Google Drive con OAuth 2.0.`
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    case 'list_google_drive_files': {
+      try {
+        const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+        const cfg = orgRes.rows[0]?.google_drive_config || {};
+        const accessToken = await getValidGoogleDriveAccessToken(orgId, cfg);
+
+        if (!accessToken) {
+          return {
+            success: true,
+            oauthActive: false,
+            rootFolderId: cfg.rootFolderId || '',
+            rootFolderUrl: cfg.rootFolderUrl || '',
+            message: cfg.rootFolderUrl
+              ? `Carpeta raíz vinculada: ${cfg.rootFolderUrl}. Para listar archivos individuales automáticamente, activa OAuth 2.0 en Integraciones > Google Drive, o comparte el enlace directo del documento.`
+              : 'Google Drive aún no tiene OAuth 2.0 activo para búsqueda automática, pero puedes enviarme cualquier enlace de Google Docs/Sheets y lo leeré.'
+          };
+        }
+
+        const conditions = ['trashed = false'];
+        const parentId = extractDriveIdFromInput(args.folderId || cfg.rootFolderId || '');
+        if (parentId && !args.query) {
+          conditions.push(`'${parentId}' in parents`);
+        }
+        if (args.query) {
+          const safeQ = String(args.query).replace(/'/g, "\\'");
+          conditions.push(`name contains '${safeQ}'`);
+        }
+
+        const driveRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,modifiedTime)&orderBy=folder,modifiedTime desc&pageSize=20`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (!driveRes.ok) {
+          return { success: false, error: 'Error consultando archivos en Google Drive API.' };
+        }
+        const data = await driveRes.json();
+        return {
+          success: true,
+          count: (data.files || []).length,
+          files: data.files || []
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
     }
 
     default:
