@@ -108,6 +108,7 @@ const pool = new Pool({
 
     `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS step_id VARCHAR(100)`,
     `ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
+    `ALTER TABLE templates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
     `ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS title_pattern VARCHAR(255) DEFAULT '{template_title} - {task_name}'`,
     `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS kanban_columns JSONB DEFAULT '["Por hacer", "En curso", "Terminado"]'::jsonb`,
