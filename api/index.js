@@ -116,17 +116,22 @@ const pool = new Pool({
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`,
     `ALTER TABLE instances ADD COLUMN IF NOT EXISTS client_id VARCHAR(255)`,
     
+    `ALTER TABLE organizations ADD COLUMN IF NOT EXISTS domain VARCHAR(255)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS kinde_id VARCHAR(255)`,
     `CREATE INDEX IF NOT EXISTS idx_instances_org ON instances(organization_id)`,
     `CREATE INDEX IF NOT EXISTS idx_instances_client ON instances(client_id)`,
     `CREATE INDEX IF NOT EXISTS idx_team_members_org ON team_members(organization_id)`,
     `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_clients_org ON clients(organization_id)`,
     `CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_domain_unique ON organizations (LOWER(TRIM(domain))) WHERE domain IS NOT NULL AND TRIM(domain) <> ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users (LOWER(TRIM(email)))`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_email_lower_unique ON team_members (LOWER(TRIM(email))) WHERE email IS NOT NULL AND TRIM(email) <> ''`,
     
     `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
      SELECT 'admin_' || id, organization_id, name, 'Fundador/Admin', email, companion_avatar, 'Administración'
      FROM users 
-     WHERE role = 'admin' AND email NOT IN (SELECT email FROM team_members)`
+     WHERE role = 'admin' AND LOWER(TRIM(email)) NOT IN (SELECT LOWER(TRIM(email)) FROM team_members WHERE email IS NOT NULL)`
   ];
 
   for (const q of migrations) {
@@ -268,6 +273,81 @@ const isInstanceAssignedToUser = (instance, user, teamMemberId) => {
   });
 };
 
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
+  'yahoo.com', 'icloud.com', 'me.com', 'aol.com', 'protonmail.com', 'proton.me', 'msn.com'
+]);
+
+const extractCorporateDomain = (email) => {
+  if (!email || typeof email !== 'string' || !email.includes('@')) return null;
+  const domain = email.split('@')[1].toLowerCase().trim();
+  if (!domain || PUBLIC_EMAIL_DOMAINS.has(domain)) return null;
+  return domain;
+};
+
+const formatCompanyNameFromDomain = (domain, fallbackName) => {
+  if (!domain) return fallbackName || 'Organización de Usuario';
+  const base = domain.split('.')[0] || domain;
+  return base.charAt(0).toUpperCase() + base.slice(1);
+};
+
+// Resuelve o crea la organización garantizando 1 solo Workspace por dominio empresarial
+const resolveOrCreateOrganizationByEmail = async (email, fallbackOrgName) => {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const corporateDomain = extractCorporateDomain(cleanEmail);
+
+  // 1. Si el usuario ya existe en users o team_members, retornar su organización actual
+  if (cleanEmail) {
+    const uRes = await pool.query('SELECT organization_id FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [cleanEmail]);
+    if (uRes.rows.length > 0 && uRes.rows[0].organization_id) {
+      return uRes.rows[0].organization_id;
+    }
+    const tmRes = await pool.query('SELECT organization_id FROM team_members WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [cleanEmail]);
+    if (tmRes.rows.length > 0 && tmRes.rows[0].organization_id) {
+      return tmRes.rows[0].organization_id;
+    }
+  }
+
+  // 2. Si tiene dominio empresarial, buscar si ya existe un Workspace para ese dominio
+  if (corporateDomain) {
+    const domainOrgRes = await pool.query(
+      'SELECT id FROM organizations WHERE LOWER(TRIM(domain)) = $1 LIMIT 1',
+      [corporateDomain]
+    );
+    if (domainOrgRes.rows.length > 0) {
+      return domainOrgRes.rows[0].id;
+    }
+
+    // Buscar si algún otro usuario o miembro de equipo ya tiene ese mismo dominio empresarial
+    const existingPeerRes = await pool.query(
+      `SELECT organization_id FROM (
+         SELECT organization_id, email FROM users
+         UNION ALL
+         SELECT organization_id, email FROM team_members
+       ) peers
+       WHERE LOWER(SPLIT_PART(TRIM(email), '@', 2)) = $1
+       LIMIT 1`,
+      [corporateDomain]
+    );
+    if (existingPeerRes.rows.length > 0 && existingPeerRes.rows[0].organization_id) {
+      const existingOrgId = existingPeerRes.rows[0].organization_id;
+      await pool.query(
+        'UPDATE organizations SET domain = COALESCE(domain, $1) WHERE id = $2',
+        [corporateDomain, existingOrgId]
+      ).catch(() => {});
+      return existingOrgId;
+    }
+  }
+
+  // 3. No existe Workspace para este dominio empresarial: crear uno nuevo y registrar el dominio
+  const orgName = formatCompanyNameFromDomain(corporateDomain, fallbackOrgName);
+  const newOrgRes = await pool.query(
+    'INSERT INTO organizations (name, domain) VALUES ($1, $2) RETURNING id',
+    [orgName, corporateDomain]
+  );
+  return newOrgRes.rows[0].id;
+};
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -278,9 +358,13 @@ const authenticateToken = (req, res, next) => {
     if (err) return res.status(403).json({ error: 'Token inválido o expirado.' });
     req.user = user;
     try {
-      if (user && user.id) {
-        const dbUser = await pool.query('SELECT id, organization_id, name, email, role FROM users WHERE id = $1', [user.id]);
+      if (user && (user.id || user.email)) {
+        const dbUser = await pool.query(
+          'SELECT id, organization_id, name, email, role FROM users WHERE id = $1 OR ($2 <> \'\' AND LOWER(TRIM(email)) = LOWER(TRIM($2))) LIMIT 1',
+          [user.id || 0, user.email || '']
+        );
         if (dbUser.rows.length > 0) {
+          req.user.id = dbUser.rows[0].id;
           req.user.role = dbUser.rows[0].role || user.role;
           req.user.organizationId = dbUser.rows[0].organization_id || user.organizationId;
           req.user.name = dbUser.rows[0].name || user.name;
@@ -310,7 +394,7 @@ const authenticateApiKey = async (req, res, next) => {
   // 1. Soporte para SSO Unificado Kônsul y Clave Interna del Ecosistema
   const internalKey = process.env.INTERNAL_API_KEY || 'konsul_ecosystem_secret_key';
   if (apiKey === internalKey || apiKey.startsWith('konsul_sso_') || apiKey.startsWith('kp_live_sso_') || apiKey.startsWith('konsul_ecosystem_')) {
-    let orgId = 1;
+    let orgId = 3;
     const kindeUserEmail = (req.headers['x-user-email'] || req.query.user_email || '').trim();
     const kindeUserId = (req.headers['x-user-id'] || req.query.user_id || '').trim();
 
@@ -323,22 +407,26 @@ const authenticateApiKey = async (req, res, next) => {
         if (uRes.rows.length > 0) {
           orgId = uRes.rows[0].organization_id;
         } else if (kindeUserEmail) {
-          const tmRes = await pool.query(
-            "SELECT organization_id, email FROM team_members WHERE LOWER(TRIM(email)) = LOWER($1) LIMIT 1",
-            [kindeUserEmail]
+          // Unificar por dominio empresarial o miembro existente
+          orgId = await resolveOrCreateOrganizationByEmail(
+            kindeUserEmail,
+            `Organización de ${kindeUserEmail.split('@')[0]}`
           );
-          if (tmRes.rows.length > 0) {
-            orgId = tmRes.rows[0].organization_id;
-          } else {
-            // JIT (Just-In-Time Provisioning): auto-crear organización y usuario si entra por primera vez desde Suite
-            const orgName = `Organización de ${kindeUserEmail.split('@')[0]}`;
-            const orgRes = await pool.query('INSERT INTO organizations (name) VALUES ($1) RETURNING id', [orgName]);
-            orgId = orgRes.rows[0].id;
-            await pool.query(
-              'INSERT INTO users (organization_id, name, email, kinde_id, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO UPDATE SET kinde_id = EXCLUDED.kinde_id',
-              [orgId, kindeUserEmail.split('@')[0], kindeUserEmail, kindeUserId || null, 'sso_kinde_managed', 'owner']
-            );
-          }
+          await pool.query(
+            `INSERT INTO users (organization_id, name, email, kinde_id, password_hash, role)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (LOWER(TRIM(email))) DO UPDATE SET kinde_id = COALESCE(EXCLUDED.kinde_id, users.kinde_id)`,
+            [orgId, kindeUserEmail.split('@')[0], kindeUserEmail, kindeUserId || null, 'sso_kinde_managed', 'admin']
+          ).catch(async () => {
+            // Fallback si el conflicto es en constraint normal
+            const checkU = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER($1)', [kindeUserEmail]);
+            if (checkU.rows.length === 0) {
+              await pool.query(
+                'INSERT INTO users (organization_id, name, email, kinde_id, password_hash, role) VALUES ($1, $2, $3, $4, $5, $6)',
+                [orgId, kindeUserEmail.split('@')[0], kindeUserEmail, kindeUserId || null, 'sso_kinde_managed', 'admin']
+              );
+            }
+          });
         }
       } catch (jitErr) {
         console.error('Error en JIT Provisioning de usuario/org en Process:', jitErr);
@@ -516,35 +604,35 @@ app.get('/api/auth/kinde_callback', async (req, res) => {
       }
     }
     
+    const cleanEmail = profile.email.trim().toLowerCase();
     // Check if user exists in DB
-    let userResult = await pool.query('SELECT * FROM users WHERE email = $1', [profile.email]);
+    let userResult = await pool.query('SELECT * FROM users WHERE LOWER(TRIM(email)) = $1', [cleanEmail]);
     let user;
     
     if (userResult.rows.length === 0) {
-      // Create Organization
-      const orgName = `Organización de ${profile.given_name || 'Usuario'}`;
-      const orgRes = await pool.query(
-        'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
-        [orgName]
-      );
-      const orgId = orgRes.rows[0].id;
+      // Unificar por dominio empresarial: si ya existe un Workspace con este dominio (@empresa.com), unirlo a ese Workspace
+      const fallbackOrgName = `Organización de ${profile.given_name || 'Usuario'}`;
+      const orgId = await resolveOrCreateOrganizationByEmail(cleanEmail, fallbackOrgName);
 
       // Generar hash dummy porque la clave real la maneja Kinde
       const dummyHash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
-      const fullName = profile.given_name ? `${profile.given_name} ${profile.family_name || ''}`.trim() : profile.email.split('@')[0];
+      const fullName = profile.given_name ? `${profile.given_name} ${profile.family_name || ''}`.trim() : cleanEmail.split('@')[0];
       
       const newUser = await pool.query(
         'INSERT INTO users (organization_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [orgId, fullName, profile.email, dummyHash, 'admin']
+        [orgId, fullName, cleanEmail, dummyHash, 'admin']
       );
       user = newUser.rows[0];
 
-      // Insert into team_members
-      await pool.query(
-        `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
-         VALUES ($1, $2, $3, $4, $5, null, 'Administración')`,
-        ['admin_' + user.id, orgId, fullName, 'Fundador/Admin', profile.email]
-      );
+      // Insert into team_members if not already present
+      const tmCheck = await pool.query('SELECT id FROM team_members WHERE LOWER(TRIM(email)) = $1', [cleanEmail]);
+      if (tmCheck.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+           VALUES ($1, $2, $3, $4, $5, null, 'Administración')`,
+          ['admin_' + user.id, orgId, fullName, 'Fundador/Admin', cleanEmail]
+        );
+      }
     } else {
       user = userResult.rows[0];
     }
@@ -1588,17 +1676,54 @@ app.get('/api/team', authenticateToken, async (req, res) => {
 // 10. Create a team member
 app.post('/api/team', authenticateToken, async (req, res) => {
   const { id, name, role, email, avatar, assignedProcesses, department, managerId, geminiApiKey } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) {
+    return res.status(400).json({ error: 'El correo electrónico del miembro es obligatorio.' });
+  }
   try {
-    // 1. Create team member
+    // Validar que el correo no pertenezca ya a otro Workspace distinto
+    const existingOtherOrg = await pool.query(
+      `SELECT organization_id FROM (
+         SELECT organization_id, email FROM users
+         UNION ALL
+         SELECT organization_id, email FROM team_members
+       ) all_members
+       WHERE LOWER(TRIM(email)) = $1 AND organization_id <> $2
+       LIMIT 1`,
+      [cleanEmail, req.user.organizationId]
+    );
+    if (existingOtherOrg.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Este correo empresarial ya está registrado en otro Workspace. No se permite tener el mismo correo en más de un Workspace.'
+      });
+    }
+
+    // Validar que si es un dominio corporativo que ya tiene su propio Workspace distinto, no se mezcle
+    const memberDomain = extractCorporateDomain(cleanEmail);
+    if (memberDomain) {
+      const domainOrg = await pool.query(
+        'SELECT id FROM organizations WHERE LOWER(TRIM(domain)) = $1 AND id <> $2 LIMIT 1',
+        [memberDomain, req.user.organizationId]
+      );
+      if (domainOrg.rows.length > 0) {
+        return res.status(400).json({
+          error: `El dominio empresarial @${memberDomain} pertenece a otro Workspace exclusivo.`
+        });
+      }
+    }
+
+    // 1. Create or update team member in current organization
     await pool.query(
       `INSERT INTO team_members (id, organization_id, name, role, email, avatar, assigned_processes, department, manager_id, gemini_api_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (LOWER(TRIM(email))) WHERE email IS NOT NULL AND TRIM(email) <> ''
+       DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, department = EXCLUDED.department`,
       [
         id, 
         req.user.organizationId,
         name, 
         role, 
-        email, 
+        cleanEmail, 
         avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80', 
         JSON.stringify(assignedProcesses || []),
         department || '',
@@ -1608,7 +1733,7 @@ app.post('/api/team', authenticateToken, async (req, res) => {
     );
 
     // 2. Also register a user account with role 'guest' so they can log in
-    const userExist = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    const userExist = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = $1', [cleanEmail]);
     if (userExist.rows.length === 0) {
       const resetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenExpiry = Date.now() + 24 * 3600000; // 24 hours
@@ -1619,7 +1744,7 @@ app.post('/api/team', authenticateToken, async (req, res) => {
         [
           req.user.organizationId,
           name,
-          email,
+          cleanEmail,
           'INVITED_PENDING',
           'guest',
           resetToken,
