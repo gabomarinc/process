@@ -749,7 +749,7 @@ function App() {
           setGoogleDriveConfig(prev => ({
             ...prev,
             ...data.googleDrive,
-            clientId: '',
+            clientId: data.googleDrive.clientId || prev.clientId || '',
             clientSecret: ''
           }));
         }
@@ -1463,13 +1463,16 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          rootFolderInput: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderUrl: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderName: googleDriveConfig.rootFolderName,
+          autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
           autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
           autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
-          ...(googleDriveConfig.clientId ? { clientId: googleDriveConfig.clientId } : {}),
-          ...(googleDriveConfig.clientSecret ? { clientSecret: googleDriveConfig.clientSecret } : {})
+          ...(googleDriveConfig.clientId !== undefined ? { clientId: googleDriveConfig.clientId } : {}),
+          ...(googleDriveConfig.clientSecret ? { clientSecret: googleDriveConfig.clientSecret } : {}),
+          ...(googleDriveConfig.accessToken ? { accessToken: googleDriveConfig.accessToken } : {})
         })
       });
       const data = await res.json();
@@ -1478,8 +1481,9 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         setGoogleDriveConfig(prev => ({
           ...prev,
           ...data.googleDrive,
-          clientId: '',
-          clientSecret: ''
+          clientId: data.googleDrive.clientId || prev.clientId || '',
+          clientSecret: '',
+          accessToken: ''
         }));
       }
       showAlert('Configuración de Google Drive guardada con éxito para tu Workspace.', 'success');
@@ -1496,8 +1500,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            rootFolderInput: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
             rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
             rootFolderName: googleDriveConfig.rootFolderName,
+            autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
             autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
             autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
             ...(googleDriveConfig.clientId ? { clientId: googleDriveConfig.clientId } : {}),
@@ -1506,9 +1512,12 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         });
       }
 
-      const res = await fetch('/api/integrations/google-drive/oauth/url');
+      const clientIdParam = googleDriveConfig.clientId ? `?client_id=${encodeURIComponent(googleDriveConfig.clientId.trim())}` : '';
+      const res = await fetch(`/api/integrations/google-drive/oauth/url${clientIdParam}`);
       const data = await res.json();
       if (!res.ok) {
+        const inputEl = document.getElementById('gdrive-oauth-client-id');
+        if (inputEl) inputEl.focus();
         throw new Error(data.error || 'No se pudo iniciar la conexión OAuth con Google Drive.');
       }
       if (data.url) {
@@ -7319,10 +7328,10 @@ const handleDeleteMember = async (id) => {
                 <div>
                   <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Key size={18} style={{ color: '#2563EB' }} />
-                    Opción A: Conexión Completa con Google OAuth 2.0 (1 Clic)
+                    Opción A: Conexión Completa con Google OAuth 2.0 (API Oficial)
                   </h4>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Permite crear subcarpetas automáticas por Cliente y Ejecución, subir entregables directamente a Drive y sincronizar archivos nuevos.
+                    Permite crear subcarpetas físicamente en tu Google Drive por Cliente/Ejecución, subir entregables automáticamente y sincronizar archivos nuevos.
                   </p>
                 </div>
                 {googleDriveConfig.hasOAuthToken ? (
@@ -7360,51 +7369,86 @@ const handleDeleteMember = async (id) => {
                 )}
               </div>
 
-              {/* Optional Custom OAuth App Credentials per Workspace */}
-              <details style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#334155' }}>
-                  ⚙️ Avanzado: Usar credenciales OAuth propias de Google Cloud para este Workspace (Opcional)
+              {/* OAuth App Credentials per Workspace (auto-opened if no platform OAuth is set) */}
+              <details
+                open={!googleDriveConfig.hasOAuthToken && !googleDriveConfig.hasPlatformOAuth}
+                style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: '#F8FAFC', padding: '12px 16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}
+              >
+                <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>🔑 Credenciales OAuth de Google Cloud para este Workspace {!googleDriveConfig.hasPlatformOAuth && !googleDriveConfig.clientId ? '(Requerido para Opción A)' : '(Configurado)'}</span>
                 </summary>
+
+                <div style={{ marginTop: '10px', padding: '10px 12px', background: '#EFF6FF', borderRadius: '8px', border: '1px solid #BFDBFE', color: '#1E3A8A', fontSize: '0.76rem', lineHeight: 1.5 }}>
+                  <strong>¿Cómo obtener tu Client ID en 1 minuto?</strong>
+                  <ol style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    <li>Entra a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }}>Google Cloud Console &gt; Credenciales</a> (habilita <em>Google Drive API</em>).</li>
+                    <li>Crea una credencial <strong>ID de cliente de OAuth &gt; Aplicación web</strong> y pega la URI de redirección de abajo.</li>
+                    <li>Pega tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo y haz clic en <strong>Conectar con Google Drive</strong>.</li>
+                  </ol>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '12px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Google Client ID</label>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>Google Client ID *</label>
                     <input
+                      id="gdrive-oauth-client-id"
                       type="text"
                       className="form-input"
                       placeholder="123456-abc.apps.googleusercontent.com"
                       value={googleDriveConfig.clientId || ''}
                       onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, clientId: e.target.value }))}
-                      style={{ margin: 0, height: '38px', fontSize: '0.8rem' }}
+                      style={{ margin: 0, height: '38px', fontSize: '0.8rem', background: '#fff' }}
                     />
                   </div>
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Google Client Secret</label>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>
+                      Google Client Secret * {googleDriveConfig.hasClientSecret ? '(Ya guardado ✓)' : ''}
+                    </label>
                     <input
                       type="password"
                       className="form-input"
-                      placeholder="GOCSPX-..."
+                      placeholder={googleDriveConfig.hasClientSecret ? '•••••••••••• (Guardado)' : 'GOCSPX-...'}
                       value={googleDriveConfig.clientSecret || ''}
                       onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, clientSecret: e.target.value }))}
-                      style={{ margin: 0, height: '38px', fontSize: '0.8rem' }}
+                      style={{ margin: 0, height: '38px', fontSize: '0.8rem', background: '#fff' }}
                     />
                   </div>
                 </div>
-                <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748B' }}>
-                  URI de redirección autorizada en Google Cloud Console: <code>{window.location.origin}/api/integrations/google-drive/oauth/callback</code>
-                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '10px', padding: '8px 10px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                  <span style={{ fontSize: '0.73rem', color: '#475569', wordBreak: 'break-all' }}>
+                    <strong>URI de redirección autorizada:</strong> <code>{window.location.origin}/api/integrations/google-drive/oauth/callback</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/integrations/google-drive/oauth/callback`);
+                      showAlert('URI de redirección copiada al portapapeles', 'success');
+                    }}
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '0.72rem', borderRadius: '6px' }}
+                  >
+                    📋 Copiar URI
+                  </button>
+                </div>
               </details>
             </div>
 
             {/* 2. Root Folder Link/ID & Workspace Behavior */}
-            <form onSubmit={handleSaveGoogleDriveSettings} style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FolderOpen size={18} style={{ color: '#10B981' }} />
-                  Opción B: Carpeta Raíz de Google Drive (por Link o ID) y Automatización de Archivos
-                </h4>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Pega el enlace o ID de la carpeta raíz de Google Drive de tu empresa. Puedes usarla sola (modo directo por link) o combinada con OAuth 2.0 para que todas las subcarpetas de Clientes y Ejecuciones se creen dentro de ella.
-                </p>
+            <form onSubmit={handleSaveGoogleDriveSettings} style={{ border: '1px solid #A7F3D0', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FolderOpen size={18} style={{ color: '#10B981' }} />
+                    Opción B: Conectar Carpeta Raíz por Link o ID (¡Sin configurar Google Cloud!)
+                  </h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Pega directamente el link de cualquier carpeta de tu Google Drive y pulsa <strong>Guardar Configuración Drive</strong>. Funciona al instante sin Client ID para abrir carpetas desde las ejecuciones, vincular entregables y leer Google Docs/Sheets con Kônsul Copilot.
+                  </p>
+                </div>
+                <span style={{ background: '#ECFDF5', color: '#065F46', border: '1px solid #6EE7B7', fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', borderRadius: '999px' }}>
+                  ⚡ Listo en 5 segundos
+                </span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>

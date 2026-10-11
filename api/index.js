@@ -1646,10 +1646,14 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         rootFolderUrl: rawDriveConfig.rootFolderUrl || '',
         rootFolderName: rawDriveConfig.rootFolderName || '',
         autoCreateFolders: rawDriveConfig.autoCreateFolders !== false,
+        autoCreateClientFolders: rawDriveConfig.autoCreateFolders !== false,
         autoUploadStepFiles: rawDriveConfig.autoUploadStepFiles !== false,
         hasOAuthToken: !!(rawDriveConfig.accessToken || rawDriveConfig.refreshToken),
         connectedEmail: rawDriveConfig.connectedEmail || '',
-        clientId: rawDriveConfig.clientId || ''
+        email: rawDriveConfig.connectedEmail || '',
+        clientId: rawDriveConfig.clientId || '',
+        hasClientSecret: !!rawDriveConfig.clientSecret,
+        hasPlatformOAuth: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
       },
       googleDriveRules: driveRulesRes.rows,
       users: usersRes.rows,
@@ -3785,10 +3789,14 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderUrl: cfg.rootFolderUrl || '',
         rootFolderName: cfg.rootFolderName || '',
         autoCreateFolders: cfg.autoCreateFolders !== false,
+        autoCreateClientFolders: cfg.autoCreateFolders !== false,
         autoUploadStepFiles: cfg.autoUploadStepFiles !== false,
         hasOAuthToken: !!(cfg.accessToken || cfg.refreshToken),
         connectedEmail: cfg.connectedEmail || '',
-        clientId: cfg.clientId || ''
+        email: cfg.connectedEmail || '',
+        clientId: cfg.clientId || '',
+        hasClientSecret: !!cfg.clientSecret,
+        hasPlatformOAuth: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
       },
       rules: rulesRes.rows
     });
@@ -3801,8 +3809,11 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
 app.put('/api/organization/google-drive', authenticateToken, async (req, res) => {
   const {
     rootFolderInput,
+    rootFolderUrl,
+    rootFolderId,
     rootFolderName,
     autoCreateFolders,
+    autoCreateClientFolders,
     autoUploadStepFiles,
     accessToken,
     refreshToken,
@@ -3820,18 +3831,26 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       return res.json({ message: 'Google Drive desconectado.', googleDrive: { connected: false } });
     }
 
-    const extractedFolderId = rootFolderInput !== undefined
-      ? extractDriveIdFromInput(rootFolderInput)
+    const folderInputRaw = rootFolderInput !== undefined
+      ? rootFolderInput
+      : (rootFolderUrl !== undefined ? rootFolderUrl : rootFolderId);
+
+    const extractedFolderId = folderInputRaw !== undefined
+      ? extractDriveIdFromInput(folderInputRaw)
       : (prev.rootFolderId || '');
 
     const resolvedFolderUrl = extractedFolderId
-      ? (String(rootFolderInput || '').startsWith('http') ? rootFolderInput.trim() : `https://drive.google.com/drive/folders/${extractedFolderId}`)
-      : (prev.rootFolderUrl || '');
+      ? (String(folderInputRaw || '').startsWith('http') ? String(folderInputRaw).trim() : `https://drive.google.com/drive/folders/${extractedFolderId}`)
+      : '';
 
-    const nextAccessToken = accessToken !== undefined ? (accessToken.trim() || null) : (prev.accessToken || null);
-    const nextRefreshToken = refreshToken !== undefined ? (refreshToken.trim() || null) : (prev.refreshToken || null);
-    const nextClientId = clientId !== undefined ? (clientId.trim() || null) : (prev.clientId || null);
-    const nextClientSecret = clientSecret !== undefined ? (clientSecret.trim() || null) : (prev.clientSecret || null);
+    const resolvedAutoCreate = autoCreateFolders !== undefined
+      ? !!autoCreateFolders
+      : (autoCreateClientFolders !== undefined ? !!autoCreateClientFolders : (prev.autoCreateFolders !== false));
+
+    const nextAccessToken = (accessToken && accessToken.trim()) ? accessToken.trim() : (prev.accessToken || null);
+    const nextRefreshToken = (refreshToken && refreshToken.trim()) ? refreshToken.trim() : (prev.refreshToken || null);
+    const nextClientId = clientId !== undefined ? (clientId.trim() || prev.clientId || null) : (prev.clientId || null);
+    const nextClientSecret = (clientSecret && clientSecret.trim()) ? clientSecret.trim() : (prev.clientSecret || null);
 
     const isConnected = !!(extractedFolderId || nextAccessToken || nextRefreshToken);
 
@@ -3842,7 +3861,7 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       rootFolderId: extractedFolderId,
       rootFolderUrl: resolvedFolderUrl,
       rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
-      autoCreateFolders: autoCreateFolders !== undefined ? !!autoCreateFolders : (prev.autoCreateFolders !== false),
+      autoCreateFolders: resolvedAutoCreate,
       autoUploadStepFiles: autoUploadStepFiles !== undefined ? !!autoUploadStepFiles : (prev.autoUploadStepFiles !== false),
       accessToken: nextAccessToken,
       refreshToken: nextRefreshToken,
@@ -3864,10 +3883,14 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderUrl: updated.rootFolderUrl,
         rootFolderName: updated.rootFolderName,
         autoCreateFolders: updated.autoCreateFolders,
+        autoCreateClientFolders: updated.autoCreateFolders,
         autoUploadStepFiles: updated.autoUploadStepFiles,
         hasOAuthToken: !!(updated.accessToken || updated.refreshToken),
         connectedEmail: updated.connectedEmail || '',
-        clientId: updated.clientId || ''
+        email: updated.connectedEmail || '',
+        clientId: updated.clientId || '',
+        hasClientSecret: !!updated.clientSecret,
+        hasPlatformOAuth: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
       }
     });
   } catch (err) {
