@@ -47,7 +47,7 @@ export const MatrixModal = ({
             const rawAssigned = Array.isArray(s.assignedTo)
               ? s.assignedTo.map(String)
               : (s.assignedTo && s.assignedTo !== 'Unassigned' ? [String(s.assignedTo)] : []);
-            const stepLead = s.leadId ? String(s.leadId) : (rawAssigned[0] || '');
+            const stepLead = s.leadId && s.leadId !== 'Unassigned' ? String(s.leadId) : '';
             initial[idx] = Array.from(new Set([...(stepLead ? [stepLead] : []), ...rawAssigned]));
             initialLeads[idx] = stepLead;
           } else {
@@ -95,12 +95,10 @@ export const MatrixModal = ({
 
     // Build the updated steps array
     const updatedSteps = selectedTemplate.steps.map((s, idx) => {
-      const assigned = assignments[idx] || [];
-      let leadId = leads[idx] || '';
-      if (leadId && !assigned.includes(String(leadId))) {
-        leadId = assigned[0] || '';
-      } else if (!leadId && assigned.length > 0) {
-        leadId = assigned[0];
+      const assigned = [...(assignments[idx] || [])];
+      const leadId = leads[idx] ? String(leads[idx]) : '';
+      if (leadId && !assigned.includes(leadId)) {
+        assigned.push(leadId);
       }
       return {
         ...s,
@@ -166,7 +164,7 @@ export const MatrixModal = ({
           </h2>
           <p className="matrix-wizard-description">
             {step === 1 && "Selecciona la plantilla de procesos para configurar."}
-            {step === 2 && "Asigna uno o múltiples responsables para cada uno de los pasos del proceso."}
+            {step === 2 && "Asigna múltiples colaboradores a cada paso y marca libremente quién será el 👑 Encargado Principal."}
             {step === 3 && "Verifica la asignación matricial antes de guardar los cambios."}
           </p>
         </div>
@@ -220,9 +218,8 @@ export const MatrixModal = ({
                     const currentLeadId = leads[idx] || '';
                     
                     // Render current selection text
-                    const selectedNames = teamMembers
-                      .filter(m => stepAssignedIds.includes(String(m.id)))
-                      .map(m => m.name);
+                    const selectedMembers = teamMembers.filter(m => stepAssignedIds.includes(String(m.id)));
+                    const selectedNames = selectedMembers.map(m => m.name);
                     
                     const triggerText = selectedNames.length > 0
                       ? selectedNames.join(', ')
@@ -239,7 +236,7 @@ export const MatrixModal = ({
                         
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                           <div className="matrix-form-group" style={{ margin: 0 }}>
-                            <label className="matrix-form-label">👑 Encargado del Paso</label>
+                            <label className="matrix-form-label">👑 Encargado Principal</label>
                             <select
                               value={currentLeadId}
                               onChange={(e) => {
@@ -250,7 +247,7 @@ export const MatrixModal = ({
                                     const current = prev[idx] || [];
                                     return {
                                       ...prev,
-                                      [idx]: Array.from(new Set([String(newLead), ...current]))
+                                      [idx]: Array.from(new Set([...current, String(newLead)]))
                                     };
                                   });
                                 }
@@ -258,7 +255,7 @@ export const MatrixModal = ({
                               className="matrix-form-input matrix-select-custom"
                               style={{ height: '38px', padding: '0 0.65rem', fontSize: '0.82rem' }}
                             >
-                              <option value="">-- Sin encargado --</option>
+                              <option value="">-- Elegir Encargado Principal --</option>
                               {teamMembers.map(m => (
                                 <option key={m.id} value={String(m.id)}>
                                   {m.name} ({m.role})
@@ -268,7 +265,7 @@ export const MatrixModal = ({
                           </div>
 
                           <div className="matrix-form-group" style={{ margin: 0 }}>
-                            <label className="matrix-form-label">👥 Asignados (Pueden ser varios)</label>
+                            <label className="matrix-form-label">👥 Colaboradores Asignados (Varios)</label>
                             <div className="matrix-multiselect-dropdown" ref={isDropdownOpen ? dropdownRef : null}>
                               <button
                                 type="button"
@@ -291,39 +288,59 @@ export const MatrixModal = ({
                                       <div
                                         key={member.id}
                                         className="matrix-multiselect-option"
+                                        style={{ justifyContent: 'space-between' }}
                                         onClick={() => {
                                           setAssignments(prev => {
                                             const current = prev[idx] || [];
                                             const updated = isChecked
                                               ? current.filter(id => id !== String(member.id))
                                               : [...current, String(member.id)];
-                                            setLeads(prevLeads => {
-                                              const curLead = prevLeads[idx] || '';
-                                              if (!isChecked && !curLead) {
-                                                return { ...prevLeads, [idx]: String(member.id) };
-                                              }
-                                              if (isChecked && String(curLead) === String(member.id)) {
-                                                return { ...prevLeads, [idx]: updated[0] || '' };
-                                              }
-                                              return prevLeads;
-                                            });
+                                            if (isChecked && String(leads[idx]) === String(member.id)) {
+                                              setLeads(prevLeads => ({ ...prevLeads, [idx]: '' }));
+                                            }
                                             return { ...prev, [idx]: updated };
                                           });
                                         }}
                                       >
-                                        {isChecked ? (
-                                          <CheckSquare size={16} style={{ color: 'var(--color-primary)' }} />
-                                        ) : (
-                                          <Square size={16} style={{ color: '#cbd5e1' }} />
-                                        )}
-                                        <span style={{ flex: 1 }}>
-                                          {member.name} <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({member.role})</span>
-                                        </span>
-                                        {isLead && (
-                                          <span style={{ fontSize: '0.65rem', background: '#CCFBF1', color: '#0F766E', padding: '1px 6px', borderRadius: '999px', fontWeight: 700 }}>
-                                            👑 Encargado
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                                          {isChecked ? (
+                                            <CheckSquare size={16} style={{ color: 'var(--color-primary)' }} />
+                                          ) : (
+                                            <Square size={16} style={{ color: '#cbd5e1' }} />
+                                          )}
+                                          <span>
+                                            {member.name} <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({member.role})</span>
                                           </span>
-                                        )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (isLead) {
+                                              setLeads(prevLeads => ({ ...prevLeads, [idx]: '' }));
+                                            } else {
+                                              setLeads(prevLeads => ({ ...prevLeads, [idx]: String(member.id) }));
+                                              if (!isChecked) {
+                                                setAssignments(prev => ({
+                                                  ...prev,
+                                                  [idx]: [...(prev[idx] || []), String(member.id)]
+                                                }));
+                                              }
+                                            }
+                                          }}
+                                          style={{
+                                            fontSize: '0.66rem',
+                                            background: isLead ? '#0D9488' : '#F1F5F9',
+                                            color: isLead ? '#FFFFFF' : '#475569',
+                                            border: isLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                            padding: '2px 7px',
+                                            borderRadius: '999px',
+                                            fontWeight: 700,
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          {isLead ? '👑 Principal' : '👑 Hacer Principal'}
+                                        </button>
                                       </div>
                                     );
                                   })}
@@ -337,6 +354,52 @@ export const MatrixModal = ({
                             </div>
                           </div>
                         </div>
+
+                        {/* Interactive chips below so user can switch Principal in 1 click */}
+                        {selectedMembers.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                            {selectedMembers.map(m => {
+                              const isLead = String(currentLeadId) === String(m.id);
+                              return (
+                                <span
+                                  key={m.id}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    fontSize: '0.73rem',
+                                    padding: '2px 8px',
+                                    borderRadius: '999px',
+                                    background: isLead ? '#CCFBF1' : '#F1F5F9',
+                                    color: isLead ? '#0F766E' : '#334155',
+                                    border: isLead ? '1px solid #0D9488' : '1px solid #E2E8F0',
+                                    fontWeight: isLead ? 700 : 600
+                                  }}
+                                >
+                                  <span>{isLead ? `👑 Principal: ${m.name}` : `👤 ${m.name}`}</span>
+                                  {!isLead && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setLeads(prev => ({ ...prev, [idx]: String(m.id) }))}
+                                      style={{
+                                        background: '#FFFFFF',
+                                        border: '1px solid #CBD5E1',
+                                        borderRadius: '999px',
+                                        padding: '1px 6px',
+                                        fontSize: '0.65rem',
+                                        fontWeight: 700,
+                                        color: '#0F766E',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      👑 Hacer Principal
+                                    </button>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -359,7 +422,7 @@ export const MatrixModal = ({
                   
                   {(selectedTemplate.steps || []).map((stepItem, idx) => {
                     const stepAssignedIds = assignments[idx] || [];
-                    const currentLeadId = leads[idx] || stepAssignedIds[0] || '';
+                    const currentLeadId = leads[idx] || '';
                     const leadMember = teamMembers.find(m => String(m.id) === String(currentLeadId));
                     const assignedMembers = teamMembers.filter(m => stepAssignedIds.includes(String(m.id)));
 

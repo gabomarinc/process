@@ -806,12 +806,12 @@ function App() {
     if (!inst) return;
     const updatedSteps = inst.steps.map(s => {
       if (s.id !== stepId) return s;
-      const list = Array.isArray(assignedTo) ? assignedTo.map(String) : (assignedTo ? [String(assignedTo)] : []);
+      let list = Array.isArray(assignedTo) ? assignedTo.map(String) : (assignedTo ? [String(assignedTo)] : []);
       let nextLead = leadId !== undefined ? String(leadId) : (s.leadId ? String(s.leadId) : '');
-      if (nextLead && !list.includes(nextLead)) {
-        nextLead = list[0] || '';
-      } else if (!nextLead && list.length > 0) {
-        nextLead = list[0];
+      if (leadId !== undefined && nextLead && !list.includes(nextLead)) {
+        list = Array.from(new Set([nextLead, ...list]));
+      } else if (leadId === undefined && nextLead && !list.includes(nextLead)) {
+        nextLead = '';
       }
       return { ...s, assignedTo: list, leadId: nextLead };
     });
@@ -1094,7 +1094,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
 
     if (assignedIds.length > 0) {
       const assignees = teamMembers.filter(m => assignedIds.includes(String(m.id)));
-      const effectiveLeadId = activeStep.leadId ? String(activeStep.leadId) : assignedIds[0];
+      const effectiveLeadId = activeStep.leadId ? String(activeStep.leadId) : '';
       const leadMember = teamMembers.find(m => String(m.id) === effectiveLeadId);
 
       if (assignees.length > 0) {

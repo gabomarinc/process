@@ -277,8 +277,6 @@ const isInstanceAssignedToUser = (instance, user, teamMemberId) => {
 const getStepLeadId = (step) => {
   if (!step) return '';
   if (step.leadId && step.leadId !== 'Unassigned') return String(step.leadId);
-  if (Array.isArray(step.assignedTo) && step.assignedTo.length > 0) return String(step.assignedTo[0]);
-  if (typeof step.assignedTo === 'string' && step.assignedTo && step.assignedTo !== 'Unassigned') return String(step.assignedTo);
   return '';
 };
 

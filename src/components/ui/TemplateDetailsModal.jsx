@@ -53,12 +53,10 @@ export const TemplateDetailsModal = ({
       const initialLeads = {};
       (activeTemplate.steps || []).forEach((s, i) => {
         if (!s) return;
-        if (s.leadId) {
+        if (s.leadId && s.leadId !== 'Unassigned') {
           initialLeads[i] = String(s.leadId);
-        } else if (Array.isArray(s.assignedTo) && s.assignedTo.length > 0) {
-          initialLeads[i] = String(s.assignedTo[0]);
-        } else if (s.assignedTo && s.assignedTo !== 'Unassigned') {
-          initialLeads[i] = String(s.assignedTo);
+        } else {
+          initialLeads[i] = '';
         }
       });
       setDraftLeads(initialLeads);
@@ -186,12 +184,10 @@ export const TemplateDetailsModal = ({
                 const initialLeads = {};
                 (activeTemplate.steps || []).forEach((s, i) => {
                   if (!s) return;
-                  if (s.leadId) {
+                  if (s.leadId && s.leadId !== 'Unassigned') {
                     initialLeads[i] = String(s.leadId);
-                  } else if (Array.isArray(s.assignedTo) && s.assignedTo.length > 0) {
-                    initialLeads[i] = String(s.assignedTo[0]);
-                  } else if (s.assignedTo && s.assignedTo !== 'Unassigned') {
-                    initialLeads[i] = String(s.assignedTo);
+                  } else {
+                    initialLeads[i] = '';
                   }
                 });
                 setDraftLeads(initialLeads);
@@ -271,23 +267,17 @@ export const TemplateDetailsModal = ({
                             <div className="tdm-form-group" style={{ background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                               <div style={{ marginBottom: '0.75rem' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
-                                  👑 Encargado Principal del Paso (1 Responsable Líder)
+                                  👑 Encargado Principal del Paso (Elige libremente quién lidera este paso)
                                 </label>
                                 <select
-                                  value={
-                                    editingStepData.leadId
-                                      ? String(editingStepData.leadId)
-                                      : (Array.isArray(editingStepData.assignedTo) && editingStepData.assignedTo.length > 0
-                                          ? String(editingStepData.assignedTo[0])
-                                          : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? String(editingStepData.assignedTo) : ''))
-                                  }
+                                  value={editingStepData.leadId ? String(editingStepData.leadId) : ''}
                                   onChange={(e) => {
                                     const newLeadId = e.target.value;
                                     const currentAssigned = Array.isArray(editingStepData.assignedTo)
                                       ? editingStepData.assignedTo.map(String)
                                       : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
                                     const updatedAssigned = newLeadId && !currentAssigned.includes(String(newLeadId))
-                                      ? [String(newLeadId), ...currentAssigned]
+                                      ? [...currentAssigned, String(newLeadId)]
                                       : currentAssigned;
                                     setEditingStepData({
                                       ...editingStepData,
@@ -297,7 +287,7 @@ export const TemplateDetailsModal = ({
                                   }}
                                   style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '0.45rem 0.65rem', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}
                                 >
-                                  <option value="">-- Seleccionar Encargado del Paso --</option>
+                                  <option value="">-- Seleccionar Encargado Principal --</option>
                                   {teamMembers.map(m => (
                                     <option key={m.id} value={String(m.id)}>
                                       {m.name} ({m.role}{m.department ? ` · ${m.department}` : ''})
@@ -307,43 +297,40 @@ export const TemplateDetailsModal = ({
                               </div>
 
                               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
-                                <span>👥 Colaboradores Asignados al Paso (Puedes seleccionar varios)</span>
+                                <span>👥 Colaboradores Asignados (Marca varios y haz clic en "👑 Elegir como Principal" en quien quieras)</span>
                                 <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#0D9488' }}>
                                   {(() => {
                                     const list = Array.isArray(editingStepData.assignedTo)
                                       ? editingStepData.assignedTo.map(String)
                                       : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
-                                    return `${list.length} seleccionado${list.length !== 1 ? 's' : ''}`;
+                                    return `${list.length} asignado${list.length !== 1 ? 's' : ''}`;
                                   })()}
                                 </span>
                               </label>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '8px', maxHeight: '170px', overflowY: 'auto', background: '#FFFFFF' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '8px', maxHeight: '190px', overflowY: 'auto', background: '#FFFFFF' }}>
                                 {teamMembers.map(m => {
                                   const currentAssigned = Array.isArray(editingStepData.assignedTo)
                                     ? editingStepData.assignedTo.map(String)
                                     : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
-                                  const effectiveLeadId = editingStepData.leadId
-                                    ? String(editingStepData.leadId)
-                                    : (currentAssigned.length > 0 ? String(currentAssigned[0]) : '');
-                                  const isLead = effectiveLeadId === String(m.id);
+                                  const explicitLeadId = editingStepData.leadId ? String(editingStepData.leadId) : '';
+                                  const isLead = explicitLeadId === String(m.id);
                                   const isChecked = currentAssigned.includes(String(m.id)) || isLead;
 
                                   return (
-                                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 6px', borderRadius: '6px', background: isLead ? '#F0FDFA' : (isChecked ? '#F8FAFC' : 'transparent'), border: isLead ? '1px solid #99F6E4' : '1px solid transparent' }}>
+                                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: '8px', background: isLead ? '#F0FDFA' : (isChecked ? '#F8FAFC' : 'transparent'), border: isLead ? '1px solid #0D9488' : (isChecked ? '1px solid #E2E8F0' : '1px solid transparent') }}>
                                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', margin: 0, flex: 1 }}>
                                         <input
                                           type="checkbox"
                                           checked={isChecked}
                                           onChange={(e) => {
                                             let updatedList;
-                                            let nextLeadId = effectiveLeadId;
+                                            let nextLeadId = explicitLeadId;
                                             if (e.target.checked) {
                                               updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
-                                              if (!nextLeadId) nextLeadId = String(m.id);
                                             } else {
                                               updatedList = currentAssigned.filter(id => id !== String(m.id));
                                               if (nextLeadId === String(m.id)) {
-                                                nextLeadId = updatedList.length > 0 ? updatedList[0] : '';
+                                                nextLeadId = '';
                                               }
                                             }
                                             setEditingStepData({
@@ -358,20 +345,37 @@ export const TemplateDetailsModal = ({
                                           {m.name} <span style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 400 }}>({m.role})</span>
                                         </span>
                                       </label>
-                                      {isLead ? (
-                                        <span style={{ fontSize: '0.7rem', fontWeight: 700, background: '#CCFBF1', color: '#0F766E', padding: '2px 8px', borderRadius: '999px' }}>
-                                          👑 Encargado
-                                        </span>
-                                      ) : isChecked ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setEditingStepData({ ...editingStepData, leadId: String(m.id) })}
-                                          style={{ fontSize: '0.68rem', fontWeight: 600, background: '#F1F5F9', color: '#475569', border: '1px solid #CBD5E1', padding: '2px 7px', borderRadius: '999px', cursor: 'pointer' }}
-                                          title="Designar como Encargado Principal de este paso"
-                                        >
-                                          Hacer Encargado
-                                        </button>
-                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (isLead) {
+                                            // Unmark as principal
+                                            setEditingStepData({ ...editingStepData, leadId: '' });
+                                          } else {
+                                            // Mark as principal and ensure they are in assignedTo
+                                            const updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
+                                            setEditingStepData({
+                                              ...editingStepData,
+                                              leadId: String(m.id),
+                                              assignedTo: updatedList
+                                            });
+                                          }
+                                        }}
+                                        style={{
+                                          fontSize: '0.7rem',
+                                          fontWeight: 700,
+                                          background: isLead ? '#0D9488' : '#FFFFFF',
+                                          color: isLead ? '#FFFFFF' : '#475569',
+                                          border: isLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                          padding: '3px 9px',
+                                          borderRadius: '999px',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease'
+                                        }}
+                                        title={isLead ? 'Clic para quitar como Encargado Principal' : 'Marcar como Encargado Principal de este paso'}
+                                      >
+                                        {isLead ? '👑 Encargado Principal' : '👑 Elegir como Principal'}
+                                      </button>
                                     </div>
                                   );
                                 })}
@@ -591,31 +595,71 @@ export const TemplateDetailsModal = ({
                                 <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
                               </div>
                               {(step.assignedTo || step.leadId) && (
-                                <div className="tdm-assignee-tag" style={{ flexWrap: 'wrap', gap: '8px' }}>
+                                <div className="tdm-assignee-tag" style={{ flexWrap: 'wrap', gap: '8px', width: '100%' }}>
                                   {(() => {
                                     const rawAssigned = Array.isArray(step.assignedTo)
                                       ? step.assignedTo.map(String)
                                       : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
-                                    const effectiveLeadId = step.leadId
-                                      ? String(step.leadId)
-                                      : (rawAssigned.length > 0 ? rawAssigned[0] : '');
-                                    const allIds = Array.from(new Set([...(effectiveLeadId ? [effectiveLeadId] : []), ...rawAssigned]));
+                                    const explicitLeadId = step.leadId && step.leadId !== 'Unassigned' ? String(step.leadId) : '';
+                                    const allIds = Array.from(new Set([...(explicitLeadId ? [explicitLeadId] : []), ...rawAssigned]));
                                     const members = teamMembers.filter(m => allIds.includes(String(m.id)));
-                                    const leadMember = teamMembers.find(m => String(m.id) === effectiveLeadId);
-                                    const otherMembers = members.filter(m => String(m.id) !== effectiveLeadId);
 
                                     if (members.length === 0) return null;
 
                                     return (
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
-                                        {leadMember && (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#CCFBF1', color: '#0F766E', padding: '2px 9px', borderRadius: '999px', fontSize: '0.76rem', fontWeight: 700, border: '1px solid #99F6E4' }}>
-                                            👑 Encargado: {leadMember.name}
-                                          </span>
-                                        )}
-                                        {otherMembers.length > 0 && (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#F1F5F9', color: '#334155', padding: '2px 9px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600 }}>
-                                            👥 Asignados: {otherMembers.map(m => m.name).join(', ')}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                                          {members.map(m => {
+                                            const isLead = explicitLeadId === String(m.id);
+                                            return (
+                                              <span
+                                                key={m.id}
+                                                style={{
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  gap: '6px',
+                                                  background: isLead ? '#CCFBF1' : '#F1F5F9',
+                                                  color: isLead ? '#0F766E' : '#334155',
+                                                  padding: '3px 10px',
+                                                  borderRadius: '999px',
+                                                  fontSize: '0.76rem',
+                                                  fontWeight: isLead ? 700 : 600,
+                                                  border: isLead ? '1px solid #0D9488' : '1px solid #E2E8F0'
+                                                }}
+                                              >
+                                                <span>{isLead ? `👑 Encargado: ${m.name}` : `👤 ${m.name}`}</span>
+                                                {!isLead && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      handleUpdateStep(activeTemplate.id, idx, {
+                                                        ...step,
+                                                        leadId: String(m.id),
+                                                        assignedTo: allIds
+                                                      });
+                                                    }}
+                                                    style={{
+                                                      background: '#FFFFFF',
+                                                      border: '1px solid #CBD5E1',
+                                                      borderRadius: '999px',
+                                                      padding: '1px 7px',
+                                                      fontSize: '0.68rem',
+                                                      fontWeight: 700,
+                                                      color: '#0F766E',
+                                                      cursor: 'pointer'
+                                                    }}
+                                                    title={`Cambiar a ${m.name} como Encargado Principal de este paso`}
+                                                  >
+                                                    👑 Hacer Principal
+                                                  </button>
+                                                )}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                        {!explicitLeadId && members.length > 0 && (
+                                          <span style={{ fontSize: '0.72rem', color: '#B45309', fontWeight: 600 }}>
+                                            💡 Haz clic en "👑 Hacer Principal" sobre quien quieras como Encargado Principal de este paso.
                                           </span>
                                         )}
                                       </div>
@@ -657,7 +701,7 @@ export const TemplateDetailsModal = ({
             ) : (
               <div>
                 <p className="tdm-team-instruction">
-                  Activa o desactiva con el toggle cada paso donde el miembro interviene (pueden asignarse <strong>varios miembros al mismo paso</strong>) y define quién es el <strong>👑 Encargado Principal</strong> de cada paso.
+                  Activa o desactiva con el toggle cada paso donde el miembro interviene (pueden asignarse <strong>varios miembros al mismo paso</strong>) y marca libremente con el botón <strong>"👑 Elegir como Principal"</strong> quién deseas que sea el Encargado Principal de cada paso.
                 </p>
 
                 {teamMembers.length === 0 ? (
@@ -687,7 +731,7 @@ export const TemplateDetailsModal = ({
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 {leadCount > 0 && (
                                   <span className="tdm-badge" style={{ background: '#CCFBF1', color: '#0F766E' }}>
-                                    👑 Encargado en {leadCount}
+                                    👑 Principal en {leadCount}
                                   </span>
                                 )}
                                 {isInvolved && (
@@ -720,7 +764,7 @@ export const TemplateDetailsModal = ({
                                     (draftAssignment[m.id] || []).includes(sIdx)
                                   );
                                   const currentStepLeadId = draftLeads[sIdx] ? String(draftLeads[sIdx]) : '';
-                                  const isStepLead = isOn && currentStepLeadId === String(member.id);
+                                  const isStepLead = currentStepLeadId === String(member.id);
                                   const leadMemberObj = teamMembers.find(m => String(m.id) === currentStepLeadId);
 
                                   return (
@@ -731,40 +775,52 @@ export const TemplateDetailsModal = ({
                                     >
                                       <span className="tdm-step-row-title" style={{ flex: 1, minWidth: '200px' }}>
                                         <strong>Paso {sIdx + 1}:</strong> {step.title}
-                                        {otherAssignees.length > 0 && (
+                                        {(otherAssignees.length > 0 || leadMemberObj) && (
                                           <em style={{ display: 'block', fontSize: '0.73rem', color: '#64748B', fontStyle: 'normal', marginTop: '2px' }}>
-                                            👥 También asignado a: {otherAssignees.map(o => o.name).join(', ')}
-                                            {leadMemberObj && leadMemberObj.id !== member.id ? ` (👑 Encargado: ${leadMemberObj.name})` : ''}
+                                            {leadMemberObj ? `👑 Principal actual: ${leadMemberObj.name}` : '⚠️ Sin encargado principal aún'}
+                                            {otherAssignees.length > 0 ? ` · 👥 Asignados: ${otherAssignees.map(o => o.name).join(', ')}` : ''}
                                           </em>
                                         )}
                                       </span>
 
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        {isOn && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (isStepLead) {
+                                              setDraftLeads(prev => ({
+                                                ...prev,
+                                                [sIdx]: ''
+                                              }));
+                                            } else {
+                                              // Mark this member as Principal AND ensure they are toggled ON in draftAssignment
                                               setDraftLeads(prev => ({
                                                 ...prev,
                                                 [sIdx]: String(member.id)
                                               }));
-                                            }}
-                                            style={{
-                                              fontSize: '0.72rem',
-                                              fontWeight: 700,
-                                              padding: '4px 10px',
-                                              borderRadius: '999px',
-                                              cursor: 'pointer',
-                                              border: isStepLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
-                                              background: isStepLead ? '#CCFBF1' : '#FFFFFF',
-                                              color: isStepLead ? '#0F766E' : '#475569',
-                                              transition: 'all 0.15s ease'
-                                            }}
-                                            title={isStepLead ? 'Este colaborador es el Encargado Principal del paso' : 'Marcar como Encargado Principal del paso'}
-                                          >
-                                            {isStepLead ? '👑 Encargado' : 'Hacer Encargado'}
-                                          </button>
-                                        )}
+                                              if (!isOn) {
+                                                setDraftAssignment(prev => {
+                                                  const current = prev[member.id] || [];
+                                                  return { ...prev, [member.id]: [...current, sIdx] };
+                                                });
+                                              }
+                                            }
+                                          }}
+                                          style={{
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            padding: '4px 10px',
+                                            borderRadius: '999px',
+                                            cursor: 'pointer',
+                                            border: isStepLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                            background: isStepLead ? '#0D9488' : '#FFFFFF',
+                                            color: isStepLead ? '#FFFFFF' : '#475569',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                          title={isStepLead ? 'Clic para desmarcar como Encargado Principal' : `Marcar a ${member.name} como Encargado Principal de este paso`}
+                                        >
+                                          {isStepLead ? '👑 Encargado Principal' : '👑 Elegir como Principal'}
+                                        </button>
 
                                         <div className="tdm-step-toggle">
                                           <button
@@ -774,12 +830,6 @@ export const TemplateDetailsModal = ({
                                               setDraftAssignment(prev => {
                                                 const current = prev[member.id] || [];
                                                 return { ...prev, [member.id]: [...current, sIdx] };
-                                              });
-                                              setDraftLeads(prev => {
-                                                if (!prev[sIdx]) {
-                                                  return { ...prev, [sIdx]: String(member.id) };
-                                                }
-                                                return prev;
                                               });
                                             }}
                                             className={`tdm-btn-yes ${isOn ? 'active' : ''}`}
@@ -794,12 +844,9 @@ export const TemplateDetailsModal = ({
                                                 [member.id]: nextDraftForMember
                                               }));
                                               if (String(draftLeads[sIdx]) === String(member.id)) {
-                                                const remainingMember = teamMembers.find(m =>
-                                                  m.id !== member.id && (draftAssignment[m.id] || []).includes(sIdx)
-                                                );
                                                 setDraftLeads(prev => ({
                                                   ...prev,
-                                                  [sIdx]: remainingMember ? String(remainingMember.id) : ''
+                                                  [sIdx]: ''
                                                 }));
                                               }
                                             }}
@@ -824,9 +871,7 @@ export const TemplateDetailsModal = ({
                                     .map(m => String(m.id));
                                   let stepLeadId = draftLeads[sIdx] ? String(draftLeads[sIdx]) : '';
                                   if (stepLeadId && !assignedForStep.includes(stepLeadId)) {
-                                    stepLeadId = assignedForStep[0] || '';
-                                  } else if (!stepLeadId && assignedForStep.length > 0) {
-                                    stepLeadId = assignedForStep[0];
+                                    assignedForStep.push(stepLeadId);
                                   }
                                   return {
                                     ...s,
@@ -839,7 +884,7 @@ export const TemplateDetailsModal = ({
                                 setTicketModal({
                                   isOpen: true,
                                   title: "¡Asignación Guardada!",
-                                  message: `Se actualizaron los encargados y colaboradores asignados en la plantilla "${activeTemplate.title}".`,
+                                  message: `Se actualizaron los encargados principales y colaboradores asignados en la plantilla "${activeTemplate.title}".`,
                                   ticketId: "Asignación de Equipo",
                                   customFields: [
                                     { label: "Colaborador", value: member.name },

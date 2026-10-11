@@ -279,11 +279,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                                 👑 Encargado del Paso (Responsable Principal)
                               </label>
                               <select
-                                value={
-                                  step.leadId
-                                    ? String(step.leadId)
-                                    : (Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? String(step.assignedTo[0]) : (step.assignedTo && step.assignedTo !== 'Unassigned' ? String(step.assignedTo) : ''))
-                                }
+                                value={step.leadId ? String(step.leadId) : ''}
                                 onChange={(e) => {
                                   const newLead = e.target.value;
                                   const currentAssigned = Array.isArray(step.assignedTo)
@@ -298,7 +294,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                                 }}
                                 style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '0.35rem 0.5rem', fontSize: '0.8rem', fontWeight: 600 }}
                               >
-                                <option value="">-- Seleccionar Encargado --</option>
+                                <option value="">-- Seleccionar Encargado Principal --</option>
                                 {teamMembers.map(m => (
                                   <option key={m.id} value={String(m.id)}>{m.name} ({m.role})</option>
                                 ))}
@@ -306,42 +302,66 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                             </div>
 
                             <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
-                              👥 Colaboradores Asignados (Pueden ser varios)
+                              👥 Colaboradores Asignados (Marca varios y elige con 1 clic quién es el 👑 Principal)
                             </label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '110px', overflowY: 'auto', background: '#FFFFFF', padding: '6px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '140px', overflowY: 'auto', background: '#FFFFFF', padding: '6px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
                               {teamMembers.map(m => {
                                 const currentAssigned = Array.isArray(step.assignedTo)
                                   ? step.assignedTo.map(String)
                                   : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
-                                const effectiveLead = step.leadId
-                                  ? String(step.leadId)
-                                  : (currentAssigned[0] || '');
+                                const effectiveLead = step.leadId ? String(step.leadId) : '';
                                 const isChecked = currentAssigned.includes(String(m.id)) || effectiveLead === String(m.id);
                                 const isLead = effectiveLead === String(m.id);
 
                                 return (
-                                  <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', padding: '3px 8px', borderRadius: '999px', cursor: 'pointer', background: isLead ? '#CCFBF1' : (isChecked ? '#F1F5F9' : '#FFFFFF'), border: isLead ? '1px solid #0D9488' : '1px solid #E2E8F0', fontWeight: isChecked ? 600 : 400 }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        let updatedList;
-                                        let nextLead = effectiveLead;
-                                        if (e.target.checked) {
-                                          updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
-                                          if (!nextLead) nextLead = String(m.id);
-                                        } else {
-                                          updatedList = currentAssigned.filter(id => id !== String(m.id));
-                                          if (nextLead === String(m.id)) nextLead = updatedList[0] || '';
-                                        }
+                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '0.76rem', padding: '4px 8px', borderRadius: '6px', background: isLead ? '#CCFBF1' : (isChecked ? '#F1F5F9' : '#FFFFFF'), border: isLead ? '1px solid #0D9488' : '1px solid #E2E8F0' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: 0, flex: 1, fontWeight: isChecked ? 600 : 400 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          let updatedList;
+                                          let nextLead = effectiveLead;
+                                          if (e.target.checked) {
+                                            updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
+                                          } else {
+                                            updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                            if (nextLead === String(m.id)) nextLead = '';
+                                          }
+                                          const newSteps = [...template.steps];
+                                          newSteps[index] = { ...newSteps[index], leadId: nextLead, assignedTo: updatedList };
+                                          setTemplate(prev => ({ ...prev, steps: newSteps }));
+                                        }}
+                                        style={{ margin: 0, cursor: 'pointer', accentColor: '#0D9488' }}
+                                      />
+                                      <span>{m.name} <span style={{ color: '#64748B', fontSize: '0.7rem' }}>({m.role})</span></span>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextLead = isLead ? '' : String(m.id);
+                                        const updatedList = nextLead && !currentAssigned.includes(String(m.id))
+                                          ? Array.from(new Set([String(m.id), ...currentAssigned]))
+                                          : currentAssigned;
                                         const newSteps = [...template.steps];
                                         newSteps[index] = { ...newSteps[index], leadId: nextLead, assignedTo: updatedList };
                                         setTemplate(prev => ({ ...prev, steps: newSteps }));
                                       }}
-                                      style={{ margin: 0, cursor: 'pointer', accentColor: '#0D9488' }}
-                                    />
-                                    <span>{isLead ? '👑 ' : ''}{m.name}</span>
-                                  </label>
+                                      style={{
+                                        border: isLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                        background: isLead ? '#0D9488' : '#FFFFFF',
+                                        color: isLead ? '#FFFFFF' : '#475569',
+                                        borderRadius: '999px',
+                                        padding: '2px 8px',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      {isLead ? '👑 Principal' : '👑 Hacer Principal'}
+                                    </button>
+                                  </div>
                                 );
                               })}
                             </div>

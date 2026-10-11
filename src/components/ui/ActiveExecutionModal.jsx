@@ -893,14 +893,10 @@ export const ActiveExecutionModal = ({
                             <div style={{ width: '100%', background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '10px' }}>
                               <div style={{ marginBottom: '8px' }}>
                                 <span style={{ fontSize: '0.73rem', color: '#0F172A', display: 'block', marginBottom: '4px', fontWeight: 700 }}>
-                                  👑 Encargado del Paso:
+                                  👑 Encargado Principal del Paso:
                                 </span>
                                 <select
-                                  value={
-                                    step.leadId
-                                      ? String(step.leadId)
-                                      : (Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? String(step.assignedTo[0]) : (step.assignedTo && step.assignedTo !== 'Unassigned' ? String(step.assignedTo) : ''))
-                                  }
+                                  value={step.leadId ? String(step.leadId) : ''}
                                   onChange={(e) => {
                                     const newLead = e.target.value;
                                     const currentAssigned = Array.isArray(step.assignedTo)
@@ -913,7 +909,7 @@ export const ActiveExecutionModal = ({
                                   }}
                                   style={{ width: '100%', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#F8FAFC', fontWeight: 600, color: '#0F172A' }}
                                 >
-                                  <option value="">-- Sin encargado específico --</option>
+                                  <option value="">-- Sin encargado principal marcado --</option>
                                   {teamMembers.map(m => (
                                     <option key={m.id} value={String(m.id)}>{m.name} ({m.role})</option>
                                   ))}
@@ -921,39 +917,62 @@ export const ActiveExecutionModal = ({
                               </div>
 
                               <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px', fontWeight: 600 }}>
-                                👥 Asignados al Paso (múltiples):
+                                👥 Asignados al Paso (marca varios y usa 👑 para elegir el Principal):
                               </span>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '100px', overflowY: 'auto' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '115px', overflowY: 'auto' }}>
                                 {teamMembers.map(m => {
                                   const currentAssigned = Array.isArray(step.assignedTo)
                                     ? step.assignedTo.map(String)
                                     : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
-                                  const effectiveLead = step.leadId
-                                    ? String(step.leadId)
-                                    : (currentAssigned[0] || '');
+                                  const effectiveLead = step.leadId ? String(step.leadId) : '';
                                   const isChecked = currentAssigned.includes(String(m.id)) || effectiveLead === String(m.id);
                                   const isLead = effectiveLead === String(m.id);
                                   return (
-                                    <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', cursor: 'pointer', margin: 0, padding: '3px 7px', border: isLead ? '1px solid #0D9488' : '1px solid rgba(0,0,0,0.06)', borderRadius: '999px', background: isLead ? '#CCFBF1' : (isChecked ? 'rgba(39, 190, 167, 0.1)' : '#f9f9f9'), fontWeight: isChecked ? 600 : 400, userSelect: 'none' }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={(e) => {
-                                          let updatedList;
-                                          let nextLead = effectiveLead;
-                                          if (e.target.checked) {
-                                            updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
-                                            if (!nextLead) nextLead = String(m.id);
-                                          } else {
-                                            updatedList = currentAssigned.filter(id => id !== String(m.id));
-                                            if (nextLead === String(m.id)) nextLead = updatedList[0] || '';
-                                          }
+                                    <div key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', padding: '2px 5px 2px 7px', border: isLead ? '1px solid #0D9488' : '1px solid rgba(0,0,0,0.08)', borderRadius: '999px', background: isLead ? '#CCFBF1' : (isChecked ? 'rgba(39, 190, 167, 0.1)' : '#f9f9f9'), fontWeight: isChecked ? 600 : 400, userSelect: 'none' }}>
+                                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', margin: 0 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let updatedList;
+                                            let nextLead = effectiveLead;
+                                            if (e.target.checked) {
+                                              updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
+                                            } else {
+                                              updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                              if (nextLead === String(m.id)) nextLead = '';
+                                            }
+                                            handleAssignStepMember(activeInstance.id, step.id, updatedList, nextLead);
+                                          }}
+                                          style={{ cursor: 'pointer', margin: 0, accentColor: '#0D9488' }}
+                                        />
+                                        <span>{m.name}</span>
+                                      </label>
+                                      <button
+                                        type="button"
+                                        title={isLead ? 'Quitar como Encargado Principal' : 'Marcar como Encargado Principal'}
+                                        onClick={() => {
+                                          const nextLead = isLead ? '' : String(m.id);
+                                          const updatedList = nextLead && !currentAssigned.includes(String(m.id))
+                                            ? Array.from(new Set([String(m.id), ...currentAssigned]))
+                                            : currentAssigned;
                                           handleAssignStepMember(activeInstance.id, step.id, updatedList, nextLead);
                                         }}
-                                        style={{ cursor: 'pointer', margin: 0, accentColor: '#0D9488' }}
-                                      />
-                                      <span>{isLead ? '👑 ' : ''}{m.name}</span>
-                                    </label>
+                                        style={{
+                                          border: isLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                          background: isLead ? '#0D9488' : '#FFFFFF',
+                                          color: isLead ? '#FFFFFF' : '#64748B',
+                                          borderRadius: '999px',
+                                          padding: '1px 5px',
+                                          fontSize: '0.65rem',
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          lineHeight: 1.2
+                                        }}
+                                      >
+                                        {isLead ? '👑 Principal' : '👑'}
+                                      </button>
+                                    </div>
                                   );
                                 })}
                                 {teamMembers.length === 0 && (
