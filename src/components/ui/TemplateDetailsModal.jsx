@@ -30,16 +30,38 @@ export const TemplateDetailsModal = ({
 }) => {
   const [detailChecklistInput, setDetailChecklistInput] = useState('');
   const [isSuggestingAI, setIsSuggestingAI] = useState(false);
+  const [draftLeads, setDraftLeads] = useState({});
+
   useEffect(() => {
     if (activeTemplate && activeTemplate.steps && teamMembers) {
       const initial = {};
       teamMembers.forEach(m => {
         initial[m.id] = (activeTemplate.steps || [])
           .map((s, i) => ({ s, i }))
-          .filter(({ s }) => s && (Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(m.id)) : String(s.assignedTo) === String(m.id)))
+          .filter(({ s }) => {
+            if (!s) return false;
+            const inAssigned = Array.isArray(s.assignedTo)
+              ? s.assignedTo.map(String).includes(String(m.id))
+              : String(s.assignedTo) === String(m.id);
+            const isLead = s.leadId && String(s.leadId) === String(m.id);
+            return inAssigned || isLead;
+          })
           .map(({ i }) => i);
       });
       setDraftAssignment(initial);
+
+      const initialLeads = {};
+      (activeTemplate.steps || []).forEach((s, i) => {
+        if (!s) return;
+        if (s.leadId) {
+          initialLeads[i] = String(s.leadId);
+        } else if (Array.isArray(s.assignedTo) && s.assignedTo.length > 0) {
+          initialLeads[i] = String(s.assignedTo[0]);
+        } else if (s.assignedTo && s.assignedTo !== 'Unassigned') {
+          initialLeads[i] = String(s.assignedTo);
+        }
+      });
+      setDraftLeads(initialLeads);
     }
   }, [activeTemplate, teamMembers, setDraftAssignment]);
 
@@ -146,13 +168,33 @@ export const TemplateDetailsModal = ({
               onClick={() => {
                 setDetailModalTab('team');
                 const initial = {};
-                 teamMembers.forEach(m => {
-                   initial[m.id] = activeTemplate.steps
-                     .map((s, i) => ({ s, i }))
-                     .filter(({ s }) => Array.isArray(s.assignedTo) ? s.assignedTo.map(String).includes(String(m.id)) : String(s.assignedTo) === String(m.id))
-                     .map(({ i }) => i);
-                 });
-                 setDraftAssignment(initial);
+                teamMembers.forEach(m => {
+                  initial[m.id] = (activeTemplate.steps || [])
+                    .map((s, i) => ({ s, i }))
+                    .filter(({ s }) => {
+                      if (!s) return false;
+                      const inAssigned = Array.isArray(s.assignedTo)
+                        ? s.assignedTo.map(String).includes(String(m.id))
+                        : String(s.assignedTo) === String(m.id);
+                      const isLead = s.leadId && String(s.leadId) === String(m.id);
+                      return inAssigned || isLead;
+                    })
+                    .map(({ i }) => i);
+                });
+                setDraftAssignment(initial);
+
+                const initialLeads = {};
+                (activeTemplate.steps || []).forEach((s, i) => {
+                  if (!s) return;
+                  if (s.leadId) {
+                    initialLeads[i] = String(s.leadId);
+                  } else if (Array.isArray(s.assignedTo) && s.assignedTo.length > 0) {
+                    initialLeads[i] = String(s.assignedTo[0]);
+                  } else if (s.assignedTo && s.assignedTo !== 'Unassigned') {
+                    initialLeads[i] = String(s.assignedTo);
+                  }
+                });
+                setDraftLeads(initialLeads);
               }}
             >
               <Users size={18} /> Asignación del Equipo
@@ -225,32 +267,112 @@ export const TemplateDetailsModal = ({
                               </div>
                             </div>
 
-                            <div className="tdm-form-group">
-                              <label>Responsables Asignados</label>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid rgba(0,0,0,0.1)', padding: '10px', borderRadius: '8px', maxHeight: '150px', overflowY: 'auto', background: '#fafafa' }}>
+                            {/* Encargado del Paso + Equipo Asignado (Múltiple) */}
+                            <div className="tdm-form-group" style={{ background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
+                                  👑 Encargado Principal del Paso (1 Responsable Líder)
+                                </label>
+                                <select
+                                  value={
+                                    editingStepData.leadId
+                                      ? String(editingStepData.leadId)
+                                      : (Array.isArray(editingStepData.assignedTo) && editingStepData.assignedTo.length > 0
+                                          ? String(editingStepData.assignedTo[0])
+                                          : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? String(editingStepData.assignedTo) : ''))
+                                  }
+                                  onChange={(e) => {
+                                    const newLeadId = e.target.value;
+                                    const currentAssigned = Array.isArray(editingStepData.assignedTo)
+                                      ? editingStepData.assignedTo.map(String)
+                                      : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
+                                    const updatedAssigned = newLeadId && !currentAssigned.includes(String(newLeadId))
+                                      ? [String(newLeadId), ...currentAssigned]
+                                      : currentAssigned;
+                                    setEditingStepData({
+                                      ...editingStepData,
+                                      leadId: newLeadId,
+                                      assignedTo: updatedAssigned
+                                    });
+                                  }}
+                                  style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '0.45rem 0.65rem', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}
+                                >
+                                  <option value="">-- Seleccionar Encargado del Paso --</option>
+                                  {teamMembers.map(m => (
+                                    <option key={m.id} value={String(m.id)}>
+                                      {m.name} ({m.role}{m.department ? ` · ${m.department}` : ''})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                                <span>👥 Colaboradores Asignados al Paso (Puedes seleccionar varios)</span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#0D9488' }}>
+                                  {(() => {
+                                    const list = Array.isArray(editingStepData.assignedTo)
+                                      ? editingStepData.assignedTo.map(String)
+                                      : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
+                                    return `${list.length} seleccionado${list.length !== 1 ? 's' : ''}`;
+                                  })()}
+                                </span>
+                              </label>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '8px', maxHeight: '170px', overflowY: 'auto', background: '#FFFFFF' }}>
                                 {teamMembers.map(m => {
                                   const currentAssigned = Array.isArray(editingStepData.assignedTo)
                                     ? editingStepData.assignedTo.map(String)
-                                    : editingStepData.assignedTo ? [String(editingStepData.assignedTo)] : [];
-                                  const isChecked = currentAssigned.includes(String(m.id));
+                                    : (editingStepData.assignedTo && editingStepData.assignedTo !== 'Unassigned' ? [String(editingStepData.assignedTo)] : []);
+                                  const effectiveLeadId = editingStepData.leadId
+                                    ? String(editingStepData.leadId)
+                                    : (currentAssigned.length > 0 ? String(currentAssigned[0]) : '');
+                                  const isLead = effectiveLeadId === String(m.id);
+                                  const isChecked = currentAssigned.includes(String(m.id)) || isLead;
+
                                   return (
-                                    <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', margin: 0, padding: '2px 0' }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={(e) => {
-                                          let updatedList;
-                                          if (e.target.checked) {
-                                            updatedList = [...currentAssigned, String(m.id)];
-                                          } else {
-                                            updatedList = currentAssigned.filter(id => id !== String(m.id));
-                                          }
-                                          setEditingStepData({ ...editingStepData, assignedTo: updatedList });
-                                        }}
-                                        style={{ cursor: 'pointer', margin: 0 }}
-                                      />
-                                      <span style={{ color: 'var(--text-main)' }}>{m.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({m.role})</span></span>
-                                    </label>
+                                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 6px', borderRadius: '6px', background: isLead ? '#F0FDFA' : (isChecked ? '#F8FAFC' : 'transparent'), border: isLead ? '1px solid #99F6E4' : '1px solid transparent' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', margin: 0, flex: 1 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let updatedList;
+                                            let nextLeadId = effectiveLeadId;
+                                            if (e.target.checked) {
+                                              updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
+                                              if (!nextLeadId) nextLeadId = String(m.id);
+                                            } else {
+                                              updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                              if (nextLeadId === String(m.id)) {
+                                                nextLeadId = updatedList.length > 0 ? updatedList[0] : '';
+                                              }
+                                            }
+                                            setEditingStepData({
+                                              ...editingStepData,
+                                              leadId: nextLeadId,
+                                              assignedTo: updatedList
+                                            });
+                                          }}
+                                          style={{ cursor: 'pointer', margin: 0, accentColor: '#0D9488' }}
+                                        />
+                                        <span style={{ color: '#0F172A', fontWeight: isChecked ? 600 : 400 }}>
+                                          {m.name} <span style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 400 }}>({m.role})</span>
+                                        </span>
+                                      </label>
+                                      {isLead ? (
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 700, background: '#CCFBF1', color: '#0F766E', padding: '2px 8px', borderRadius: '999px' }}>
+                                          👑 Encargado
+                                        </span>
+                                      ) : isChecked ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingStepData({ ...editingStepData, leadId: String(m.id) })}
+                                          style={{ fontSize: '0.68rem', fontWeight: 600, background: '#F1F5F9', color: '#475569', border: '1px solid #CBD5E1', padding: '2px 7px', borderRadius: '999px', cursor: 'pointer' }}
+                                          title="Designar como Encargado Principal de este paso"
+                                        >
+                                          Hacer Encargado
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   );
                                 })}
                                 {teamMembers.length === 0 && (
@@ -330,7 +452,7 @@ export const TemplateDetailsModal = ({
                                           }));
                                           setEditingStepData({
                                             ...editingStepData,
-                                            checklist: [...currentList, ...newItems]
+                                            checklist: [...currentList, newItems].flat()
                                           });
                                         }
                                       }
@@ -468,34 +590,35 @@ export const TemplateDetailsModal = ({
                               <div className="tdm-motivation-tag">
                                 <Lightbulb size={16} className="inline-block mr-1"/> {step.motivation}
                               </div>
-                              {step.assignedTo && (
-                                <div className="tdm-assignee-tag" style={{ flexWrap: 'wrap', gap: '6px' }}>
+                              {(step.assignedTo || step.leadId) && (
+                                <div className="tdm-assignee-tag" style={{ flexWrap: 'wrap', gap: '8px' }}>
                                   {(() => {
-                                    const assignedList = Array.isArray(step.assignedTo)
+                                    const rawAssigned = Array.isArray(step.assignedTo)
                                       ? step.assignedTo.map(String)
-                                      : [String(step.assignedTo)];
-                                    
-                                    const members = teamMembers.filter(m => assignedList.includes(String(m.id)));
-                                    
-                                    if (members.length === 0) return <span>Asignado</span>;
-                                    
+                                      : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
+                                    const effectiveLeadId = step.leadId
+                                      ? String(step.leadId)
+                                      : (rawAssigned.length > 0 ? rawAssigned[0] : '');
+                                    const allIds = Array.from(new Set([...(effectiveLeadId ? [effectiveLeadId] : []), ...rawAssigned]));
+                                    const members = teamMembers.filter(m => allIds.includes(String(m.id)));
+                                    const leadMember = teamMembers.find(m => String(m.id) === effectiveLeadId);
+                                    const otherMembers = members.filter(m => String(m.id) !== effectiveLeadId);
+
+                                    if (members.length === 0) return null;
+
                                     return (
-                                      <>
-                                        <div style={{ display: 'flex', gap: '-4px', alignItems: 'center' }}>
-                                          {members.map(member => (
-                                            <div key={member.id} className="tdm-assignee-avatar" style={{ marginRight: '-4px', border: '1.5px solid white' }} title={`${member.name} (${member.role})`}>
-                                              {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
-                                            </div>
-                                          ))}
-                                        </div>
-                                        <span>
-                                          Asignados: {members.map((m, idx) => (
-                                            <strong key={m.id}>
-                                              {m.name}{idx < members.length - 1 ? ', ' : ''}
-                                            </strong>
-                                          ))}
-                                        </span>
-                                      </>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                                        {leadMember && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#CCFBF1', color: '#0F766E', padding: '2px 9px', borderRadius: '999px', fontSize: '0.76rem', fontWeight: 700, border: '1px solid #99F6E4' }}>
+                                            👑 Encargado: {leadMember.name}
+                                          </span>
+                                        )}
+                                        {otherMembers.length > 0 && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#F1F5F9', color: '#334155', padding: '2px 9px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600 }}>
+                                            👥 Asignados: {otherMembers.map(m => m.name).join(', ')}
+                                          </span>
+                                        )}
+                                      </div>
                                     );
                                   })()}
                                 </div>
@@ -534,7 +657,7 @@ export const TemplateDetailsModal = ({
             ) : (
               <div>
                 <p className="tdm-team-instruction">
-                  Activa o desactiva con el toggle cada paso donde el miembro interviene. Luego presiona <strong>Confirmar</strong> para guardar los cambios.
+                  Activa o desactiva con el toggle cada paso donde el miembro interviene (pueden asignarse <strong>varios miembros al mismo paso</strong>) y define quién es el <strong>👑 Encargado Principal</strong> de cada paso.
                 </p>
 
                 {teamMembers.length === 0 ? (
@@ -546,6 +669,7 @@ export const TemplateDetailsModal = ({
                     {teamMembers.map(member => {
                       const draftSteps = draftAssignment[member.id] || [];
                       const isInvolved = draftSteps.length > 0;
+                      const leadCount = Object.entries(draftLeads).filter(([sIdx, lId]) => String(lId) === String(member.id) && draftSteps.includes(Number(sIdx))).length;
 
                       return (
                         <div key={member.id} className={`tdm-member-card ${isInvolved ? 'involved' : ''}`}>
@@ -560,11 +684,18 @@ export const TemplateDetailsModal = ({
                                   {member.role}{member.department ? ` · ${member.department}` : ''}
                                 </p>
                               </div>
-                              {isInvolved && (
-                                <span className="tdm-badge">
-                                  {draftSteps.length} paso{draftSteps.length !== 1 ? 's' : ''} asignado{draftSteps.length !== 1 ? 's' : ''}
-                                </span>
-                              )}
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                {leadCount > 0 && (
+                                  <span className="tdm-badge" style={{ background: '#CCFBF1', color: '#0F766E' }}>
+                                    👑 Encargado en {leadCount}
+                                  </span>
+                                )}
+                                {isInvolved && (
+                                  <span className="tdm-badge">
+                                    {draftSteps.length} paso{draftSteps.length !== 1 ? 's' : ''} asignado{draftSteps.length !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="tdm-toggle-container">
@@ -584,55 +715,97 @@ export const TemplateDetailsModal = ({
                               <div className="tdm-steps-container">
                                 {stepsList.map((step, sIdx) => {
                                   const isOn = draftSteps.includes(sIdx);
-                                  const ownedByOther = teamMembers.find(m =>
+                                  const otherAssignees = teamMembers.filter(m =>
                                     m.id !== member.id &&
                                     (draftAssignment[m.id] || []).includes(sIdx)
                                   );
+                                  const currentStepLeadId = draftLeads[sIdx] ? String(draftLeads[sIdx]) : '';
+                                  const isStepLead = isOn && currentStepLeadId === String(member.id);
+                                  const leadMemberObj = teamMembers.find(m => String(m.id) === currentStepLeadId);
 
                                   return (
                                     <div
                                       key={sIdx}
-                                      className={`tdm-step-row ${isOn ? 'on' : ''} ${ownedByOther ? 'disabled' : ''}`}
+                                      className={`tdm-step-row ${isOn ? 'on' : ''}`}
+                                      style={{ flexWrap: 'wrap', gap: '8px' }}
                                     >
-                                      <span className="tdm-step-row-title">
-                                        <strong>Paso {sIdx + 1}</strong>
-                                        {step.title}
-                                        {ownedByOther && (
-                                          <em>(ya asignado a {ownedByOther.name})</em>
+                                      <span className="tdm-step-row-title" style={{ flex: 1, minWidth: '200px' }}>
+                                        <strong>Paso {sIdx + 1}:</strong> {step.title}
+                                        {otherAssignees.length > 0 && (
+                                          <em style={{ display: 'block', fontSize: '0.73rem', color: '#64748B', fontStyle: 'normal', marginTop: '2px' }}>
+                                            👥 También asignado a: {otherAssignees.map(o => o.name).join(', ')}
+                                            {leadMemberObj && leadMemberObj.id !== member.id ? ` (👑 Encargado: ${leadMemberObj.name})` : ''}
+                                          </em>
                                         )}
                                       </span>
 
-                                      <div className="tdm-step-toggle">
-                                        <button
-                                          type="button"
-                                          disabled={!!ownedByOther}
-                                          onClick={() => {
-                                            if (ownedByOther) return;
-                                            setDraftAssignment(prev => {
-                                              const current = prev[member.id] || [];
-                                              const next = isOn
-                                                ? current.filter(i => i !== sIdx)
-                                                : [...current, sIdx];
-                                              return { ...prev, [member.id]: next };
-                                            });
-                                          }}
-                                          className={`tdm-btn-yes ${isOn ? 'active' : ''}`}
-                                        >Sí</button>
-                                        <button
-                                          type="button"
-                                          disabled={!!ownedByOther}
-                                          onClick={() => {
-                                            if (ownedByOther) return;
-                                            setDraftAssignment(prev => {
-                                              const current = prev[member.id] || [];
-                                              const next = isOn
-                                                ? current.filter(i => i !== sIdx)
-                                                : [...current, sIdx];
-                                              return { ...prev, [member.id]: next };
-                                            });
-                                          }}
-                                          className={`tdm-btn-no ${!isOn ? 'active' : ''}`}
-                                        >No</button>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {isOn && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setDraftLeads(prev => ({
+                                                ...prev,
+                                                [sIdx]: String(member.id)
+                                              }));
+                                            }}
+                                            style={{
+                                              fontSize: '0.72rem',
+                                              fontWeight: 700,
+                                              padding: '4px 10px',
+                                              borderRadius: '999px',
+                                              cursor: 'pointer',
+                                              border: isStepLead ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                              background: isStepLead ? '#CCFBF1' : '#FFFFFF',
+                                              color: isStepLead ? '#0F766E' : '#475569',
+                                              transition: 'all 0.15s ease'
+                                            }}
+                                            title={isStepLead ? 'Este colaborador es el Encargado Principal del paso' : 'Marcar como Encargado Principal del paso'}
+                                          >
+                                            {isStepLead ? '👑 Encargado' : 'Hacer Encargado'}
+                                          </button>
+                                        )}
+
+                                        <div className="tdm-step-toggle">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (isOn) return;
+                                              setDraftAssignment(prev => {
+                                                const current = prev[member.id] || [];
+                                                return { ...prev, [member.id]: [...current, sIdx] };
+                                              });
+                                              setDraftLeads(prev => {
+                                                if (!prev[sIdx]) {
+                                                  return { ...prev, [sIdx]: String(member.id) };
+                                                }
+                                                return prev;
+                                              });
+                                            }}
+                                            className={`tdm-btn-yes ${isOn ? 'active' : ''}`}
+                                          >Sí</button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (!isOn) return;
+                                              const nextDraftForMember = (draftAssignment[member.id] || []).filter(i => i !== sIdx);
+                                              setDraftAssignment(prev => ({
+                                                ...prev,
+                                                [member.id]: nextDraftForMember
+                                              }));
+                                              if (String(draftLeads[sIdx]) === String(member.id)) {
+                                                const remainingMember = teamMembers.find(m =>
+                                                  m.id !== member.id && (draftAssignment[m.id] || []).includes(sIdx)
+                                                );
+                                                setDraftLeads(prev => ({
+                                                  ...prev,
+                                                  [sIdx]: remainingMember ? String(remainingMember.id) : ''
+                                                }));
+                                              }
+                                            }}
+                                            className={`tdm-btn-no ${!isOn ? 'active' : ''}`}
+                                          >No</button>
+                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -645,33 +818,29 @@ export const TemplateDetailsModal = ({
                               className="tdm-save-btn"
                               onClick={async () => {
                                 const newSteps = stepsList.map((s, sIdx) => {
-                                  const currentAssigned = Array.isArray(s.assignedTo)
-                                    ? s.assignedTo.map(String)
-                                    : s.assignedTo ? [String(s.assignedTo)] : [];
-                                  
-                                  const isCurrentlyAssigned = currentAssigned.includes(String(member.id));
-                                  const shouldBeAssigned = draftSteps.includes(sIdx);
-                                  
-                                  let updatedAssigned;
-                                  if (isCurrentlyAssigned && !shouldBeAssigned) {
-                                    // Remove member from assignment
-                                    updatedAssigned = currentAssigned.filter(id => id !== String(member.id));
-                                  } else if (!isCurrentlyAssigned && shouldBeAssigned) {
-                                    // Add member to assignment
-                                    updatedAssigned = [...currentAssigned, String(member.id)];
-                                  } else {
-                                    updatedAssigned = currentAssigned;
+                                  // Build full assignedTo list from draftAssignment across all teamMembers
+                                  const assignedForStep = teamMembers
+                                    .filter(m => (draftAssignment[m.id] || []).includes(sIdx))
+                                    .map(m => String(m.id));
+                                  let stepLeadId = draftLeads[sIdx] ? String(draftLeads[sIdx]) : '';
+                                  if (stepLeadId && !assignedForStep.includes(stepLeadId)) {
+                                    stepLeadId = assignedForStep[0] || '';
+                                  } else if (!stepLeadId && assignedForStep.length > 0) {
+                                    stepLeadId = assignedForStep[0];
                                   }
-                                  
-                                  return { ...s, assignedTo: updatedAssigned };
+                                  return {
+                                    ...s,
+                                    leadId: stepLeadId,
+                                    assignedTo: assignedForStep
+                                  };
                                 });
                                 await saveTemplate({ ...activeTemplate, steps: newSteps });
                                 onClose();
                                 setTicketModal({
                                   isOpen: true,
                                   title: "¡Asignación Guardada!",
-                                  message: `Se actualizaron los pasos de ${member.name} en la plantilla.`,
-                                  ticketId: "Asignación de Pasos",
+                                  message: `Se actualizaron los encargados y colaboradores asignados en la plantilla "${activeTemplate.title}".`,
+                                  ticketId: "Asignación de Equipo",
                                   customFields: [
                                     { label: "Colaborador", value: member.name },
                                     { label: "Plantilla", value: activeTemplate.title }

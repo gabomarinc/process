@@ -801,12 +801,19 @@ function App() {
 
   // Mark step complete in instance
 
-  const handleAssignStepMember = async (instanceId, stepId, assignedTo) => {
+  const handleAssignStepMember = async (instanceId, stepId, assignedTo, leadId = undefined) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
     const updatedSteps = inst.steps.map(s => {
       if (s.id !== stepId) return s;
-      return { ...s, assignedTo: assignedTo };
+      const list = Array.isArray(assignedTo) ? assignedTo.map(String) : (assignedTo ? [String(assignedTo)] : []);
+      let nextLead = leadId !== undefined ? String(leadId) : (s.leadId ? String(s.leadId) : '');
+      if (nextLead && !list.includes(nextLead)) {
+        nextLead = list[0] || '';
+      } else if (!nextLead && list.length > 0) {
+        nextLead = list[0];
+      }
+      return { ...s, assignedTo: list, leadId: nextLead };
     });
     setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
     try {
@@ -896,10 +903,15 @@ function App() {
         const completedIndex = updatedSteps.findIndex(s => s.id === stepId);
         const nextStep = updatedSteps[completedIndex + 1];
         let progressMessage = `Avance: ${user?.name || 'Un compañero'} completó el paso "${completedStep.title}" en "${inst.instanceName}".`;
-        if (nextStep && nextStep.assignedTo) {
-          const nextAssignee = teamMembers.find(m => String(m.id) === String(nextStep.assignedTo));
-          if (nextAssignee) {
-            progressMessage = `${user?.name || 'Un compañero'} completó el paso "${completedStep.title}" en "${inst.instanceName}" y se lo pasó a ${nextAssignee.name}. @${nextAssignee.name}, te toca.`;
+        if (nextStep && (nextStep.assignedTo || nextStep.leadId)) {
+          const nextIds = Array.from(new Set([
+            ...(nextStep.leadId ? [String(nextStep.leadId)] : []),
+            ...(Array.isArray(nextStep.assignedTo) ? nextStep.assignedTo.map(String) : (nextStep.assignedTo && nextStep.assignedTo !== 'Unassigned' ? [String(nextStep.assignedTo)] : []))
+          ]));
+          const nextAssignees = teamMembers.filter(m => nextIds.includes(String(m.id)));
+          if (nextAssignees.length > 0) {
+            const namesStr = nextAssignees.map(m => m.name).join(', ');
+            progressMessage = `${user?.name || 'Un compañero'} completó el paso "${completedStep.title}" en "${inst.instanceName}" y activó el siguiente paso para ${namesStr}.`;
           }
         }
         try {
@@ -1064,7 +1076,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     }
   };
 
-  // Helper to log a notification if a newly active step has a team assignee
+  // Helper to log a notification if a newly active step has team assignees / lead
   const checkAndNotifyActiveAssignee = async (instance, steps) => {
     const nextStepIdx = steps.findIndex(s => !s.isCompleted);
     if (nextStepIdx === -1) return;
@@ -1073,13 +1085,25 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     if (!isPrevCompleted) return;
 
     const activeStep = steps[nextStepIdx];
-    if (activeStep.assignedTo) {
-      const assignee = teamMembers.find(m => m.id === activeStep.assignedTo);
-      if (assignee) {
+    const assignedIds = Array.from(new Set([
+      ...(activeStep.leadId ? [String(activeStep.leadId)] : []),
+      ...(Array.isArray(activeStep.assignedTo)
+        ? activeStep.assignedTo.map(String)
+        : (activeStep.assignedTo && activeStep.assignedTo !== 'Unassigned' ? [String(activeStep.assignedTo)] : []))
+    ]));
+
+    if (assignedIds.length > 0) {
+      const assignees = teamMembers.filter(m => assignedIds.includes(String(m.id)));
+      const effectiveLeadId = activeStep.leadId ? String(activeStep.leadId) : assignedIds[0];
+      const leadMember = teamMembers.find(m => String(m.id) === effectiveLeadId);
+
+      if (assignees.length > 0) {
         const logId = `active-${instance.id}-${activeStep.id}`;
         if (notificationLogs.some(log => log.id === logId)) return;
 
-        const message = `Paso "${activeStep.title}" activo. Responsable asignado: ${assignee.name} (${assignee.role}).`;
+        const namesSummary = assignees.map(a => `${a.name} (${a.role})`).join(', ');
+        const leadText = leadMember ? ` [👑 Encargado: ${leadMember.name}]` : '';
+        const message = `Paso "${activeStep.title}" activo.${leadText} Equipo asignado: ${namesSummary}.`;
         const newLog = {
           id: logId,
           instanceId: instance.id,
@@ -1761,17 +1785,26 @@ const handleDeleteMember = async (id) => {
     setTicketModal({
       isOpen: true,
       title: "¡Ejecución Iniciada!",
-      message: "Se ha lanzado la ejecución con éxito.",
+      message: "Se ha lanzado la ejecución con éxito y se ha notificado por correo a los encargados y asignados.",
       ticketId: "Nueva Ejecución",
       customFields: [
         { label: "Ejecución", value: newInstance.instanceName },
         { label: "Plantilla Base", value: newInstance.title }
       ]
     });
-    // Trigger active assignee notification for the first step
-    await checkAndNotifyActiveAssignee(newInstance, newInstance.steps);
 
-    // Trigger launch notification for Admin
+    // 1. Persist instance to Express backend FIRST (this also triggers notifyTeamOnExecutionLaunch emails to all encargados & asignados)
+    try {
+      await fetch('/api/instances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newInstance)
+      });
+    } catch (err) {
+      console.error("Error al iniciar instancia en Neon:", err);
+    }
+
+    // 2. Trigger launch notification log in-app
     try {
       const launchLogId = `launch-${newInstance.id}`;
       await fetch('/api/notifications', {
@@ -1790,17 +1823,6 @@ const handleDeleteMember = async (id) => {
       window.dispatchEvent(new Event('notifications-updated'));
     } catch (err) {
       console.error("Error al registrar notificacion de lanzamiento:", err);
-    }
-
-    // Post to Express backend
-    try {
-      await fetch('/api/instances', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newInstance)
-      });
-    } catch (err) {
-      console.error("Error al iniciar instancia en Neon:", err);
     }
   };
 
@@ -6501,6 +6523,7 @@ const handleDeleteMember = async (id) => {
         initialData={previewTemplate}
         onClose={() => setPreviewTemplate(null)}
         onSave={handleSavePreview}
+        teamMembers={teamMembers}
       />
 
       <Dialog open={showClickupModal} onOpenChange={setShowClickupModal}>

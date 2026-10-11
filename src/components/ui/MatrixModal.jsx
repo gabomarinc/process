@@ -19,6 +19,7 @@ export const MatrixModal = ({
   // Local state for assignments during step 2.
   // Format: { [stepIndex]: [memberId1, memberId2, ...] }
   const [assignments, setAssignments] = useState({});
+  const [leads, setLeads] = useState({});
   const [activeDropdownIndex, setActiveDropdownIndex] = useState(null);
   const dropdownRef = useRef(null);
 
@@ -27,6 +28,7 @@ export const MatrixModal = ({
       setSelectedTemplateId('');
       setSelectedTemplate(null);
       setAssignments({});
+      setLeads({});
       setActiveDropdownIndex(null);
     }
   }, [isOpen]);
@@ -39,20 +41,27 @@ export const MatrixModal = ({
       
       if (template && template.steps) {
         const initial = {};
+        const initialLeads = {};
         template.steps.forEach((s, idx) => {
           if (s) {
-            initial[idx] = Array.isArray(s.assignedTo)
+            const rawAssigned = Array.isArray(s.assignedTo)
               ? s.assignedTo.map(String)
-              : s.assignedTo ? [String(s.assignedTo)] : [];
+              : (s.assignedTo && s.assignedTo !== 'Unassigned' ? [String(s.assignedTo)] : []);
+            const stepLead = s.leadId ? String(s.leadId) : (rawAssigned[0] || '');
+            initial[idx] = Array.from(new Set([...(stepLead ? [stepLead] : []), ...rawAssigned]));
+            initialLeads[idx] = stepLead;
           } else {
             initial[idx] = [];
+            initialLeads[idx] = '';
           }
         });
         setAssignments(initial);
+        setLeads(initialLeads);
       }
     } else {
       setSelectedTemplate(null);
       setAssignments({});
+      setLeads({});
     }
   }, [selectedTemplateId, templates]);
 
@@ -87,8 +96,15 @@ export const MatrixModal = ({
     // Build the updated steps array
     const updatedSteps = selectedTemplate.steps.map((s, idx) => {
       const assigned = assignments[idx] || [];
+      let leadId = leads[idx] || '';
+      if (leadId && !assigned.includes(String(leadId))) {
+        leadId = assigned[0] || '';
+      } else if (!leadId && assigned.length > 0) {
+        leadId = assigned[0];
+      }
       return {
         ...s,
+        leadId,
         assignedTo: assigned
       };
     });
@@ -201,6 +217,7 @@ export const MatrixModal = ({
                 <div className="matrix-steps-list-container">
                   {(selectedTemplate.steps || []).map((stepItem, idx) => {
                     const stepAssignedIds = assignments[idx] || [];
+                    const currentLeadId = leads[idx] || '';
                     
                     // Render current selection text
                     const selectedNames = teamMembers
@@ -209,7 +226,7 @@ export const MatrixModal = ({
                     
                     const triggerText = selectedNames.length > 0
                       ? selectedNames.join(', ')
-                      : "Elegir responsables...";
+                      : "Elegir colaboradores...";
 
                     const isDropdownOpen = activeDropdownIndex === idx;
 
@@ -220,56 +237,104 @@ export const MatrixModal = ({
                           <h4 className="matrix-step-item-title">{stepItem.title}</h4>
                         </div>
                         
-                        <div className="matrix-form-group">
-                          <label className="matrix-form-label">Responsables</label>
-                          <div className="matrix-multiselect-dropdown" ref={isDropdownOpen ? dropdownRef : null}>
-                            <button
-                              type="button"
-                              className="matrix-multiselect-trigger"
-                              onClick={() => setActiveDropdownIndex(isDropdownOpen ? null : idx)}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                          <div className="matrix-form-group" style={{ margin: 0 }}>
+                            <label className="matrix-form-label">👑 Encargado del Paso</label>
+                            <select
+                              value={currentLeadId}
+                              onChange={(e) => {
+                                const newLead = e.target.value;
+                                setLeads(prev => ({ ...prev, [idx]: newLead }));
+                                if (newLead) {
+                                  setAssignments(prev => {
+                                    const current = prev[idx] || [];
+                                    return {
+                                      ...prev,
+                                      [idx]: Array.from(new Set([String(newLead), ...current]))
+                                    };
+                                  });
+                                }
+                              }}
+                              className="matrix-form-input matrix-select-custom"
+                              style={{ height: '38px', padding: '0 0.65rem', fontSize: '0.82rem' }}
                             >
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%' }}>
-                                {triggerText}
-                              </span>
-                              <ChevronDown size={16} style={{ color: '#64748b' }} />
-                            </button>
+                              <option value="">-- Sin encargado --</option>
+                              {teamMembers.map(m => (
+                                <option key={m.id} value={String(m.id)}>
+                                  {m.name} ({m.role})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                            {isDropdownOpen && (
-                              <div className="matrix-multiselect-menu">
-                                {teamMembers.map(member => {
-                                  const isChecked = stepAssignedIds.includes(String(member.id));
-                                  return (
-                                    <div
-                                      key={member.id}
-                                      className="matrix-multiselect-option"
-                                      onClick={() => {
-                                        setAssignments(prev => {
-                                          const current = prev[idx] || [];
-                                          const updated = isChecked
-                                            ? current.filter(id => id !== String(member.id))
-                                            : [...current, String(member.id)];
-                                          return { ...prev, [idx]: updated };
-                                        });
-                                      }}
-                                    >
-                                      {isChecked ? (
-                                        <CheckSquare size={16} style={{ color: 'var(--color-primary)' }} />
-                                      ) : (
-                                        <Square size={16} style={{ color: '#cbd5e1' }} />
-                                      )}
-                                      <span>
-                                        {member.name} <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({member.role})</span>
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                {teamMembers.length === 0 && (
-                                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', padding: '0.5rem' }}>
-                                    No hay miembros de equipo registrados.
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                          <div className="matrix-form-group" style={{ margin: 0 }}>
+                            <label className="matrix-form-label">👥 Asignados (Pueden ser varios)</label>
+                            <div className="matrix-multiselect-dropdown" ref={isDropdownOpen ? dropdownRef : null}>
+                              <button
+                                type="button"
+                                className="matrix-multiselect-trigger"
+                                onClick={() => setActiveDropdownIndex(isDropdownOpen ? null : idx)}
+                                style={{ height: '38px' }}
+                              >
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%' }}>
+                                  {triggerText}
+                                </span>
+                                <ChevronDown size={16} style={{ color: '#64748b' }} />
+                              </button>
+
+                              {isDropdownOpen && (
+                                <div className="matrix-multiselect-menu">
+                                  {teamMembers.map(member => {
+                                    const isChecked = stepAssignedIds.includes(String(member.id));
+                                    const isLead = String(currentLeadId) === String(member.id);
+                                    return (
+                                      <div
+                                        key={member.id}
+                                        className="matrix-multiselect-option"
+                                        onClick={() => {
+                                          setAssignments(prev => {
+                                            const current = prev[idx] || [];
+                                            const updated = isChecked
+                                              ? current.filter(id => id !== String(member.id))
+                                              : [...current, String(member.id)];
+                                            setLeads(prevLeads => {
+                                              const curLead = prevLeads[idx] || '';
+                                              if (!isChecked && !curLead) {
+                                                return { ...prevLeads, [idx]: String(member.id) };
+                                              }
+                                              if (isChecked && String(curLead) === String(member.id)) {
+                                                return { ...prevLeads, [idx]: updated[0] || '' };
+                                              }
+                                              return prevLeads;
+                                            });
+                                            return { ...prev, [idx]: updated };
+                                          });
+                                        }}
+                                      >
+                                        {isChecked ? (
+                                          <CheckSquare size={16} style={{ color: 'var(--color-primary)' }} />
+                                        ) : (
+                                          <Square size={16} style={{ color: '#cbd5e1' }} />
+                                        )}
+                                        <span style={{ flex: 1 }}>
+                                          {member.name} <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({member.role})</span>
+                                        </span>
+                                        {isLead && (
+                                          <span style={{ fontSize: '0.65rem', background: '#CCFBF1', color: '#0F766E', padding: '1px 6px', borderRadius: '999px', fontWeight: 700 }}>
+                                            👑 Encargado
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  {teamMembers.length === 0 && (
+                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', padding: '0.5rem' }}>
+                                      No hay miembros de equipo registrados.
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -294,6 +359,8 @@ export const MatrixModal = ({
                   
                   {(selectedTemplate.steps || []).map((stepItem, idx) => {
                     const stepAssignedIds = assignments[idx] || [];
+                    const currentLeadId = leads[idx] || stepAssignedIds[0] || '';
+                    const leadMember = teamMembers.find(m => String(m.id) === String(currentLeadId));
                     const assignedMembers = teamMembers.filter(m => stepAssignedIds.includes(String(m.id)));
 
                     return (
@@ -303,7 +370,7 @@ export const MatrixModal = ({
                           <span className="matrix-preview-title">{stepItem.title}</span>
                           <span className="matrix-preview-assigned">
                             {assignedMembers.length > 0 
-                              ? `Responsables: ${assignedMembers.map(m => m.name).join(', ')}`
+                              ? `${leadMember ? `👑 Encargado: ${leadMember.name} · ` : ''}👥 Asignados: ${assignedMembers.map(m => m.name).join(', ')}`
                               : "Sin responsables asignados"
                             }
                           </span>

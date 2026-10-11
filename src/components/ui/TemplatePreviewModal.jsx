@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2 } from 'lucide-react';
 import './TemplatePreviewModal.css';
 
-export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) => {
+export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, teamMembers = [] }) => {
   const [template, setTemplate] = useState(null);
   const [expandedStepIndex, setExpandedStepIndex] = useState(null);
   const [newChecklistText, setNewChecklistText] = useState({});
@@ -270,6 +270,83 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave }) =
                             </select>
                           </div>
                         </div>
+
+                        {/* Encargado del Paso + Colaboradores Asignados */}
+                        {teamMembers.length > 0 && (
+                          <div style={{ marginTop: '0.6rem', background: '#F8FAFC', padding: '0.75rem', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                            <div style={{ marginBottom: '0.6rem' }}>
+                              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
+                                👑 Encargado del Paso (Responsable Principal)
+                              </label>
+                              <select
+                                value={
+                                  step.leadId
+                                    ? String(step.leadId)
+                                    : (Array.isArray(step.assignedTo) && step.assignedTo.length > 0 ? String(step.assignedTo[0]) : (step.assignedTo && step.assignedTo !== 'Unassigned' ? String(step.assignedTo) : ''))
+                                }
+                                onChange={(e) => {
+                                  const newLead = e.target.value;
+                                  const currentAssigned = Array.isArray(step.assignedTo)
+                                    ? step.assignedTo.map(String)
+                                    : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
+                                  const updatedAssigned = newLead && !currentAssigned.includes(String(newLead))
+                                    ? [String(newLead), ...currentAssigned]
+                                    : currentAssigned;
+                                  const newSteps = [...template.steps];
+                                  newSteps[index] = { ...newSteps[index], leadId: newLead, assignedTo: updatedAssigned };
+                                  setTemplate(prev => ({ ...prev, steps: newSteps }));
+                                }}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '0.35rem 0.5rem', fontSize: '0.8rem', fontWeight: 600 }}
+                              >
+                                <option value="">-- Seleccionar Encargado --</option>
+                                {teamMembers.map(m => (
+                                  <option key={m.id} value={String(m.id)}>{m.name} ({m.role})</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
+                              👥 Colaboradores Asignados (Pueden ser varios)
+                            </label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '110px', overflowY: 'auto', background: '#FFFFFF', padding: '6px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                              {teamMembers.map(m => {
+                                const currentAssigned = Array.isArray(step.assignedTo)
+                                  ? step.assignedTo.map(String)
+                                  : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
+                                const effectiveLead = step.leadId
+                                  ? String(step.leadId)
+                                  : (currentAssigned[0] || '');
+                                const isChecked = currentAssigned.includes(String(m.id)) || effectiveLead === String(m.id);
+                                const isLead = effectiveLead === String(m.id);
+
+                                return (
+                                  <label key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', padding: '3px 8px', borderRadius: '999px', cursor: 'pointer', background: isLead ? '#CCFBF1' : (isChecked ? '#F1F5F9' : '#FFFFFF'), border: isLead ? '1px solid #0D9488' : '1px solid #E2E8F0', fontWeight: isChecked ? 600 : 400 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        let updatedList;
+                                        let nextLead = effectiveLead;
+                                        if (e.target.checked) {
+                                          updatedList = Array.from(new Set([...currentAssigned, String(m.id)]));
+                                          if (!nextLead) nextLead = String(m.id);
+                                        } else {
+                                          updatedList = currentAssigned.filter(id => id !== String(m.id));
+                                          if (nextLead === String(m.id)) nextLead = updatedList[0] || '';
+                                        }
+                                        const newSteps = [...template.steps];
+                                        newSteps[index] = { ...newSteps[index], leadId: nextLead, assignedTo: updatedList };
+                                        setTemplate(prev => ({ ...prev, steps: newSteps }));
+                                      }}
+                                      style={{ margin: 0, cursor: 'pointer', accentColor: '#0D9488' }}
+                                    />
+                                    <span>{isLead ? '👑 ' : ''}{m.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Client Email Notification Trigger */}
                         <div style={{ marginTop: '0.6rem', background: '#F0FDFA', padding: '0.75rem', borderRadius: '8px', border: '1px solid #CCFBF1' }}>
