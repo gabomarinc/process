@@ -11,11 +11,7 @@ import {
 } from "./dropdown-menu";
 import "./notifications.css";
 
-const defaultNotifications = [
-  { id: 1, type: "message", message: "Nuevo mensaje de John", timestamp: "hace 2m" },
-  { id: 2, type: "success", message: "Reporte generado exitosamente", timestamp: "hace 10m", instanceId: 1 },
-  { id: 3, type: "alert", message: "Mantenimiento del servidor programado", timestamp: "hace 1h", read: true },
-];
+const defaultNotifications = [];
 
 export default function Notifications({
   initialNotifications = defaultNotifications,
@@ -52,8 +48,8 @@ export default function Notifications({
       fetchNotifs();
     }
     
-    // Poll every 5 minutes (reduced from 60s for DB optimization)
-    const intervalId = setInterval(fetchNotifs, 300000);
+    // Poll every 60 seconds for fresh in-app notifications
+    const intervalId = setInterval(fetchNotifs, 60000);
     
     // Refresh immediately when document visibility changes to visible
     const handleVisibilityChange = () => {
@@ -189,8 +185,11 @@ export default function Notifications({
               >
                 <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
                   <div 
-                    style={{ display: 'flex', gap: '0.75rem', flexGrow: 1 }} 
-                    onClick={() => onNavigate && onNavigate(n)}
+                    style={{ display: 'flex', gap: '0.75rem', flexGrow: 1, cursor: 'pointer' }} 
+                    onClick={(e) => {
+                      if (onNavigate) onNavigate(n);
+                      if (!n.read) markAsRead(e, n.id);
+                    }}
                   >
                     <div className="radix-notif-item-icon">{getIcon(n.type)}</div>
                     <div className="radix-notif-item-body">
@@ -221,26 +220,40 @@ export default function Notifications({
                   </div>
                 </div>
 
-                {instId && stepId && !n.read && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px', marginLeft: '2.25rem' }} onClick={e => e.stopPropagation()}>
-                    <button 
-                      onClick={async (e) => {
+                {instId && !n.read && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px', marginLeft: '2.25rem', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={(e) => {
                         e.stopPropagation();
-                        if (onCompleteStep) {
-                          await onCompleteStep(instId, stepId);
-                        }
+                        if (onNavigate) onNavigate(n);
                         markAsRead(e, n.id);
                       }}
-                      style={{ background: '#E6FFFA', color: '#0D9488', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                      style={{ background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
                     >
-                      Sí, listo
+                      Ver Ejecución →
                     </button>
-                    <button 
-                      onClick={(e) => requestHelp(e, n)}
-                      style={{ background: '#FEF2F2', color: '#DC2626', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      No, necesito ayuda
-                    </button>
+                    {stepId && stepId !== 'launch' && (
+                      <>
+                        <button 
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (onCompleteStep) {
+                              await onCompleteStep(instId, stepId, true);
+                            }
+                            markAsRead(e, n.id);
+                          }}
+                          style={{ background: '#E6FFFA', color: '#0D9488', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Sí, listo
+                        </button>
+                        <button 
+                          onClick={(e) => requestHelp(e, n)}
+                          style={{ background: '#FEF2F2', color: '#DC2626', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          No, necesito ayuda
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </DropdownMenuItem>

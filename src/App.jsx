@@ -1785,7 +1785,7 @@ const handleDeleteMember = async (id) => {
     setTicketModal({
       isOpen: true,
       title: "¡Ejecución Iniciada!",
-      message: "Se ha lanzado la ejecución con éxito y se ha notificado por correo a los encargados y asignados.",
+      message: "Se ha lanzado la ejecución con éxito y se ha notificado por correo y dentro de la app a los encargados y asignados con sus respectivos pasos.",
       ticketId: "Nueva Ejecución",
       customFields: [
         { label: "Ejecución", value: newInstance.instanceName },
@@ -1793,36 +1793,29 @@ const handleDeleteMember = async (id) => {
       ]
     });
 
-    // 1. Persist instance to Express backend FIRST (this also triggers notifyTeamOnExecutionLaunch emails to all encargados & asignados)
+    // Persist instance to Express backend (triggers notifyTeamOnExecutionLaunch emails + per-user in-app notifications with their steps)
     try {
       await fetch('/api/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newInstance)
       });
-    } catch (err) {
-      console.error("Error al iniciar instancia en Neon:", err);
-    }
 
-    // 2. Trigger launch notification log in-app
-    try {
       const launchLogId = `launch-${newInstance.id}`;
-      await fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify({
-          id: launchLogId,
-          instanceId: newInstance.id,
-          stepId: 'launch',
-          instanceName: newInstance.instanceName,
-          stepTitle: 'Inicio de Ejecución',
-          message: `Se inició la ejecución "${newInstance.instanceName}" basada en la plantilla "${newInstance.title}".`,
-          type: 'message'
-        })
-      });
+      const newLogEntry = {
+        id: launchLogId,
+        instanceId: newInstance.id,
+        stepId: 'launch',
+        instanceName: newInstance.instanceName,
+        stepTitle: 'Inicio de Ejecución',
+        message: `🚀 Se inició la ejecución "${newInstance.instanceName}" basada en la plantilla "${newInstance.title}".`,
+        time: new Date().toISOString(),
+        type: 'message'
+      };
+      setNotificationLogs(prev => [newLogEntry, ...prev.filter(l => l.id !== launchLogId)]);
       window.dispatchEvent(new Event('notifications-updated'));
     } catch (err) {
-      console.error("Error al registrar notificacion de lanzamiento:", err);
+      console.error("Error al iniciar instancia en Neon:", err);
     }
   };
 

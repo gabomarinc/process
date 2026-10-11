@@ -100,13 +100,14 @@ const pool = new Pool({
       user_id INT REFERENCES users(id) ON DELETE CASCADE,
       type VARCHAR(50) DEFAULT 'message',
       message TEXT NOT NULL,
-      instance_id VARCHAR(100),
+      instance_id VARCHAR(255),
       step_id VARCHAR(100),
       read BOOLEAN DEFAULT FALSE,
       timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )`,
 
     `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS step_id VARCHAR(100)`,
+    `ALTER TABLE notifications ALTER COLUMN instance_id TYPE VARCHAR(255) USING instance_id::varchar`,
     `ALTER TABLE templates ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
     `ALTER TABLE templates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE clickup_rules ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'approved'`,
@@ -173,22 +174,53 @@ if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret_konsul_token_2026';
 
-// --- EMAIL SERVICES (RESEND API INTEGRATION) ---
+// --- EMAIL SERVICES (KÔNSUL MAILING AWS SES + RESEND FALLBACK) ---
 const sendEmail = async ({ to, subject, html }) => {
+  if (!to) return false;
+  const mailingUrl = process.env.MAILING_URL || process.env.NEXT_PUBLIC_MAILING_URL || 'https://mailing.konsul.digital';
+  const internalKey = process.env.INTERNAL_API_KEY || process.env.KONSUL_ECOSYSTEM_SECRET_KEY || 'konsul_ecosystem_secret_key';
+
+  // 1. Primary: Kônsul Mailing Transactional API (AWS SES with verified konsul.digital domain)
+  try {
+    const mailingRes = await fetch(`${mailingUrl}/api/v1/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': internalKey
+      },
+      body: JSON.stringify({
+        to,
+        subject,
+        html,
+        senderEmail: process.env.SES_SENDER_EMAIL || 'notificaciones@konsul.digital',
+        senderName: 'Kônsul Process'
+      })
+    });
+
+    if (mailingRes.ok) {
+      console.log(`[Email] Correo enviado con éxito vía Kônsul Mailing (AWS SES) a: ${to}`);
+      return true;
+    } else {
+      const errBody = await mailingRes.text();
+      console.warn(`[Email] Kônsul Mailing respondió ${mailingRes.status}: ${errBody}`);
+    }
+  } catch (mailingErr) {
+    console.warn(`[Email] Error conectando con Kônsul Mailing (${mailingErr.message}), intentando Resend...`);
+  }
+
+  // 2. Fallback: Resend API
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.log(`\n======================================================`);
-    console.log(`⚠️ SIMULACIÓN DE CORREO (RESEND_API_KEY no configurado)`);
+    console.log(`⚠️ SIMULACIÓN DE CORREO (Sin proveedor activo)`);
     console.log(`   Destinatario: ${to}`);
     console.log(`   Asunto: ${subject}`);
-    console.log(`   Contenido HTML:`);
-    console.log(html);
     console.log(`======================================================\n`);
-    return;
+    return false;
   }
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
+    let response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -202,14 +234,34 @@ const sendEmail = async ({ to, subject, html }) => {
       })
     });
 
+    if (!response.ok && response.status === 403) {
+      // Fallback sender if konsul.digital is not verified on this Resend key
+      response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'Kônsul Process <onboarding@resend.dev>',
+          to,
+          subject,
+          html
+        })
+      });
+    }
+
     if (!response.ok) {
       const errText = await response.text();
       console.error('Error de Resend API al enviar email:', errText);
+      return false;
     } else {
       console.log(`Email enviado con éxito vía Resend a: ${to}`);
+      return true;
     }
   } catch (err) {
     console.error('Error de red al conectar con Resend:', err);
+    return false;
   }
 };
 
@@ -294,120 +346,244 @@ const getStepAssigneeIds = (step) => {
   return Array.from(set);
 };
 
-// Automatically email all team members (Encargados & Asignados) involved in a newly launched execution
+// Automatically email AND send in-app notifications to all team members (Encargados & Asignados) involved in a newly launched execution
 const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'https://process-opal.vercel.app') => {
   try {
     if (!orgId || !instanceData) return;
     const steps = Array.isArray(instanceData.steps) ? instanceData.steps : [];
     if (steps.length === 0) return;
 
-    const teamRes = await pool.query(
-      'SELECT id, name, email, role FROM team_members WHERE organization_id = $1',
-      [orgId]
-    );
-    const teamMembers = teamRes.rows || [];
-    if (teamMembers.length === 0) return;
+    const [teamRes, usersRes] = await Promise.all([
+      pool.query('SELECT id, name, email, role FROM team_members WHERE organization_id = $1', [orgId]),
+      pool.query('SELECT id, name, email, role FROM users WHERE organization_id = $1', [orgId])
+    ]);
+
+    const teamRows = teamRes.rows || [];
+    const userRows = usersRes.rows || [];
+
+    // Build unified directory of all members + users in the organization
+    const directory = [];
+    const byEmail = new Map();
+
+    teamRows.forEach(tm => {
+      const cleanEmail = (tm.email || '').trim().toLowerCase();
+      const matchingUser = cleanEmail ? userRows.find(u => (u.email || '').trim().toLowerCase() === cleanEmail) : null;
+      const entry = {
+        key: cleanEmail || `tm_${tm.id}`,
+        memberId: String(tm.id),
+        userId: matchingUser ? matchingUser.id : null,
+        adminAliasId: matchingUser ? `admin_${matchingUser.id}` : null,
+        name: tm.name || matchingUser?.name || 'Colaborador',
+        email: tm.email || matchingUser?.email || '',
+        role: tm.role || matchingUser?.role || 'Equipo'
+      };
+      directory.push(entry);
+      if (cleanEmail) byEmail.set(cleanEmail, entry);
+    });
+
+    userRows.forEach(u => {
+      const cleanEmail = (u.email || '').trim().toLowerCase();
+      if (cleanEmail && byEmail.has(cleanEmail)) {
+        const existing = byEmail.get(cleanEmail);
+        if (!existing.userId) existing.userId = u.id;
+        if (!existing.adminAliasId) existing.adminAliasId = `admin_${u.id}`;
+        return;
+      }
+      const entry = {
+        key: cleanEmail || `user_${u.id}`,
+        memberId: `admin_${u.id}`,
+        userId: u.id,
+        adminAliasId: `admin_${u.id}`,
+        name: u.name || 'Administrador',
+        email: u.email || '',
+        role: u.role || 'admin'
+      };
+      directory.push(entry);
+      if (cleanEmail) byEmail.set(cleanEmail, entry);
+    });
+
+    const resolvePerson = (rawId) => {
+      if (!rawId || rawId === 'Unassigned') return null;
+      const target = String(rawId).trim().toLowerCase();
+      return directory.find(p =>
+        (p.memberId && p.memberId.toLowerCase() === target) ||
+        (p.adminAliasId && p.adminAliasId.toLowerCase() === target) ||
+        (p.userId && String(p.userId).toLowerCase() === target) ||
+        (p.email && p.email.trim().toLowerCase() === target)
+      ) || null;
+    };
 
     const memberStepsMap = new Map();
 
     steps.forEach((step, idx) => {
       const leadId = getStepLeadId(step);
+      const leadPerson = resolvePerson(leadId);
       const assigneeIds = getStepAssigneeIds(step);
 
       assigneeIds.forEach(rawId => {
-        const matchedMember = teamMembers.find(
-          m => String(m.id) === String(rawId) || (m.email && m.email.toLowerCase() === String(rawId).toLowerCase())
-        );
-        if (!matchedMember || !matchedMember.email) return;
+        const person = resolvePerson(rawId);
+        if (!person) return;
 
-        if (!memberStepsMap.has(matchedMember.id)) {
-          memberStepsMap.set(matchedMember.id, {
-            member: matchedMember,
+        if (!memberStepsMap.has(person.key)) {
+          memberStepsMap.set(person.key, {
+            person,
             assignedSteps: []
           });
         }
 
-        const isLead = String(matchedMember.id) === String(leadId) || (matchedMember.email && matchedMember.email.toLowerCase() === String(leadId).toLowerCase());
-        memberStepsMap.get(matchedMember.id).assignedSteps.push({
+        const existingSteps = memberStepsMap.get(person.key).assignedSteps;
+        if (existingSteps.some(s => s.stepNumber === idx + 1)) return;
+
+        const isLead = leadPerson && leadPerson.key === person.key;
+        existingSteps.push({
+          stepId: step.id || `step_${idx + 1}`,
           stepNumber: idx + 1,
           title: step.title || `Paso ${idx + 1}`,
           description: step.description || '',
           dueDate: step.dueDate || null,
-          isLead,
+          isLead: !!isLead,
           isFirstActive: idx === 0
         });
       });
     });
 
-    if (memberStepsMap.size === 0) return;
-
+    const instanceId = String(instanceData.id || '');
     const instanceTitle = instanceData.instanceName || instanceData.instance_name || instanceData.title || 'Nueva Ejecución';
     const templateTitle = instanceData.title || 'Proceso Operativo';
+    const notifiedUserIds = new Set();
 
-    for (const [, { member, assignedSteps }] of memberStepsMap.entries()) {
+    // 1. Insert general launch log in notification_logs
+    if (instanceId) {
+      const assignedNamesSummary = Array.from(memberStepsMap.values())
+        .map(({ person, assignedSteps }) => `${person.name} (${assignedSteps.map(s => `P${s.stepNumber}`).join(', ')})`)
+        .join('; ');
+      const logMessage = assignedNamesSummary
+        ? `🚀 Nueva ejecución "${instanceTitle}" (${templateTitle}). Asignados: ${assignedNamesSummary}.`
+        : `🚀 Se inició la ejecución "${instanceTitle}" basada en la plantilla "${templateTitle}".`;
+
+      await pool.query(
+        `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING`,
+        [`launch-${instanceId}`, orgId, instanceId, 'launch', instanceTitle, 'Inicio de Ejecución', logMessage]
+      );
+    }
+
+    // 2. For each assigned member: send Email + create Personalized In-App Notification with their respective steps
+    for (const [, { person, assignedSteps }] of memberStepsMap.entries()) {
       const hasLeadRole = assignedSteps.some(s => s.isLead);
       const hasFirstStep = assignedSteps.some(s => s.isFirstActive);
+      const firstActiveStep = assignedSteps.find(s => s.isFirstActive);
 
-      const subject = hasFirstStep
-        ? `🚀 [Tu turno] Nueva ejecución iniciada: "${instanceTitle}"`
-        : `📋 Nueva ejecución asignada: "${instanceTitle}" (${templateTitle})`;
+      // 2a. Create in-app notification in `notifications` table for this user
+      let targetUserId = person.userId;
+      if (!targetUserId && person.email) {
+        const uLookup = await pool.query(
+          'SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND organization_id = $2 LIMIT 1',
+          [person.email, orgId]
+        );
+        if (uLookup.rows.length > 0) targetUserId = uLookup.rows[0].id;
+      }
 
-      const stepsRowsHtml = assignedSteps.map(s => {
-        const roleBadge = s.isLead
-          ? `<span style="background-color: #FEF3C7; color: #B45309; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;">👑 Encargado del Paso</span>`
-          : `<span style="background-color: #E0F2FE; color: #0369A1; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;">👥 Asignado</span>`;
-        const activeBadge = s.isFirstActive
-          ? `<span style="background-color: #D1FAE5; color: #047857; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-left: 4px;">⚡ Activo ahora</span>`
-          : '';
-        const dueStr = s.dueDate ? new Date(s.dueDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Según flujo';
+      if (targetUserId && instanceId) {
+        notifiedUserIds.add(targetUserId);
+        const stepsSummaryText = assignedSteps
+          .map(s => `Paso ${s.stepNumber}: "${s.title}" (${s.isLead ? '👑 Encargado Principal' : '👥 Asignado'}${s.isFirstActive ? ' • ⚡ Activo ahora' : ''})`)
+          .join(' | ');
+        const inAppMsg = `🚀 Nueva ejecución "${instanceTitle}" (${templateTitle}) — Tus pasos (${assignedSteps.length}): ${stepsSummaryText}`;
 
-        return `
-          <div style="padding: 12px; border-bottom: 1px solid #E5E7EB; display: flex; flex-direction: column; gap: 4px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-              <strong style="color: #111827; font-size: 14px;">Paso ${s.stepNumber}: ${s.title}</strong>
-              <div>${roleBadge}${activeBadge}</div>
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            targetUserId,
+            hasFirstStep ? 'alert' : 'message',
+            inAppMsg,
+            instanceId,
+            firstActiveStep ? String(firstActiveStep.stepId) : null
+          ]
+        );
+      }
+
+      // 2b. Send email notification to the member
+      if (person.email) {
+        const subject = hasFirstStep
+          ? `🚀 [Tu turno] Nueva ejecución iniciada: "${instanceTitle}"`
+          : `📋 Nueva ejecución asignada: "${instanceTitle}" (${templateTitle})`;
+
+        const stepsRowsHtml = assignedSteps.map(s => {
+          const roleBadge = s.isLead
+            ? `<span style="background-color: #FEF3C7; color: #B45309; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;">👑 Encargado Principal</span>`
+            : `<span style="background-color: #E0F2FE; color: #0369A1; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;">👥 Colaborador Asignado</span>`;
+          const activeBadge = s.isFirstActive
+            ? `<span style="background-color: #D1FAE5; color: #047857; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-left: 4px;">⚡ Activo ahora</span>`
+            : '';
+          const dueStr = s.dueDate ? new Date(s.dueDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Según flujo';
+
+          return `
+            <div style="padding: 12px; border-bottom: 1px solid #E5E7EB; display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                <strong style="color: #111827; font-size: 14px;">Paso ${s.stepNumber}: ${s.title}</strong>
+                <div>${roleBadge}${activeBadge}</div>
+              </div>
+              ${s.description ? `<p style="margin: 4px 0 0 0; color: #6B7280; font-size: 13px;">${s.description}</p>` : ''}
+              <span style="font-size: 12px; color: #9CA3AF;">📅 Fecha estimada: ${dueStr}</span>
             </div>
-            ${s.description ? `<p style="margin: 4px 0 0 0; color: #6B7280; font-size: 13px;">${s.description}</p>` : ''}
-            <span style="font-size: 12px; color: #9CA3AF;">📅 Fecha estimada: ${dueStr}</span>
+          `;
+        }).join('');
+
+        const htmlContent = `
+          <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+              <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 40px; object-fit: contain;" />
+            </div>
+            <h2 style="color: #111827; margin-bottom: 0.75rem; font-size: 1.35rem; font-weight: 700;">
+              🚀 Nueva Ejecución en Marcha
+            </h2>
+            <p style="color: #4b5563; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1rem;">
+              Hola <strong>${person.name}</strong>, se ha iniciado una nueva ejecución del proceso <strong>"${templateTitle}"</strong> para <strong>"${instanceTitle}"</strong> en la que participas como ${hasLeadRole ? '<strong>Encargado Principal de paso</strong>' : '<strong>Colaborador asignado</strong>'}.
+            </p>
+            <div style="background-color: #f9fafb; border-radius: 10px; border: 1px solid #f3f4f6; margin-bottom: 1.5rem; overflow: hidden;">
+              <div style="background-color: #F3F4F6; padding: 10px 14px; font-weight: 700; color: #374151; font-size: 13px;">
+                Tus Pasos Asignados (${assignedSteps.length}):
+              </div>
+              ${stepsRowsHtml}
+            </div>
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+              <a href="${reqOrigin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem; display: inline-block;">Ir a la Ejecución en Kônsul Process</a>
+            </div>
+            <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 1.5rem 0;" />
+            <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
+              Kônsul Process &copy; 2026 • Gestión Operativa Inteligente
+            </p>
           </div>
         `;
-      }).join('');
 
-      const htmlContent = `
-        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-          <div style="text-align: center; margin-bottom: 1.5rem;">
-            <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 40px; object-fit: contain;" />
-          </div>
-          <h2 style="color: #111827; margin-bottom: 0.75rem; font-size: 1.35rem; font-weight: 700;">
-            🚀 Nueva Ejecución en Marcha
-          </h2>
-          <p style="color: #4b5563; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1rem;">
-            Hola <strong>${member.name}</strong>, se ha iniciado una nueva ejecución del proceso <strong>"${templateTitle}"</strong> para <strong>"${instanceTitle}"</strong> en la que participas como ${hasLeadRole ? '<strong>Encargado de paso</strong>' : '<strong>Colaborador asignado</strong>'}.
-          </p>
-          <div style="background-color: #f9fafb; border-radius: 10px; border: 1px solid #f3f4f6; margin-bottom: 1.5rem; overflow: hidden;">
-            <div style="background-color: #F3F4F6; padding: 10px 14px; font-weight: 700; color: #374151; font-size: 13px;">
-              Tus Pasos Asignados (${assignedSteps.length}):
-            </div>
-            ${stepsRowsHtml}
-          </div>
-          <div style="text-align: center; margin-bottom: 1.5rem;">
-            <a href="${reqOrigin}" style="background-color: #27bea7; color: white; padding: 0.75rem 2rem; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem; display: inline-block;">Ir a la Ejecución en Kônsul Process</a>
-          </div>
-          <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 1.5rem 0;" />
-          <p style="color: #9ca3af; font-size: 0.8rem; text-align: center; margin: 0;">
-            Kônsul Process &copy; 2026 • Gestión Operativa Inteligente
-          </p>
-        </div>
-      `;
+        await sendEmail({
+          to: person.email,
+          subject,
+          html: htmlContent
+        });
+      }
+    }
 
-      await sendEmail({
-        to: member.email,
-        subject,
-        html: htmlContent
-      });
+    // 3. Also notify workspace admins in-app if they weren't already notified as step assignees
+    if (instanceId) {
+      const adminsToNotify = userRows.filter(u => u.role === 'admin' && !notifiedUserIds.has(u.id));
+      const summaryForAdmin = memberStepsMap.size > 0
+        ? `🚀 Ejecución "${instanceTitle}" (${templateTitle}) iniciada. Equipo notificado: ${Array.from(memberStepsMap.values()).map(({ person, assignedSteps }) => `${person.name} (${assignedSteps.map(s => `Paso ${s.stepNumber}`).join(', ')})`).join(' • ')}.`
+        : `🚀 Se inició la ejecución "${instanceTitle}" (${templateTitle}).`;
+
+      for (const adminUser of adminsToNotify) {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [adminUser.id, 'message', summaryForAdmin, instanceId, null]
+        );
+      }
     }
   } catch (err) {
-    console.error('Error enviando correos de lanzamiento de ejecución:', err);
+    console.error('Error enviando correos y notificaciones de lanzamiento de ejecución:', err);
   }
 };
 
@@ -1669,37 +1845,63 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
         const stepAssignees = getStepAssigneeIds(step);
         const stepLeadId = getStepLeadId(step);
         
-        // Send email alert to all assignees of this step (Encargado + Colaboradores)
-        if (step && stepAssignees.length > 0 && !String(id || '').startsWith('launch-')) {
-          const memberRes = await pool.query(
-            'SELECT id, name, email FROM team_members WHERE id = ANY($1::text[]) AND organization_id = $2',
-            [stepAssignees, req.user.organizationId]
-          );
+        // Send email alert to all assignees of this step (Encargado + Colaboradores) only for active-step or overdue alerts
+        const idStr = String(id || '');
+        const shouldSendStepEmail = step && stepAssignees.length > 0 && !idStr.startsWith('launch-') && !idStr.startsWith('complete-') && type !== 'success';
+        if (shouldSendStepEmail) {
+          const [memberRes, adminUsersRes] = await Promise.all([
+            pool.query('SELECT id, name, email FROM team_members WHERE organization_id = $1', [req.user.organizationId]),
+            pool.query('SELECT id, name, email FROM users WHERE organization_id = $1', [req.user.organizationId])
+          ]);
+          const allOrgPeople = [
+            ...(memberRes.rows || []).map(m => ({ id: String(m.id), name: m.name, email: m.email })),
+            ...(adminUsersRes.rows || []).map(u => ({ id: `admin_${u.id}`, userId: String(u.id), name: u.name, email: u.email }))
+          ];
+          const matchedStepMembers = [];
+          const seenEmails = new Set();
+          stepAssignees.forEach(rawId => {
+            const target = String(rawId).trim().toLowerCase();
+            const found = allOrgPeople.find(p =>
+              p.id.toLowerCase() === target ||
+              (p.userId && p.userId.toLowerCase() === target) ||
+              (p.email && p.email.trim().toLowerCase() === target)
+            );
+            if (found && found.email && !seenEmails.has(found.email.trim().toLowerCase())) {
+              seenEmails.add(found.email.trim().toLowerCase());
+              matchedStepMembers.push(found);
+            }
+          });
           
-          if (memberRes.rows.length > 0) {
-            const leadRow = memberRes.rows.find(m => String(m.id) === String(stepLeadId)) || memberRes.rows[0];
-            const isOverdue = !String(id || '').startsWith('active-');
+          if (matchedStepMembers.length > 0) {
+            const leadRow = matchedStepMembers.find(m =>
+              stepLeadId && (
+                m.id.toLowerCase() === String(stepLeadId).toLowerCase() ||
+                (m.userId && m.userId.toLowerCase() === String(stepLeadId).toLowerCase()) ||
+                (m.email && m.email.trim().toLowerCase() === String(stepLeadId).toLowerCase())
+              )
+            ) || null;
+            const isOverdue = !idStr.startsWith('active-');
             const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
 
-            for (const memberRow of memberRes.rows) {
+            for (const memberRow of matchedStepMembers) {
               const { name: memberName, email: memberEmail } = memberRow;
               if (!memberEmail) continue;
 
-              const isLead = String(memberRow.id) === String(stepLeadId);
+              const isLead = leadRow && leadRow.email === memberEmail;
               const subject = isOverdue 
                 ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
-                : `📋 ${isLead ? '[Encargado] ' : ''}Paso activo: "${stepTitle}" en "${instanceName}"`;
+                : `📋 ${isLead ? '[Encargado Principal] ' : ''}Paso activo: "${stepTitle}" en "${instanceName}"`;
 
               const htmlContent = `
                 <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
                   <div style="text-align: center; margin-bottom: 2rem;">
-                    <img src="https://konsul.digital/images/Konsul%20logo%20general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
+                    <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
                   </div>
                   <h2 style="color: ${isOverdue ? '#D32F2F' : '#111827'}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
                     ${isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '📋 Paso Asignado y Activo'}
                   </h2>
                   <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1rem;">
-                    Hola <strong>${memberName}</strong> (${isLead ? '👑 Encargado del Paso' : '👥 Colaborador Asignado'}),
+                    Hola <strong>${memberName}</strong> (${isLead ? '👑 Encargado Principal del Paso' : '👥 Colaborador Asignado'}),
                   </p>
                   <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1.5rem;">
                     ${message}
@@ -1709,7 +1911,7 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
                     <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Caso/Ejecución:</strong> ${instanceName}</p>
                     <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Paso:</strong> ${stepTitle}</p>
                     ${leadRow ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>👑 Encargado Principal:</strong> ${leadRow.name}</p>` : ''}
-                    ${memberRes.rows.length > 1 ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>👥 Equipo asignado:</strong> ${memberRes.rows.map(m => m.name).join(', ')}</p>` : ''}
+                    ${matchedStepMembers.length > 1 ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>👥 Equipo asignado:</strong> ${matchedStepMembers.map(m => m.name).join(', ')}</p>` : ''}
                     ${step.description ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
                   </div>
                   <div style="text-align: center; margin-bottom: 2rem;">
@@ -1734,32 +1936,39 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
         // Convert all assigned team member IDs to matching user IDs
         if (assignedMemberIds.size > 0) {
           const memberIdsArr = Array.from(assignedMemberIds);
-          const membersEmailsRes = await pool.query(
-            `SELECT email FROM team_members WHERE id = ANY($2::text[]) AND organization_id = $1`,
-            [req.user.organizationId, memberIdsArr]
-          );
-          
-          if (membersEmailsRes.rows.length > 0) {
-            const emails = membersEmailsRes.rows.map(m => m.email).filter(Boolean);
-            if (emails.length > 0) {
-              const usersRes = await pool.query(
-                `SELECT id FROM users WHERE email = ANY($2::text[]) AND organization_id = $1`,
-                [req.user.organizationId, emails]
-              );
-              usersRes.rows.forEach(row => recipients.add(row.id));
+          const [membersEmailsRes, orgUsersRes] = await Promise.all([
+            pool.query(`SELECT id, email FROM team_members WHERE organization_id = $1`, [req.user.organizationId]),
+            pool.query(`SELECT id, email FROM users WHERE organization_id = $1`, [req.user.organizationId])
+          ]);
+          const matchedEmails = new Set();
+          memberIdsArr.forEach(rawId => {
+            const target = String(rawId).trim().toLowerCase();
+            if (target.startsWith('admin_')) {
+              const uid = parseInt(target.replace('admin_', ''), 10);
+              if (!isNaN(uid)) recipients.add(uid);
             }
-          }
+            const tm = (membersEmailsRes.rows || []).find(m => String(m.id).toLowerCase() === target || (m.email && m.email.trim().toLowerCase() === target));
+            if (tm && tm.email) matchedEmails.add(tm.email.trim().toLowerCase());
+            if (target.includes('@')) matchedEmails.add(target);
+          });
+          (orgUsersRes.rows || []).forEach(u => {
+            if (u.email && matchedEmails.has(u.email.trim().toLowerCase())) {
+              recipients.add(u.id);
+            }
+          });
         }
       }
     }
 
-    // 3. Insert notification records for all identified recipients
-    for (const userId of recipients) {
-      await pool.query(
-        `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [userId, type, finalMessage, instanceId, stepId]
-      );
+    // 3. Insert notification records for all identified recipients (skip launch- because notifyTeamOnExecutionLaunch already creates per-user step notifications)
+    if (!String(id || '').startsWith('launch-')) {
+      for (const userId of recipients) {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [userId, type, finalMessage, instanceId ? String(instanceId) : null, stepId ? String(stepId) : null]
+        );
+      }
     }
 
     res.status(201).json({ message: 'Log de notificación registrado y notificaciones despachadas' });
@@ -3411,6 +3620,14 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
       ]
     );
 
+    const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    await notifyTeamOnExecutionLaunch(req.user.organizationId, {
+      id: instId,
+      title: template.title,
+      instanceName,
+      steps: stepsWithDates
+    }, reqOrigin);
+
     triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
       'Título de Tarea': instanceName,
       'Descripción': `Plantilla ${template.title} ejecutada vía API`,
@@ -4201,6 +4418,14 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
           'Media'
         ]
       );
+
+      const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+      await notifyTeamOnExecutionLaunch(orgId, {
+        id: instId,
+        title: template.title,
+        instanceName,
+        steps: stepsWithDates
+      }, reqOrigin);
 
       // Trigger Suite automation
       triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
