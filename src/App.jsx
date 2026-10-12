@@ -7636,17 +7636,16 @@ const handleDeleteMember = async (id) => {
                 {!googleDriveConfig.onlyUseExistingFolders && (
                   <div style={{ paddingTop: '8px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <label style={{ fontWeight: 700, fontSize: '0.78rem', color: '#334155' }}>
-                      Estructura para clientes nuevos (cuando el cliente aún no tiene carpeta en Drive):
+                      Estructura para clientes/ejecuciones nuevas (cuando aún no existe una carpeta con ese nombre en la Carpeta Raíz):
                     </label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {[
-                        { label: 'Área / Cliente (Ej. Marketing/Cliente A)', value: '{categoria}/{cliente}' },
-                        { label: 'Directo por Cliente (Ej. Cliente A)', value: '{cliente}' },
-                        { label: 'Área / Cliente / Proceso', value: '{categoria}/{cliente}/{proceso}' },
+                        { label: 'Directo con el nombre de la Ejecución / Cliente (Recomendado)', value: '{cliente}' },
                         { label: 'Cliente / Proceso', value: '{cliente}/{proceso}' },
                         { label: 'Cliente / Año / Mes', value: '{cliente}/{año}/{mes}' }
                       ].map((preset) => {
-                        const currentTpl = googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}';
+                        const rawTpl = googleDriveConfig.folderPathTemplate || '{cliente}';
+                        const currentTpl = rawTpl.replace(/^\{categoria\}\/?/i, '') || '{cliente}';
                         const isSelected = currentTpl === preset.value;
                         return (
                           <button
@@ -7672,8 +7671,8 @@ const handleDeleteMember = async (id) => {
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="{categoria}/{cliente}"
-                      value={googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}'}
+                      placeholder="{cliente}"
+                      value={(googleDriveConfig.folderPathTemplate || '{cliente}').replace(/^\{categoria\}\/?/i, '') || '{cliente}'}
                       onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: e.target.value }))}
                       style={{ margin: 0, height: '36px', fontSize: '0.8rem', background: '#fff', fontFamily: 'monospace' }}
                     />

@@ -878,7 +878,7 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
   return null;
 };
 
-const DEFAULT_DRIVE_FOLDER_PATH = '{categoria}/{cliente}';
+const DEFAULT_DRIVE_FOLDER_PATH = '{cliente}';
 const DRIVE_MONTHS_ES = ['01 - Enero', '02 - Febrero', '03 - Marzo', '04 - Abril', '05 - Mayo', '06 - Junio', '07 - Julio', '08 - Agosto', '09 - Septiembre', '10 - Octubre', '11 - Noviembre', '12 - Diciembre'];
 
 const sanitizeDriveFolderName = (name) => String(name || '')
@@ -887,13 +887,22 @@ const sanitizeDriveFolderName = (name) => String(name || '')
   .trim()
   .substring(0, 120);
 
-// Turns "{cliente}/{año}/{proceso}" into ["Acme", "2026", "Onboarding"]
+const normalizeFolderPathTemplate = (rawTemplate) => {
+  const cleaned = String(rawTemplate || DEFAULT_DRIVE_FOLDER_PATH)
+    .trim()
+    .replace(/^\{categoria\}\/?/i, '')
+    .trim();
+  return cleaned || DEFAULT_DRIVE_FOLDER_PATH;
+};
+
+// Turns "{cliente}/{año}/{proceso}" into ["Cliente A", "2026", "Onboarding"]
 const resolveDriveFolderPath = (pathTemplate, vars = {}) => {
-  const template = String(pathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
+  const template = normalizeFolderPathTemplate(pathTemplate);
   return template
     .split('/')
     .map(segment => segment.replace(/\{([^}]+)\}/g, (_, key) => {
       const k = key.trim().toLowerCase();
+      if (k === 'categoria') return '';
       const value = vars[k] ?? vars[k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')];
       return sanitizeDriveFolderName(value);
     }))
@@ -920,7 +929,7 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
     if (!config.connected || config.autoCreateFolders === false) return null;
 
     const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
-    const instanceName = instanceData.instanceName || instanceData.instance_name || instanceData.title || 'Ejecución';
+    const instanceName = (instanceData.instanceName || instanceData.instance_name || instanceData.title || 'Ejecución').trim();
     const templateTitle = instanceData.title || 'Proceso';
 
     // Resolve real client name and any client-specific Drive subfolder
@@ -938,6 +947,9 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
     } catch (_) {}
     if (!effectiveClientName) effectiveClientName = instanceName;
 
+    // The target folder name is the execution/client name directly
+    const primaryFolderName = sanitizeDriveFolderName(instanceName || effectiveClientName);
+
     if (accessToken) {
       let rootId = config.rootFolderId || null;
       if (!rootId) {
@@ -951,7 +963,7 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         }
       }
 
-      // 1. Check if the Client ALREADY has a linked Drive folder or exists inside the Root Folder tree (e.g. Recurrentes > REDES SOCIALES > VOLT FACTORY)
+      // 1. Check if the Client or Execution ALREADY has an existing folder inside the Root Folder tree
       let matchedClientFolder = null;
       if (instRow?.client_drive_folder_id) {
         matchedClientFolder = {
@@ -959,12 +971,15 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
           name: effectiveClientName,
           webViewLink: instRow.client_drive_folder_url || `https://drive.google.com/drive/folders/${instRow.client_drive_folder_id}`
         };
-      } else if (config.matchExistingFolders !== false && effectiveClientName && rootId) {
-        matchedClientFolder = await findExistingClientFolderInTree(accessToken, effectiveClientName, rootId);
+      } else if (config.matchExistingFolders !== false && rootId) {
+        matchedClientFolder = await findExistingClientFolderInTree(accessToken, primaryFolderName, rootId);
+        if (!matchedClientFolder && effectiveClientName && normalizeDriveName(effectiveClientName) !== normalizeDriveName(primaryFolderName)) {
+          matchedClientFolder = await findExistingClientFolderInTree(accessToken, effectiveClientName, rootId);
+        }
         if (matchedClientFolder?.id) {
           await pool.query(
-            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND LOWER(name) = LOWER($4)',
-            [matchedClientFolder.id, matchedClientFolder.webViewLink, orgId, effectiveClientName]
+            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5))',
+            [matchedClientFolder.id, matchedClientFolder.webViewLink, orgId, effectiveClientName, primaryFolderName]
           ).catch(() => {});
         }
       }
@@ -972,20 +987,20 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
       const allowCreateNewFolders = !config.onlyUseExistingFolders;
       const startedAt = instRow?.started_at ? new Date(instRow.started_at) : new Date();
       const vars = {
-        cliente: effectiveClientName,
+        cliente: primaryFolderName,
         proceso: templateTitle,
-        ejecucion: instanceName,
-        categoria: instRow?.category || instanceData.category || 'General',
+        ejecucion: primaryFolderName,
         ano: String(startedAt.getFullYear()),
         año: String(startedAt.getFullYear()),
         mes: DRIVE_MONTHS_ES[startedAt.getMonth()],
         fecha: startedAt.toISOString().slice(0, 10)
       };
 
-      // If we found the Client's existing folder in Drive (e.g. VOLT FACTORY inside REDES SOCIALES):
+      const normalizedTpl = normalizeFolderPathTemplate(config.folderPathTemplate);
+
+      // If we found the Client/Execution's existing folder in Drive:
       if (matchedClientFolder?.id) {
-        const tpl = String(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
-        const afterClientPart = tpl.includes('{cliente}/') ? tpl.split('{cliente}/')[1] : '';
+        const afterClientPart = normalizedTpl.includes('{cliente}/') ? normalizedTpl.split('{cliente}/')[1] : '';
         let targetFolder = matchedClientFolder;
         if (afterClientPart && allowCreateNewFolders) {
           const subSegments = resolveDriveFolderPath(afterClientPart, vars);
@@ -1001,9 +1016,9 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         return { folderId: targetFolder.id, folderUrl: targetFolder.webViewLink, folderName: targetFolder.name };
       }
 
-      // Otherwise, follow the workspace path template if creating new folders is allowed
-      const segments = resolveDriveFolderPath(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH, vars);
-      if (segments.length === 0) segments.push(sanitizeDriveFolderName(effectiveClientName));
+      // Otherwise, create the folder directly in rootId with the execution/client name (no category wrapper)
+      const segments = resolveDriveFolderPath(normalizedTpl, vars);
+      if (segments.length === 0) segments.push(primaryFolderName);
 
       const execFolder = await ensureDriveFolderPath(accessToken, segments, rootId, { allowCreate: allowCreateNewFolders });
       if (execFolder?.id && execFolder.id !== rootId) {
@@ -1011,6 +1026,13 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
           'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
           [execFolder.id, execFolder.webViewLink, instanceData.id, orgId]
         );
+        // Also link client row if it matches the top-level created folder
+        if (segments.length === 1) {
+          await pool.query(
+            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5)) AND (drive_folder_id IS NULL OR drive_folder_id = \'\')',
+            [execFolder.id, execFolder.webViewLink, orgId, effectiveClientName, primaryFolderName]
+          ).catch(() => {});
+        }
         return { folderId: execFolder.id, folderUrl: execFolder.webViewLink, folderName: execFolder.name || segments[segments.length - 1] };
       }
     }
@@ -3997,7 +4019,7 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderId: cfg.rootFolderId || '',
         rootFolderUrl: cfg.rootFolderUrl || '',
         rootFolderName: cfg.rootFolderName || '',
-        folderPathTemplate: cfg.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
+        folderPathTemplate: normalizeFolderPathTemplate(cfg.folderPathTemplate),
         stepSubfolders: !!cfg.stepSubfolders,
         matchExistingFolders: cfg.matchExistingFolders !== false,
         onlyUseExistingFolders: !!cfg.onlyUseExistingFolders,
@@ -4078,7 +4100,7 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       rootFolderId: extractedFolderId,
       rootFolderUrl: resolvedFolderUrl,
       rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
-      folderPathTemplate: folderPathTemplate !== undefined ? (String(folderPathTemplate).trim() || DEFAULT_DRIVE_FOLDER_PATH) : (prev.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH),
+      folderPathTemplate: folderPathTemplate !== undefined ? normalizeFolderPathTemplate(folderPathTemplate) : normalizeFolderPathTemplate(prev.folderPathTemplate),
       stepSubfolders: stepSubfolders !== undefined ? !!stepSubfolders : !!prev.stepSubfolders,
       matchExistingFolders: matchExistingFolders !== undefined ? !!matchExistingFolders : (prev.matchExistingFolders !== false),
       onlyUseExistingFolders: onlyUseExistingFolders !== undefined ? !!onlyUseExistingFolders : !!prev.onlyUseExistingFolders,
