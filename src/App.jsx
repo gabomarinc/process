@@ -7428,7 +7428,7 @@ const handleDeleteMember = async (id) => {
                   Carpeta Madre del Workspace (ej. &quot;Recurrentes&quot; o &quot;Clientes&quot;)
                 </h4>
                 <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Pega el enlace de la carpeta madre donde viven las carpetas de tu agencia. Luego pulsa <strong>Explorar y Vincular Carpetas</strong> para que Kônsul Process reconozca tus carpetas existentes (como <code>REDES SOCIALES &gt; VOLT FACTORY, RADAR, ORTHOSMILE</code>) sin duplicar nada.
+                  Pega el enlace de la carpeta madre donde viven las carpetas de tu agencia. Luego pulsa <strong>Explorar y Vincular Carpetas</strong> para que Kônsul Process reconozca tus carpetas existentes (como <code>ÁREA / DEPARTAMENTO &gt; Cliente A, Cliente B, Cliente C</code>) sin duplicar nada.
                 </p>
               </div>
 
@@ -7453,7 +7453,7 @@ const handleDeleteMember = async (id) => {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Ej. Recurrentes"
+                    placeholder="Ej. Clientes o Recurrentes"
                     value={googleDriveConfig.rootFolderName || ''}
                     onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderName: e.target.value }))}
                     style={{ margin: 0, height: '42px' }}
@@ -7469,7 +7469,7 @@ const handleDeleteMember = async (id) => {
                       🔍 Reconocimiento Inteligente de tus Carpetas Actuales en Drive
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#047857' }}>
-                      Escanea tu Carpeta Madre (y subcarpetas como <code>REDES SOCIALES</code>) para vincular cada cliente con su carpeta exacta existente.
+                      Escanea tu Carpeta Madre (y subcarpetas de área o categoría) para vincular cada cliente con su carpeta exacta existente.
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -7551,7 +7551,7 @@ const handleDeleteMember = async (id) => {
                     <div>
                       <div>✅ Buscar y respetar primero la carpeta existente del Cliente (Recomendado)</div>
                       <div style={{ fontSize: '0.74rem', fontWeight: 400, color: '#64748B' }}>
-                        Antes de crear nada, busca la carpeta del cliente (sin importar mayúsculas/minúsculas, ej. <code>VOLT FACTORY</code>) tanto en la Carpeta Madre como dentro de tus subcarpetas de área (ej. <code>REDES SOCIALES</code>). Si ya existe, guarda y consulta todo ahí mismo.
+                        Antes de crear nada, busca la carpeta del cliente (sin importar mayúsculas/minúsculas, ej. <code>CLIENTE A</code>) tanto en la Carpeta Madre como dentro de tus subcarpetas de área. Si ya existe, guarda y consulta todo ahí mismo.
                       </div>
                     </div>
                   </label>
@@ -7599,8 +7599,8 @@ const handleDeleteMember = async (id) => {
                     </label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {[
-                        { label: 'Área / Cliente (Ej. REDES SOCIALES/VOLT FACTORY)', value: '{categoria}/{cliente}' },
-                        { label: 'Directo por Cliente (Ej. VOLT FACTORY)', value: '{cliente}' },
+                        { label: 'Área / Cliente (Ej. Marketing/Cliente A)', value: '{categoria}/{cliente}' },
+                        { label: 'Directo por Cliente (Ej. Cliente A)', value: '{cliente}' },
                         { label: 'Área / Cliente / Proceso', value: '{categoria}/{cliente}/{proceso}' },
                         { label: 'Cliente / Proceso', value: '{cliente}/{proceso}' },
                         { label: 'Cliente / Año / Mes', value: '{cliente}/{año}/{mes}' }

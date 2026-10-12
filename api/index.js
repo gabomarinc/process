@@ -792,7 +792,7 @@ const listChildFoldersInDrive = async (accessToken, parentFolderId) => {
   }
 };
 
-// Searches for an existing client folder (case-insensitive) directly inside rootFolderId OR 1 level deeper (e.g., Recurrentes > REDES SOCIALES > VOLT FACTORY)
+// Searches for an existing client folder (case-insensitive) directly inside rootFolderId OR 1 level deeper (e.g., Carpeta Madre > Área > CLIENTE A)
 const findExistingClientFolderInTree = async (accessToken, clientName, rootFolderId) => {
   if (!accessToken || !clientName || !rootFolderId) return null;
   const targetNorm = normalizeDriveName(clientName);
@@ -805,7 +805,7 @@ const findExistingClientFolderInTree = async (accessToken, clientName, rootFolde
     return { ...directMatch, parentName: '' };
   }
 
-  // 2. Check level 2 (inside category/area folders like "REDES SOCIALES", "WEB", etc.)
+  // 2. Check level 2 (inside category/area folders)
   for (const catFolder of level1Folders.slice(0, 25)) {
     const level2Folders = await listChildFoldersInDrive(accessToken, catFolder.id);
     const subMatch = level2Folders.find(f => normalizeDriveName(f.name) === targetNorm);
@@ -823,7 +823,7 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
   const targetNorm = normalizeDriveName(folderName);
 
   try {
-    // Case-insensitive search inside parentFolderId first so "Volt Factory" matches "VOLT FACTORY"
+    // Case-insensitive search inside parentFolderId first so "Cliente A" matches "CLIENTE A"
     if (parentFolderId) {
       const children = await listChildFoldersInDrive(accessToken, parentFolderId);
       const existing = children.find(f => normalizeDriveName(f.name) === targetNorm);
