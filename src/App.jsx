@@ -1552,12 +1552,11 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         });
       }
 
-      const clientIdParam = googleDriveConfig.clientId ? `?client_id=${encodeURIComponent(googleDriveConfig.clientId.trim())}` : '';
-      const res = await fetch(`/api/integrations/google-drive/oauth/url${clientIdParam}`);
+      const params = new URLSearchParams({ origin: window.location.origin });
+      if (googleDriveConfig.clientId) params.set('client_id', googleDriveConfig.clientId.trim());
+      const res = await fetch(`/api/integrations/google-drive/oauth/url?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) {
-        const inputEl = document.getElementById('gdrive-oauth-client-id');
-        if (inputEl) inputEl.focus();
         throw new Error(data.error || 'No se pudo iniciar la conexión OAuth con Google Drive.');
       }
       if (data.url) {

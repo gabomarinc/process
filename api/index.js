@@ -4217,12 +4217,27 @@ app.post('/api/integrations/google-drive/sync-tree', authenticateToken, async (r
   }
 });
 
+const resolveGoogleOAuthRedirectUri = (req, preferredOrigin = '') => {
+  if (process.env.GOOGLE_REDIRECT_URI && process.env.GOOGLE_REDIRECT_URI.trim()) {
+    return process.env.GOOGLE_REDIRECT_URI.trim();
+  }
+  let baseOrigin = (preferredOrigin || req.query?.origin || req.headers.origin || '').trim().replace(/\/$/, '');
+  if (!baseOrigin) {
+    const forwardedProto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host = (req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+    const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+    const proto = isLocal ? forwardedProto : 'https';
+    baseOrigin = `${proto}://${host}`;
+  }
+  return `${baseOrigin}/api/integrations/google-drive/oauth/callback`;
+};
+
 // Generate OAuth 2.0 Authorization URL for 1-click Google Drive connection
 app.get('/api/integrations/google-drive/oauth/url', authenticateToken, async (req, res) => {
   try {
     const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
     const cfg = orgRes.rows[0]?.google_drive_config || {};
-    const clientId = (req.query.client_id || cfg.clientId || process.env.GOOGLE_CLIENT_ID || '').trim();
+    const clientId = (process.env.GOOGLE_CLIENT_ID || req.query.client_id || cfg.clientId || '').trim();
 
     if (!clientId) {
       return res.status(400).json({
@@ -4230,10 +4245,9 @@ app.get('/api/integrations/google-drive/oauth/url', authenticateToken, async (re
       });
     }
 
-    const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-    const redirectUri = `${origin}/api/integrations/google-drive/oauth/callback`;
+    const redirectUri = resolveGoogleOAuthRedirectUri(req, req.query.origin);
     const stateToken = jwt.sign(
-      { orgId: req.user.organizationId, userId: req.user.id, redirectOrigin: origin },
+      { orgId: req.user.organizationId, userId: req.user.id, redirectUri },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
@@ -4264,13 +4278,12 @@ app.get('/api/integrations/google-drive/oauth/callback', async (req, res) => {
   try {
     const decoded = jwt.verify(state, JWT_SECRET);
     const orgId = decoded.orgId;
-    const origin = decoded.redirectOrigin || `${req.protocol}://${req.get('host')}`;
-    const redirectUri = `${origin}/api/integrations/google-drive/oauth/callback`;
+    const redirectUri = decoded.redirectUri || resolveGoogleOAuthRedirectUri(req, decoded.redirectOrigin);
 
     const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
     const cfg = orgRes.rows[0]?.google_drive_config || {};
-    const clientId = cfg.clientId || process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = cfg.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
+    const clientId = (process.env.GOOGLE_CLIENT_ID || cfg.clientId || '').trim();
+    const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || cfg.clientSecret || '').trim();
 
     if (!clientId || !clientSecret) {
       return res.redirect('/?drive_error=missing_client_credentials');
