@@ -1467,6 +1467,8 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderUrl: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderName: googleDriveConfig.rootFolderName,
+          folderPathTemplate: googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}',
+          stepSubfolders: !!googleDriveConfig.stepSubfolders,
           autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
           autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
           autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
@@ -7480,25 +7482,92 @@ const handleDeleteMember = async (id) => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#F8FAFC', padding: '12px 16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}>
+              {/* Subfolder Path Template per Workspace */}
+              <div style={{ background: '#F8FAFC', padding: '14px 16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '0.84rem', color: '#0F172A', display: 'block', marginBottom: '4px' }}>
+                    📂 Estructura de Subcarpetas dentro de tu Carpeta Raíz (Configurable por Workspace)
+                  </label>
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: '#475569' }}>
+                    Define cómo se organizan las subcarpetas para cada cliente y proceso. Si una subcarpeta ya existe en tu Drive, Kônsul Process la reutiliza sin duplicarla.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[
+                    { label: 'Por Cliente y Proceso', value: '{cliente}/{proceso}' },
+                    { label: 'Clientes / Cliente / Proceso', value: 'Clientes/{cliente}/{proceso}' },
+                    { label: 'Cliente / Año / Proceso', value: '{cliente}/{año}/{proceso}' },
+                    { label: 'Categoría / Cliente / Ejecución', value: '{categoria}/{cliente}/{ejecucion}' },
+                    { label: 'Año / Mes / Cliente', value: '{año}/{mes}/{cliente}' }
+                  ].map((preset) => {
+                    const currentTpl = googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}';
+                    const isSelected = currentTpl === preset.value;
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: preset.value }))}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '999px',
+                          fontSize: '0.73rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: isSelected ? '1px solid #2563EB' : '1px solid #CBD5E1',
+                          background: isSelected ? '#EFF6FF' : '#FFFFFF',
+                          color: isSelected ? '#1D4ED8' : '#334155'
+                        }}
+                      >
+                        {preset.label}: <code>{preset.value}</code>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div>
                   <input
-                    type="checkbox"
-                    checked={googleDriveConfig.autoCreateClientFolders !== false}
-                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoCreateClientFolders: e.target.checked }))}
-                    style={{ width: '16px', height: '16px' }}
+                    type="text"
+                    className="form-input"
+                    placeholder="{cliente}/{proceso}"
+                    value={googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}'}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: e.target.value }))}
+                    style={{ margin: 0, height: '38px', fontSize: '0.82rem', background: '#fff', fontFamily: 'monospace' }}
                   />
-                  <span>Crear/vincular automáticamente carpeta en Google Drive por Cliente y Ejecución al lanzar un proceso</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}>
-                  <input
-                    type="checkbox"
-                    checked={googleDriveConfig.autoUploadStepFiles !== false}
-                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoUploadStepFiles: e.target.checked }))}
-                    style={{ width: '16px', height: '16px' }}
-                  />
-                  <span>Subir automáticamente a Google Drive los archivos entregables cargados en los pasos de cada ejecución</span>
-                </label>
+                  <small style={{ color: '#64748B', fontSize: '0.72rem', display: 'block', marginTop: '4px' }}>
+                    Variables disponibles: <code>{'{cliente}'}</code>, <code>{'{proceso}'}</code>, <code>{'{ejecucion}'}</code>, <code>{'{categoria}'}</code>, <code>{'{año}'}</code>, <code>{'{mes}'}</code>, <code>{'{fecha}'}</code>. Además, en cada paso de una plantilla puedes indicar una subcarpeta específica (ej. <code>Legal</code> o <code>Contratos/Firmados</code>).
+                  </small>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '6px', borderTop: '1px solid #E2E8F0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+                    <input
+                      type="checkbox"
+                      checked={googleDriveConfig.autoCreateClientFolders !== false}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoCreateClientFolders: e.target.checked }))}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <span>Crear/vincular automáticamente subcarpetas siguiendo la ruta de arriba al lanzar cada proceso</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+                    <input
+                      type="checkbox"
+                      checked={googleDriveConfig.autoUploadStepFiles !== false}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoUploadStepFiles: e.target.checked }))}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <span>Subir automáticamente a Google Drive los archivos entregables cargados en los pasos</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!googleDriveConfig.stepSubfolders}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, stepSubfolders: e.target.checked }))}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <span>Crear una subcarpeta separada por cada Paso dentro de la carpeta de la ejecución (o usa la subcarpeta personalizada de cada paso)</span>
+                  </label>
+                </div>
               </div>
 
               {googleDriveTestStatus && (

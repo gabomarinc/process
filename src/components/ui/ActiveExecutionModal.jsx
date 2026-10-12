@@ -63,6 +63,12 @@ export const ActiveExecutionModal = ({
   // Google Drive states for Execution & Steps
   const [localDriveFolderUrl, setLocalDriveFolderUrl] = useState(null);
   const [isEnsuringDriveFolder, setIsEnsuringDriveFolder] = useState(false);
+  const [showSubfolderDrawer, setShowSubfolderDrawer] = useState(false);
+  const [subfolderLinkInput, setSubfolderLinkInput] = useState('');
+  const [subfolderCreatePath, setSubfolderCreatePath] = useState('');
+  const [saveSubfolderForClient, setSaveSubfolderForClient] = useState(true);
+  const [availableSubfolders, setAvailableSubfolders] = useState([]);
+  const [isSavingSubfolder, setIsSavingSubfolder] = useState(false);
   const [driveLinkingStepId, setDriveLinkingStepId] = useState(null);
   const [driveLinkInput, setDriveLinkInput] = useState('');
   const [driveFilesForStep, setDriveFilesForStep] = useState([]);
@@ -79,8 +85,52 @@ export const ActiveExecutionModal = ({
     }
   };
 
+  const handleToggleSubfolderDrawer = async () => {
+    const next = !showSubfolderDrawer;
+    setShowSubfolderDrawer(next);
+    if (next) {
+      setSubfolderLinkInput(localDriveFolderUrl || activeInstance?.driveFolderUrl || '');
+      try {
+        const res = await fetch('/api/integrations/google-drive/files?type=folders');
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableSubfolders(data.files || []);
+        }
+      } catch (_) {}
+    }
+  };
+
+  const handleSaveExecutionSubfolder = async (overrideFolderUrl = null) => {
+    setIsSavingSubfolder(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/set-instance-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: activeInstance.id,
+          folderInput: overrideFolderUrl || subfolderLinkInput,
+          createSubfolderPath: overrideFolderUrl ? '' : subfolderCreatePath,
+          saveForClient: saveSubfolderForClient
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.driveFolderUrl) {
+        setLocalDriveFolderUrl(data.driveFolderUrl);
+        setShowSubfolderDrawer(false);
+        setSubfolderCreatePath('');
+        if (addToast) addToast('📂 Subcarpeta de Google Drive vinculada a esta ejecución', 'success');
+      } else {
+        if (addToast) addToast(data.error || 'No se pudo vincular la subcarpeta.', 'error');
+      }
+    } catch (err) {
+      if (addToast) addToast('Error al guardar la subcarpeta de Google Drive.', 'error');
+    } finally {
+      setIsSavingSubfolder(false);
+    }
+  };
+
   const handleOpenExecutionDriveFolder = async () => {
-    const existingUrl = activeInstance?.driveFolderUrl || localDriveFolderUrl;
+    const existingUrl = localDriveFolderUrl || activeInstance?.driveFolderUrl;
     if (existingUrl) {
       window.open(existingUrl, '_blank', 'noopener,noreferrer');
       return;
@@ -93,9 +143,10 @@ export const ActiveExecutionModal = ({
         body: JSON.stringify({ instanceId: activeInstance.id })
       });
       const data = await res.json();
-      if (res.ok && data.folderUrl) {
-        setLocalDriveFolderUrl(data.folderUrl);
-        window.open(data.folderUrl, '_blank', 'noopener,noreferrer');
+      if (res.ok && (data.driveFolderUrl || data.folderUrl)) {
+        const url = data.driveFolderUrl || data.folderUrl;
+        setLocalDriveFolderUrl(url);
+        window.open(url, '_blank', 'noopener,noreferrer');
         if (addToast) addToast('Carpeta de Google Drive vinculada y abierta', 'success');
       } else {
         if (addToast) addToast(data.error || 'Configura Google Drive en Integraciones > Externas para vincular carpetas.', 'info');
@@ -446,6 +497,28 @@ export const ActiveExecutionModal = ({
                <span>{isEnsuringDriveFolder ? 'Abriendo Drive...' : (activeInstance?.driveFolderUrl || localDriveFolderUrl) ? 'Carpeta Drive' : 'Vincular Carpeta Drive'}</span>
                <ExternalLink size={11} />
              </button>
+             <button
+               type="button"
+               onClick={handleToggleSubfolderDrawer}
+               style={{
+                 border: '1px solid #A7F3D0',
+                 background: showSubfolderDrawer ? '#D1FAE5' : '#ECFDF5',
+                 color: '#065F46',
+                 padding: '4px 10px',
+                 borderRadius: '20px',
+                 fontSize: '0.75rem',
+                 fontWeight: 700,
+                 cursor: 'pointer',
+                 display: 'inline-flex',
+                 alignItems: 'center',
+                 gap: '4px',
+                 transition: 'all 0.15s ease'
+               }}
+               title="Elegir o pegar una subcarpeta específica de Google Drive para este Cliente / Ejecución"
+             >
+               <span>📂 Subcarpeta</span>
+               <ChevronDown size={12} style={{ transform: showSubfolderDrawer ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+             </button>
              {uniqueAttachments.length > 0 && (
                <button
                  onClick={() => setShowAttachmentsDropdown(!showAttachmentsDropdown)}
@@ -481,6 +554,87 @@ export const ActiveExecutionModal = ({
              <button className="close-btn-aesthetic" onClick={onClose} title="Cerrar"><X size={20} /></button>
            </div>
         </div>
+
+        {/* Collapsible Subfolder Selector / Linker Drawer */}
+        {showSubfolderDrawer && (
+          <div style={{
+            background: '#F0FDF4',
+            borderBottom: '1px solid #BBF7D0',
+            padding: '0.85rem 2rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.6rem',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#065F46' }}>
+                📂 Subcarpeta Específica en Google Drive para "{activeInstance.instanceName}"
+              </span>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', fontWeight: 600, color: '#065F46', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={saveSubfolderForClient}
+                  onChange={(e) => setSaveSubfolderForClient(e.target.checked)}
+                />
+                <span>Usar también esta subcarpeta para futuras ejecuciones de este Cliente</span>
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  placeholder="Pega el link o ID de la subcarpeta en Drive..."
+                  value={subfolderLinkInput}
+                  onChange={(e) => setSubfolderLinkInput(e.target.value)}
+                  style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #86EFAC', fontSize: '0.78rem', background: '#fff' }}
+                />
+                <button
+                  type="button"
+                  disabled={isSavingSubfolder}
+                  onClick={() => handleSaveExecutionSubfolder()}
+                  style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {isSavingSubfolder ? 'Guardando...' : 'Vincular Link'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  placeholder="O crear nueva subcarpeta (ej. Clientes/Acme/2026)..."
+                  value={subfolderCreatePath}
+                  onChange={(e) => setSubfolderCreatePath(e.target.value)}
+                  style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #BFDBFE', fontSize: '0.78rem', background: '#fff' }}
+                />
+                <button
+                  type="button"
+                  disabled={isSavingSubfolder || !subfolderCreatePath.trim()}
+                  onClick={() => handleSaveExecutionSubfolder()}
+                  style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  Crear Ruta
+                </button>
+              </div>
+            </div>
+
+            {availableSubfolders.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#047857' }}>Subcarpetas existentes en tu Drive:</span>
+                {availableSubfolders.slice(0, 12).map(folder => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => handleSaveExecutionSubfolder(folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`)}
+                    style={{ background: '#fff', border: '1px solid #6EE7B7', color: '#065F46', borderRadius: '999px', padding: '3px 9px', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    📁 {folder.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Collapsible Top Attachments Drawer */}
         {showAttachmentsDropdown && uniqueAttachments.length > 0 && (
@@ -921,6 +1075,11 @@ export const ActiveExecutionModal = ({
                                 </div>
                               ) : (
                                 <div style={{ width: '100%' }}>
+                                  {step.driveSubfolder && (
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '6px', padding: '3px 8px', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                      📂 Subcarpeta Drive: <code>{step.driveSubfolder}</code>
+                                    </div>
+                                  )}
                                   {step.isCompleted || step.uploadedFileName ? (
                                     <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

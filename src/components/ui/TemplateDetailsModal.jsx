@@ -263,6 +263,21 @@ export const TemplateDetailsModal = ({
                               </div>
                             </div>
 
+                            {editingStepData.type === 'digital' && (
+                              <div className="tdm-form-group">
+                                <label>📁 Subcarpeta en Google Drive (opcional)</label>
+                                <input
+                                  type="text"
+                                  placeholder="Ej. Legal  ó  Contratos/Firmados"
+                                  value={editingStepData.driveSubfolder || ''}
+                                  onChange={(e) => setEditingStepData({ ...editingStepData, driveSubfolder: e.target.value })}
+                                />
+                                <small style={{ color: '#64748B', fontSize: '0.72rem' }}>
+                                  El archivo de este paso se guardará en esta subcarpeta, dentro de la carpeta de la ejecución. Vacío = configuración del Workspace.
+                                </small>
+                              </div>
+                            )}
+
                             {/* Encargado del Paso + Equipo Asignado (Múltiple) */}
                             <div className="tdm-form-group" style={{ background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                               <div style={{ marginBottom: '0.75rem' }}>

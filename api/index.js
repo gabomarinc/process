@@ -663,6 +663,8 @@ const extractDriveIdFromInput = (input) => {
   return '';
 };
 
+let cachedPlatformServiceToken = { token: null, expiry: 0 };
+
 const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
   try {
     let config = existingConfig;
@@ -670,7 +672,7 @@ const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
       const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
       config = orgRes.rows[0]?.google_drive_config || {};
     }
-    if (!config || typeof config !== 'object') return null;
+    if (!config || typeof config !== 'object') config = {};
 
     if (config.accessToken) {
       const now = Date.now();
@@ -679,7 +681,8 @@ const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
       }
     }
 
-    if (config.refreshToken) {
+    const effectiveRefreshToken = config.refreshToken || process.env.GOOGLE_REFRESH_TOKEN;
+    if (effectiveRefreshToken) {
       const clientId = config.clientId || process.env.GOOGLE_CLIENT_ID;
       const clientSecret = config.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
       if (clientId && clientSecret) {
@@ -689,23 +692,71 @@ const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
           body: new URLSearchParams({
             client_id: clientId,
             client_secret: clientSecret,
-            refresh_token: config.refreshToken,
+            refresh_token: effectiveRefreshToken,
             grant_type: 'refresh_token'
           })
         });
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
-          const updatedConfig = {
-            ...config,
-            accessToken: tokenData.access_token,
-            tokenExpiry: Date.now() + ((tokenData.expires_in || 3600) * 1000)
-          };
-          await pool.query(
-            'UPDATE organizations SET google_drive_config = $1 WHERE id = $2',
-            [JSON.stringify(updatedConfig), orgId]
-          );
+          if (config.refreshToken && orgId) {
+            const updatedConfig = {
+              ...config,
+              accessToken: tokenData.access_token,
+              tokenExpiry: Date.now() + ((tokenData.expires_in || 3600) * 1000)
+            };
+            await pool.query(
+              'UPDATE organizations SET google_drive_config = $1 WHERE id = $2',
+              [JSON.stringify(updatedConfig), orgId]
+            );
+          }
           return tokenData.access_token;
         }
+      }
+    }
+
+    // Fallback: Platform or Workspace Google Service Account (Zero-click bot mode for Camino 1 shared folders)
+    const saRaw = config.serviceAccountJson || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    let saEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+    let saKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ? process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n') : '';
+    if (saRaw) {
+      try {
+        const parsedSa = typeof saRaw === 'string' ? JSON.parse(saRaw) : saRaw;
+        saEmail = parsedSa.client_email || saEmail;
+        saKey = parsedSa.private_key ? parsedSa.private_key.replace(/\\n/g, '\n') : saKey;
+      } catch (_) {}
+    }
+
+    if (saEmail && saKey) {
+      if (cachedPlatformServiceToken.token && cachedPlatformServiceToken.expiry > Date.now() + 60000) {
+        return cachedPlatformServiceToken.token;
+      }
+      const nowSec = Math.floor(Date.now() / 1000);
+      const assertion = jwt.sign(
+        {
+          iss: saEmail,
+          scope: 'https://www.googleapis.com/auth/drive',
+          aud: 'https://oauth2.googleapis.com/token',
+          iat: nowSec,
+          exp: nowSec + 3600
+        },
+        saKey,
+        { algorithm: 'RS256' }
+      );
+      const saRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion
+        })
+      });
+      if (saRes.ok) {
+        const saData = await saRes.json();
+        cachedPlatformServiceToken = {
+          token: saData.access_token,
+          expiry: Date.now() + ((saData.expires_in || 3600) * 1000)
+        };
+        return saData.access_token;
       }
     }
 
@@ -725,7 +776,7 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
   }
 
   try {
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=1`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`;
     const searchRes = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -746,7 +797,7 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
       mimeType: 'application/vnd.google-apps.folder',
       ...(parentFolderId ? { parents: [parentFolderId] } : {})
     };
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink&supportsAllDrives=true', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -769,6 +820,40 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
   return null;
 };
 
+const DEFAULT_DRIVE_FOLDER_PATH = '{cliente}/{proceso}';
+const DRIVE_MONTHS_ES = ['01 - Enero', '02 - Febrero', '03 - Marzo', '04 - Abril', '05 - Mayo', '06 - Junio', '07 - Julio', '08 - Agosto', '09 - Septiembre', '10 - Octubre', '11 - Noviembre', '12 - Diciembre'];
+
+const sanitizeDriveFolderName = (name) => String(name || '')
+  .replace(/[\\/]+/g, '-')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .substring(0, 120);
+
+// Turns "{cliente}/{año}/{proceso}" into ["Acme", "2026", "Onboarding"]
+const resolveDriveFolderPath = (pathTemplate, vars = {}) => {
+  const template = String(pathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
+  return template
+    .split('/')
+    .map(segment => segment.replace(/\{([^}]+)\}/g, (_, key) => {
+      const k = key.trim().toLowerCase();
+      const value = vars[k] ?? vars[k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')];
+      return sanitizeDriveFolderName(value);
+    }))
+    .map(sanitizeDriveFolderName)
+    .filter(Boolean);
+};
+
+// Finds or creates each folder of the path, starting at parentId. Returns the deepest folder.
+const ensureDriveFolderPath = async (accessToken, segments, parentId = null) => {
+  let current = parentId ? { id: parentId, webViewLink: `https://drive.google.com/drive/folders/${parentId}` } : null;
+  for (const segment of segments) {
+    const next = await findOrCreateDriveFolder(accessToken, segment, current?.id || null);
+    if (!next) break;
+    current = next;
+  }
+  return current;
+};
+
 const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') => {
   try {
     if (!orgId || !instanceData?.id) return null;
@@ -779,7 +864,21 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
     const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
     const instanceName = instanceData.instanceName || instanceData.instance_name || instanceData.title || 'Ejecución';
     const templateTitle = instanceData.title || 'Proceso';
-    const effectiveClientName = (clientName || instanceName).trim();
+
+    // Resolve real client name and any client-specific Drive subfolder
+    let effectiveClientName = (clientName || '').trim();
+    let instRow = null;
+    try {
+      const r = await pool.query(
+        `SELECT i.client_id, i.category, i.started_at, c.name AS client_name, c.drive_folder_id AS client_drive_folder_id, c.drive_folder_url AS client_drive_folder_url
+         FROM instances i LEFT JOIN clients c ON c.id = i.client_id AND c.organization_id = i.organization_id
+         WHERE i.id = $1 AND i.organization_id = $2`,
+        [instanceData.id, orgId]
+      );
+      instRow = r.rows[0] || null;
+      if (instRow?.client_name) effectiveClientName = instRow.client_name;
+    } catch (_) {}
+    if (!effectiveClientName) effectiveClientName = instanceName;
 
     if (accessToken) {
       let rootId = config.rootFolderId || null;
@@ -794,11 +893,25 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         }
       }
 
-      let parentId = rootId;
-      if (effectiveClientName) {
-        const clientFolder = await findOrCreateDriveFolder(accessToken, effectiveClientName, rootId);
+      const startedAt = instRow?.started_at ? new Date(instRow.started_at) : new Date();
+      const vars = {
+        cliente: effectiveClientName,
+        proceso: templateTitle,
+        ejecucion: instanceName,
+        categoria: instRow?.category || instanceData.category || 'General',
+        ano: String(startedAt.getFullYear()),
+        año: String(startedAt.getFullYear()),
+        mes: DRIVE_MONTHS_ES[startedAt.getMonth()],
+        fecha: startedAt.toISOString().slice(0, 10)
+      };
+      const segments = resolveDriveFolderPath(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH, vars);
+      if (segments.length === 0) segments.push(sanitizeDriveFolderName(`${instanceName} - ${templateTitle}`));
+
+      // Remember the client folder (first segment when the path starts with {cliente})
+      const template = String(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
+      if (template.trim().startsWith('{cliente}') && effectiveClientName) {
+        const clientFolder = await findOrCreateDriveFolder(accessToken, segments[0], rootId);
         if (clientFolder) {
-          parentId = clientFolder.id;
           await pool.query(
             'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND LOWER(name) = LOWER($4)',
             [clientFolder.id, clientFolder.webViewLink, orgId, effectiveClientName]
@@ -806,28 +919,26 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         }
       }
 
-      const execFolderName = effectiveClientName && effectiveClientName !== instanceName
-        ? `${instanceName} (${templateTitle})`
-        : `${instanceName} - ${templateTitle}`;
-      const execFolder = await findOrCreateDriveFolder(accessToken, execFolderName, parentId);
-
-      if (execFolder) {
+      const execFolder = await ensureDriveFolderPath(accessToken, segments, rootId);
+      if (execFolder?.id && execFolder.id !== rootId) {
         await pool.query(
           'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
           [execFolder.id, execFolder.webViewLink, instanceData.id, orgId]
         );
-        return { folderId: execFolder.id, folderUrl: execFolder.webViewLink, folderName: execFolder.name };
+        return { folderId: execFolder.id, folderUrl: execFolder.webViewLink, folderName: execFolder.name || segments[segments.length - 1] };
       }
     }
 
-    // Fallback for Folder Link / ID mode without OAuth token
-    if (config.rootFolderId) {
-      const folderUrl = config.rootFolderUrl || `https://drive.google.com/drive/folders/${config.rootFolderId}`;
+    // Fallback for Folder Link / ID mode (Camino 1) without OAuth token:
+    // Use client's dedicated subfolder if set, otherwise workspace root folder
+    const fallbackFolderId = instRow?.client_drive_folder_id || config.rootFolderId;
+    if (fallbackFolderId) {
+      const folderUrl = instRow?.client_drive_folder_url || (fallbackFolderId === config.rootFolderId ? config.rootFolderUrl : '') || `https://drive.google.com/drive/folders/${fallbackFolderId}`;
       await pool.query(
         'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
-        [config.rootFolderId, folderUrl, instanceData.id, orgId]
+        [fallbackFolderId, folderUrl, instanceData.id, orgId]
       );
-      return { folderId: config.rootFolderId, folderUrl, folderName: config.rootFolderName || 'Carpeta Drive' };
+      return { folderId: fallbackFolderId, folderUrl, folderName: instRow?.client_drive_folder_id ? `Carpeta ${effectiveClientName}` : (config.rootFolderName || 'Carpeta Drive') };
     }
   } catch (err) {
     console.warn('Error in ensureExecutionDriveFolder:', err.message);
@@ -872,7 +983,7 @@ const uploadBase64FileToDrive = async (orgId, { fileName, mimeType, base64Data, 
     cleanBase64 +
     closeDelimiter;
 
-  const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,mimeType', {
+  const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,mimeType&supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -1645,6 +1756,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         rootFolderId: rawDriveConfig.rootFolderId || '',
         rootFolderUrl: rawDriveConfig.rootFolderUrl || '',
         rootFolderName: rawDriveConfig.rootFolderName || '',
+        folderPathTemplate: rawDriveConfig.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
+        stepSubfolders: !!rawDriveConfig.stepSubfolders,
         autoCreateFolders: rawDriveConfig.autoCreateFolders !== false,
         autoCreateClientFolders: rawDriveConfig.autoCreateFolders !== false,
         autoUploadStepFiles: rawDriveConfig.autoUploadStepFiles !== false,
@@ -3788,6 +3901,8 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderId: cfg.rootFolderId || '',
         rootFolderUrl: cfg.rootFolderUrl || '',
         rootFolderName: cfg.rootFolderName || '',
+        folderPathTemplate: cfg.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
+        stepSubfolders: !!cfg.stepSubfolders,
         autoCreateFolders: cfg.autoCreateFolders !== false,
         autoCreateClientFolders: cfg.autoCreateFolders !== false,
         autoUploadStepFiles: cfg.autoUploadStepFiles !== false,
@@ -3812,6 +3927,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
     rootFolderUrl,
     rootFolderId,
     rootFolderName,
+    folderPathTemplate,
+    stepSubfolders,
     autoCreateFolders,
     autoCreateClientFolders,
     autoUploadStepFiles,
@@ -3861,6 +3978,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       rootFolderId: extractedFolderId,
       rootFolderUrl: resolvedFolderUrl,
       rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
+      folderPathTemplate: folderPathTemplate !== undefined ? (String(folderPathTemplate).trim() || DEFAULT_DRIVE_FOLDER_PATH) : (prev.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH),
+      stepSubfolders: stepSubfolders !== undefined ? !!stepSubfolders : !!prev.stepSubfolders,
       autoCreateFolders: resolvedAutoCreate,
       autoUploadStepFiles: autoUploadStepFiles !== undefined ? !!autoUploadStepFiles : (prev.autoUploadStepFiles !== false),
       accessToken: nextAccessToken,
@@ -3882,6 +4001,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderId: updated.rootFolderId,
         rootFolderUrl: updated.rootFolderUrl,
         rootFolderName: updated.rootFolderName,
+        folderPathTemplate: updated.folderPathTemplate,
+        stepSubfolders: updated.stepSubfolders,
         autoCreateFolders: updated.autoCreateFolders,
         autoCreateClientFolders: updated.autoCreateFolders,
         autoUploadStepFiles: updated.autoUploadStepFiles,
@@ -4158,6 +4279,77 @@ app.post('/api/integrations/google-drive/ensure-instance-folder', authenticateTo
   }
 });
 
+// Set or create a specific Drive subfolder for an execution (and optionally save for its Client)
+app.post('/api/integrations/google-drive/set-instance-folder', authenticateToken, async (req, res) => {
+  const { instanceId, folderInput, createSubfolderPath, saveForClient } = req.body;
+  if (!instanceId) return res.status(400).json({ error: 'instanceId es requerido' });
+  try {
+    const instRes = await pool.query('SELECT * FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
+    if (instRes.rows.length === 0) return res.status(404).json({ error: 'Ejecución no encontrada' });
+    const inst = instRes.rows[0];
+
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const accessToken = await getValidGoogleDriveAccessToken(req.user.organizationId, cfg);
+
+    let finalFolderId = '';
+    let finalFolderUrl = '';
+    let finalFolderName = '';
+
+    if (createSubfolderPath && String(createSubfolderPath).trim() && accessToken) {
+      const segments = String(createSubfolderPath).split('/').map(sanitizeDriveFolderName).filter(Boolean);
+      const baseParentId = extractDriveIdFromInput(folderInput || '') || inst.drive_folder_id || cfg.rootFolderId || null;
+      const created = await ensureDriveFolderPath(accessToken, segments, baseParentId);
+      if (!created?.id) {
+        return res.status(400).json({ error: 'No se pudo crear la subcarpeta en Google Drive.' });
+      }
+      finalFolderId = created.id;
+      finalFolderUrl = created.webViewLink || `https://drive.google.com/drive/folders/${created.id}`;
+      finalFolderName = created.name || segments[segments.length - 1];
+    } else if (folderInput && String(folderInput).trim()) {
+      finalFolderId = extractDriveIdFromInput(folderInput);
+      if (!finalFolderId) {
+        return res.status(400).json({ error: 'Enlace o ID de subcarpeta de Google Drive inválido.' });
+      }
+      finalFolderUrl = String(folderInput).trim().startsWith('http')
+        ? String(folderInput).trim()
+        : `https://drive.google.com/drive/folders/${finalFolderId}`;
+      finalFolderName = 'Subcarpeta vinculada';
+    } else {
+      return res.status(400).json({ error: 'Ingresa el enlace/ID de la subcarpeta o la ruta a crear.' });
+    }
+
+    await pool.query(
+      'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+      [finalFolderId, finalFolderUrl, instanceId, req.user.organizationId]
+    );
+
+    if (saveForClient && (inst.client_id || inst.instance_name)) {
+      if (inst.client_id) {
+        await pool.query(
+          'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+          [finalFolderId, finalFolderUrl, inst.client_id, req.user.organizationId]
+        ).catch(() => {});
+      } else if (inst.instance_name) {
+        await pool.query(
+          'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE LOWER(name) = LOWER($3) AND organization_id = $4',
+          [finalFolderId, finalFolderUrl, inst.instance_name, req.user.organizationId]
+        ).catch(() => {});
+      }
+    }
+
+    res.json({
+      success: true,
+      driveFolderId: finalFolderId,
+      driveFolderUrl: finalFolderUrl,
+      folderName: finalFolderName
+    });
+  } catch (err) {
+    console.error('Error setting instance Drive folder:', err);
+    res.status(500).json({ error: 'Error al asignar subcarpeta de Google Drive' });
+  }
+});
+
 // Upload a step deliverable directly to the execution's Google Drive folder
 app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, async (req, res) => {
   const { instanceId, stepId, fileName, mimeType, base64Data } = req.body;
@@ -4166,18 +4358,39 @@ app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, a
   }
   try {
     let parentFolderId = null;
+    let stepData = null;
     if (instanceId) {
-      const instRes = await pool.query('SELECT id, title, instance_name, drive_folder_id FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
+      const instRes = await pool.query('SELECT id, title, instance_name, drive_folder_id, steps FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
       if (instRes.rows.length > 0) {
         const inst = instRes.rows[0];
         parentFolderId = inst.drive_folder_id;
-        if (!parentFolderId) {
+        const allSteps = typeof inst.steps === 'string' ? JSON.parse(inst.steps) : (inst.steps || []);
+        stepData = stepId ? allSteps.find(s => String(s.id) === String(stepId)) : null;
+        const rootCfgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+        const rootFolderIdCfg = rootCfgRes.rows[0]?.google_drive_config?.rootFolderId || null;
+        if (!parentFolderId || parentFolderId === rootFolderIdCfg) {
           const ensured = await ensureExecutionDriveFolder(req.user.organizationId, {
             id: inst.id,
             title: inst.title,
             instanceName: inst.instance_name
-          }, inst.instance_name);
+          }, '');
           if (ensured?.folderId) parentFolderId = ensured.folderId;
+        }
+      }
+    }
+
+    // Optional subfolder for this step: explicit per-step value > workspace "one subfolder per step" setting
+    if (parentFolderId && stepData) {
+      const orgCfgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+      const driveCfg = orgCfgRes.rows[0]?.google_drive_config || {};
+      const subPath = (stepData.driveSubfolder && String(stepData.driveSubfolder).trim())
+        || (driveCfg.stepSubfolders ? stepData.title : '');
+      if (subPath && parentFolderId !== driveCfg.rootFolderId) {
+        const token = await getValidGoogleDriveAccessToken(req.user.organizationId, driveCfg);
+        if (token) {
+          const segments = String(subPath).split('/').map(sanitizeDriveFolderName).filter(Boolean);
+          const sub = await ensureDriveFolderPath(token, segments, parentFolderId);
+          if (sub?.id) parentFolderId = sub.id;
         }
       }
     }
