@@ -1456,6 +1456,38 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
   };
 
   // --- Google Drive Integration Handlers ---
+  const [driveTreeData, setDriveTreeData] = useState(null);
+  const [isSyncingDriveTree, setIsSyncingDriveTree] = useState(false);
+
+  const handleSyncDriveTree = async (importMissingClients = false) => {
+    setIsSyncingDriveTree(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/sync-tree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rootFolderInput: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
+          importMissingClients
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al explorar la Carpeta Madre de Google Drive.');
+      setDriveTreeData(data);
+      if (data.clients) {
+        setClients(data.clients);
+      }
+      if (importMissingClients) {
+        showAlert(`¡Sincronizado! ${data.linkedCount || 0} carpetas vinculadas y ${data.importedCount || 0} clientes nuevos importados desde Drive.`, 'success');
+      } else {
+        showAlert(`¡Exploración completada! Se detectaron ${data.totalFoldersFound || 0} carpetas y se vincularon ${data.linkedCount || 0} clientes automáticamente.`, 'success');
+      }
+    } catch (err) {
+      showAlert(err.message, 'warning');
+    } finally {
+      setIsSyncingDriveTree(false);
+    }
+  };
+
   const handleSaveGoogleDriveSettings = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     try {
@@ -1467,8 +1499,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderUrl: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
           rootFolderName: googleDriveConfig.rootFolderName,
-          folderPathTemplate: googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}',
+          folderPathTemplate: googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}',
           stepSubfolders: !!googleDriveConfig.stepSubfolders,
+          matchExistingFolders: googleDriveConfig.matchExistingFolders !== false,
+          onlyUseExistingFolders: !!googleDriveConfig.onlyUseExistingFolders,
           autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
           autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
           autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
@@ -1505,6 +1539,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
             rootFolderInput: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
             rootFolderId: googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId,
             rootFolderName: googleDriveConfig.rootFolderName,
+            folderPathTemplate: googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}',
+            stepSubfolders: !!googleDriveConfig.stepSubfolders,
+            matchExistingFolders: googleDriveConfig.matchExistingFolders !== false,
+            onlyUseExistingFolders: !!googleDriveConfig.onlyUseExistingFolders,
             autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
             autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
             autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
@@ -1546,12 +1584,17 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           rootFolderId: '',
           rootFolderUrl: '',
           rootFolderName: '',
+          folderPathTemplate: '{categoria}/{cliente}',
+          stepSubfolders: false,
+          matchExistingFolders: true,
+          onlyUseExistingFolders: false,
           autoCreateClientFolders: true,
           autoUploadStepFiles: true,
           clientId: '',
           clientSecret: '',
           hasOAuthToken: false
         });
+        setDriveTreeData(null);
         setGoogleDriveTestStatus(null);
         showAlert('Google Drive desconectado.', 'info');
       }
@@ -7324,22 +7367,25 @@ const handleDeleteMember = async (id) => {
           </DialogHeader>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
-            {/* 1. OAuth 2.0 Connection Section */}
-            <div style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)' }}>
+            {/* PASO 1: OAuth 2.0 Connection (Única conexión oficial y completa) */}
+            <div style={{ border: googleDriveConfig.hasOAuthToken ? '1px solid #86EFAC' : '1px solid #BFDBFE', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '1rem' }}>
                 <div>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2563EB', background: '#EFF6FF', padding: '3px 8px', borderRadius: '6px', display: 'inline-block', marginBottom: '6px' }}>
+                    Paso 1 de 3 • Autorización Oficial
+                  </span>
                   <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Key size={18} style={{ color: '#2563EB' }} />
-                    Opción A: Conexión Completa con Google OAuth 2.0 (API Oficial)
+                    Conectar Cuenta de Google Drive del Workspace (OAuth 2.0)
                   </h4>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Permite crear subcarpetas físicamente en tu Google Drive por Cliente/Ejecución, subir entregables automáticamente y sincronizar archivos nuevos.
+                    Autoriza a Kônsul Process para leer las carpetas existentes de tus clientes (ej. <code>REDES SOCIALES &gt; VOLT FACTORY</code>), subir entregables en el lugar exacto y consultar documentos con el Copilot.
                   </p>
                 </div>
                 {googleDriveConfig.hasOAuthToken ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className="badge success" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
-                      Conectado {googleDriveConfig.email ? `(${googleDriveConfig.email})` : ''}
+                      ✓ Cuenta Conectada {googleDriveConfig.email ? `(${googleDriveConfig.email})` : ''}
                     </span>
                     <button
                       type="button"
@@ -7371,21 +7417,21 @@ const handleDeleteMember = async (id) => {
                 )}
               </div>
 
-              {/* OAuth App Credentials per Workspace (auto-opened if no platform OAuth is set) */}
+              {/* OAuth App Credentials per Workspace (auto-opened only if no platform OAuth and not yet connected) */}
               <details
                 open={!googleDriveConfig.hasOAuthToken && !googleDriveConfig.hasPlatformOAuth}
                 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: '#F8FAFC', padding: '12px 16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}
               >
                 <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>🔑 Credenciales OAuth de Google Cloud para este Workspace {!googleDriveConfig.hasPlatformOAuth && !googleDriveConfig.clientId ? '(Requerido para Opción A)' : '(Configurado)'}</span>
+                  <span>🔑 Credenciales OAuth de Google Cloud {!googleDriveConfig.hasPlatformOAuth && !googleDriveConfig.clientId ? '(Requerido una sola vez)' : '(Configurado)'}</span>
                 </summary>
 
                 <div style={{ marginTop: '10px', padding: '10px 12px', background: '#EFF6FF', borderRadius: '8px', border: '1px solid #BFDBFE', color: '#1E3A8A', fontSize: '0.76rem', lineHeight: 1.5 }}>
-                  <strong>¿Cómo obtener tu Client ID en 1 minuto?</strong>
+                  <strong>Configuración rápida (1 sola vez para todo el SaaS o para este Workspace):</strong>
                   <ol style={{ margin: '4px 0 0 16px', padding: 0 }}>
                     <li>Entra a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }}>Google Cloud Console &gt; Credenciales</a> (habilita <em>Google Drive API</em>).</li>
-                    <li>Crea una credencial <strong>ID de cliente de OAuth &gt; Aplicación web</strong> y pega la URI de redirección de abajo.</li>
-                    <li>Pega tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo y haz clic en <strong>Conectar con Google Drive</strong>.</li>
+                    <li>Crea un <strong>ID de cliente de OAuth &gt; Aplicación web</strong> y pega la URI de redirección de abajo.</li>
+                    <li>Pega tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo (o en Vercel como <code>GOOGLE_CLIENT_ID</code> y <code>GOOGLE_CLIENT_SECRET</code> para que todos los Workspaces del SaaS conecten con 1 solo clic).</li>
                   </ol>
                 </div>
 
@@ -7436,32 +7482,30 @@ const handleDeleteMember = async (id) => {
               </details>
             </div>
 
-            {/* 2. Root Folder Link/ID & Workspace Behavior */}
-            <form onSubmit={handleSaveGoogleDriveSettings} style={{ border: '1px solid #A7F3D0', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FolderOpen size={18} style={{ color: '#10B981' }} />
-                    Opción B: Conectar Carpeta Raíz por Link o ID (¡Sin configurar Google Cloud!)
-                  </h4>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Pega directamente el link de cualquier carpeta de tu Google Drive y pulsa <strong>Guardar Configuración Drive</strong>. Funciona al instante sin Client ID para abrir carpetas desde las ejecuciones, vincular entregables y leer Google Docs/Sheets con Kônsul Copilot.
-                  </p>
-                </div>
-                <span style={{ background: '#ECFDF5', color: '#065F46', border: '1px solid #6EE7B7', fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', borderRadius: '999px' }}>
-                  ⚡ Listo en 5 segundos
+            {/* PASO 2 & 3: Carpeta Madre + Explorador de Subcarpetas + Reglas Anti-Caos */}
+            <form onSubmit={handleSaveGoogleDriveSettings} style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: '16px', padding: '1.5rem', backgroundColor: 'white', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <div>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#059669', background: '#ECFDF5', padding: '3px 8px', borderRadius: '6px', display: 'inline-block', marginBottom: '6px' }}>
+                  Paso 2 de 3 • Carpeta Madre y Detección de Carpetas de Clientes
                 </span>
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FolderOpen size={18} style={{ color: '#10B981' }} />
+                  Carpeta Madre del Workspace (ej. &quot;Recurrentes&quot; o &quot;Clientes&quot;)
+                </h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Pega el enlace de la carpeta madre donde viven las carpetas de tu agencia. Luego pulsa <strong>Explorar y Vincular Carpetas</strong> para que Kônsul Process reconozca tus carpetas existentes (como <code>REDES SOCIALES &gt; VOLT FACTORY, RADAR, ORTHOSMILE</code>) sin duplicar nada.
+                </p>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
-                    Enlace o ID de Carpeta Raíz en Google Drive
+                    Enlace o ID de tu Carpeta Madre en Google Drive
                   </label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="https://drive.google.com/drive/folders/1AbC..."
+                    placeholder="https://drive.google.com/drive/folders/14NCd5M..."
                     value={googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId || ''}
                     onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderUrl: e.target.value, rootFolderId: e.target.value }))}
                     style={{ margin: 0, height: '42px' }}
@@ -7469,12 +7513,12 @@ const handleDeleteMember = async (id) => {
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
-                    Nombre de la Carpeta Raíz (Etiqueta)
+                    Nombre de la Carpeta Madre (Etiqueta)
                   </label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Ej. Kônsul Operaciones Drive"
+                    placeholder="Ej. Recurrentes"
                     value={googleDriveConfig.rootFolderName || ''}
                     onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderName: e.target.value }))}
                     style={{ margin: 0, height: '42px' }}
@@ -7482,92 +7526,183 @@ const handleDeleteMember = async (id) => {
                 </div>
               </div>
 
-              {/* Subfolder Path Template per Workspace */}
+              {/* Live Folder Tree Explorer & Client Auto-Linker */}
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.83rem', color: '#065F46' }}>
+                      🔍 Reconocimiento Inteligente de tus Carpetas Actuales en Drive
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#047857' }}>
+                      Escanea tu Carpeta Madre (y subcarpetas como <code>REDES SOCIALES</code>) para vincular cada cliente con su carpeta exacta existente.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      disabled={isSyncingDriveTree}
+                      onClick={() => handleSyncDriveTree(false)}
+                      style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '999px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {isSyncingDriveTree ? 'Explorando Drive...' : '🔍 Explorar y Vincular Carpetas'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSyncingDriveTree}
+                      onClick={() => handleSyncDriveTree(true)}
+                      style={{ background: '#fff', color: '#065F46', border: '1px solid #059669', borderRadius: '999px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      📥 Importar Carpetas como Clientes
+                    </button>
+                  </div>
+                </div>
+
+                {driveTreeData && driveTreeData.tree && (
+                  <div style={{ background: '#fff', border: '1px solid #A7F3D0', borderRadius: '10px', padding: '10px 12px', maxHeight: '210px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#065F46', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Estructura detectada dentro de &quot;{googleDriveConfig.rootFolderName || 'Carpeta Madre'}&quot;:</span>
+                      <span>{driveTreeData.totalFoldersFound} carpetas encontradas • {driveTreeData.linkedCount} clientes vinculados</span>
+                    </div>
+                    {driveTreeData.tree.length === 0 ? (
+                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>No se encontraron subcarpetas dentro de esta carpeta.</div>
+                    ) : (
+                      driveTreeData.tree.map(f1 => (
+                        <div key={f1.id} style={{ borderLeft: '3px solid #10B981', paddingLeft: '10px' }}>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📁 {f1.name}</span>
+                            <a href={f1.webViewLink} target="_blank" rel="noreferrer" style={{ fontSize: '0.7rem', color: '#2563EB', fontWeight: 600 }}>Abrir</a>
+                          </div>
+                          {f1.subfolders && f1.subfolders.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '5px' }}>
+                              {f1.subfolders.map(sf => (
+                                <a
+                                  key={sf.id}
+                                  href={sf.webViewLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '2px 8px', fontSize: '0.72rem', fontWeight: 600, color: '#334155', textDecoration: 'none' }}
+                                >
+                                  📂 {sf.name}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* PASO 3: Reglas Anti-Caos y Estructura de Subcarpetas */}
               <div style={{ background: '#F8FAFC', padding: '14px 16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
-                  <label style={{ fontWeight: 700, fontSize: '0.84rem', color: '#0F172A', display: 'block', marginBottom: '4px' }}>
-                    📂 Estructura de Subcarpetas dentro de tu Carpeta Raíz (Configurable por Workspace)
+                  <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#475569', background: '#E2E8F0', padding: '3px 8px', borderRadius: '6px', display: 'inline-block', marginBottom: '6px' }}>
+                    Paso 3 de 3 • Reglas Anti-Caos (Dónde guardar y consultar archivos)
+                  </span>
+                  <label style={{ fontWeight: 700, fontSize: '0.86rem', color: '#0F172A', display: 'block', marginBottom: '4px' }}>
+                    🛡️ Cómo debe comportarse Kônsul Process con las carpetas de tu Workspace
                   </label>
-                  <p style={{ margin: 0, fontSize: '0.76rem', color: '#475569' }}>
-                    Define cómo se organizan las subcarpetas para cada cliente y proceso. Si una subcarpeta ya existe en tu Drive, Kônsul Process la reutiliza sin duplicarla.
-                  </p>
                 </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {[
-                    { label: 'Por Cliente y Proceso', value: '{cliente}/{proceso}' },
-                    { label: 'Clientes / Cliente / Proceso', value: 'Clientes/{cliente}/{proceso}' },
-                    { label: 'Cliente / Año / Proceso', value: '{cliente}/{año}/{proceso}' },
-                    { label: 'Categoría / Cliente / Ejecución', value: '{categoria}/{cliente}/{ejecucion}' },
-                    { label: 'Año / Mes / Cliente', value: '{año}/{mes}/{cliente}' }
-                  ].map((preset) => {
-                    const currentTpl = googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}';
-                    const isSelected = currentTpl === preset.value;
-                    return (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: preset.value }))}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: '999px',
-                          fontSize: '0.73rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          border: isSelected ? '1px solid #2563EB' : '1px solid #CBD5E1',
-                          background: isSelected ? '#EFF6FF' : '#FFFFFF',
-                          color: isSelected ? '#1D4ED8' : '#334155'
-                        }}
-                      >
-                        {preset.label}: <code>{preset.value}</code>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="{cliente}/{proceso}"
-                    value={googleDriveConfig.folderPathTemplate || '{cliente}/{proceso}'}
-                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: e.target.value }))}
-                    style={{ margin: 0, height: '38px', fontSize: '0.82rem', background: '#fff', fontFamily: 'monospace' }}
-                  />
-                  <small style={{ color: '#64748B', fontSize: '0.72rem', display: 'block', marginTop: '4px' }}>
-                    Variables disponibles: <code>{'{cliente}'}</code>, <code>{'{proceso}'}</code>, <code>{'{ejecucion}'}</code>, <code>{'{categoria}'}</code>, <code>{'{año}'}</code>, <code>{'{mes}'}</code>, <code>{'{fecha}'}</code>. Además, en cada paso de una plantilla puedes indicar una subcarpeta específica (ej. <code>Legal</code> o <code>Contratos/Firmados</code>).
-                  </small>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '6px', borderTop: '1px solid #E2E8F0' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', background: '#fff', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
                     <input
                       type="checkbox"
-                      checked={googleDriveConfig.autoCreateClientFolders !== false}
-                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoCreateClientFolders: e.target.checked }))}
-                      style={{ width: '16px', height: '16px' }}
+                      checked={googleDriveConfig.matchExistingFolders !== false}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, matchExistingFolders: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', marginTop: '2px' }}
                     />
-                    <span>Crear/vincular automáticamente subcarpetas siguiendo la ruta de arriba al lanzar cada proceso</span>
+                    <div>
+                      <div>✅ Buscar y respetar primero la carpeta existente del Cliente (Recomendado)</div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 400, color: '#64748B' }}>
+                        Antes de crear nada, busca la carpeta del cliente (sin importar mayúsculas/minúsculas, ej. <code>VOLT FACTORY</code>) tanto en la Carpeta Madre como dentro de tus subcarpetas de área (ej. <code>REDES SOCIALES</code>). Si ya existe, guarda y consulta todo ahí mismo.
+                      </div>
+                    </div>
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#0F172A', background: '#fff', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!googleDriveConfig.onlyUseExistingFolders}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, onlyUseExistingFolders: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', marginTop: '2px' }}
+                    />
+                    <div>
+                      <div>🔒 Modo Estricto: No crear carpetas nuevas en Drive (usar solo carpetas ya existentes)</div>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 400, color: '#64748B' }}>
+                        Ideal si tu equipo ya crea manualmente las carpetas de los clientes en Drive y no quieres que el sistema cree carpetas nuevas por su cuenta.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', paddingLeft: '4px' }}>
                     <input
                       type="checkbox"
                       checked={googleDriveConfig.autoUploadStepFiles !== false}
                       onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, autoUploadStepFiles: e.target.checked }))}
                       style={{ width: '16px', height: '16px' }}
                     />
-                    <span>Subir automáticamente a Google Drive los archivos entregables cargados en los pasos</span>
+                    <span>Subir automáticamente a la carpeta del cliente en Google Drive los archivos entregables cargados en los pasos</span>
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600, color: '#1E293B' }}>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#1E293B', paddingLeft: '4px' }}>
                     <input
                       type="checkbox"
                       checked={!!googleDriveConfig.stepSubfolders}
                       onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, stepSubfolders: e.target.checked }))}
                       style={{ width: '16px', height: '16px' }}
                     />
-                    <span>Crear una subcarpeta separada por cada Paso dentro de la carpeta de la ejecución (o usa la subcarpeta personalizada de cada paso)</span>
+                    <span>Crear subcarpeta interna por cada Paso (o usar la subcarpeta específica configurada en el paso de la plantilla)</span>
                   </label>
                 </div>
+
+                {!googleDriveConfig.onlyUseExistingFolders && (
+                  <div style={{ paddingTop: '8px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '0.78rem', color: '#334155' }}>
+                      Estructura para clientes nuevos (cuando el cliente aún no tiene carpeta en Drive):
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {[
+                        { label: 'Área / Cliente (Ej. REDES SOCIALES/VOLT FACTORY)', value: '{categoria}/{cliente}' },
+                        { label: 'Directo por Cliente (Ej. VOLT FACTORY)', value: '{cliente}' },
+                        { label: 'Área / Cliente / Proceso', value: '{categoria}/{cliente}/{proceso}' },
+                        { label: 'Cliente / Proceso', value: '{cliente}/{proceso}' },
+                        { label: 'Cliente / Año / Mes', value: '{cliente}/{año}/{mes}' }
+                      ].map((preset) => {
+                        const currentTpl = googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}';
+                        const isSelected = currentTpl === preset.value;
+                        return (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: preset.value }))}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: '999px',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: isSelected ? '1px solid #2563EB' : '1px solid #CBD5E1',
+                              background: isSelected ? '#EFF6FF' : '#FFFFFF',
+                              color: isSelected ? '#1D4ED8' : '#334155'
+                            }}
+                          >
+                            {preset.label}: <code>{preset.value}</code>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="{categoria}/{cliente}"
+                      value={googleDriveConfig.folderPathTemplate || '{categoria}/{cliente}'}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, folderPathTemplate: e.target.value }))}
+                      style={{ margin: 0, height: '36px', fontSize: '0.8rem', background: '#fff', fontFamily: 'monospace' }}
+                    />
+                  </div>
+                )}
               </div>
 
               {googleDriveTestStatus && (

@@ -767,30 +767,88 @@ const getValidGoogleDriveAccessToken = async (orgId, existingConfig = null) => {
   }
 };
 
-const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId = null) => {
-  if (!accessToken || !folderName) return null;
-  const safeName = folderName.replace(/'/g, "\\'").trim();
-  let q = `mimeType = 'application/vnd.google-apps.folder' and name = '${safeName}' and trashed = false`;
-  if (parentFolderId) {
-    q += ` and '${parentFolderId}' in parents`;
+const normalizeDriveName = (str) => String(str || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const listChildFoldersInDrive = async (accessToken, parentFolderId) => {
+  if (!accessToken || !parentFolderId) return [];
+  try {
+    const q = `mimeType = 'application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed = false`;
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=150&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.files || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`
+    }));
+  } catch (_) {
+    return [];
+  }
+};
+
+// Searches for an existing client folder (case-insensitive) directly inside rootFolderId OR 1 level deeper (e.g., Recurrentes > REDES SOCIALES > VOLT FACTORY)
+const findExistingClientFolderInTree = async (accessToken, clientName, rootFolderId) => {
+  if (!accessToken || !clientName || !rootFolderId) return null;
+  const targetNorm = normalizeDriveName(clientName);
+  if (!targetNorm) return null;
+
+  const level1Folders = await listChildFoldersInDrive(accessToken, rootFolderId);
+  // 1. Check direct match at level 1
+  const directMatch = level1Folders.find(f => normalizeDriveName(f.name) === targetNorm);
+  if (directMatch) {
+    return { ...directMatch, parentName: '' };
   }
 
+  // 2. Check level 2 (inside category/area folders like "REDES SOCIALES", "WEB", etc.)
+  for (const catFolder of level1Folders.slice(0, 25)) {
+    const level2Folders = await listChildFoldersInDrive(accessToken, catFolder.id);
+    const subMatch = level2Folders.find(f => normalizeDriveName(f.name) === targetNorm);
+    if (subMatch) {
+      return { ...subMatch, parentName: catFolder.name, parentId: catFolder.id };
+    }
+  }
+
+  return null;
+};
+
+const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId = null, options = {}) => {
+  if (!accessToken || !folderName) return null;
+  const { allowCreate = true } = options;
+  const targetNorm = normalizeDriveName(folderName);
+
   try {
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`;
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      if (searchData.files && searchData.files.length > 0) {
-        const f = searchData.files[0];
-        return {
-          id: f.id,
-          name: f.name,
-          webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`
-        };
+    // Case-insensitive search inside parentFolderId first so "Volt Factory" matches "VOLT FACTORY"
+    if (parentFolderId) {
+      const children = await listChildFoldersInDrive(accessToken, parentFolderId);
+      const existing = children.find(f => normalizeDriveName(f.name) === targetNorm);
+      if (existing) return existing;
+    } else {
+      const safeName = folderName.replace(/'/g, "\\'").trim();
+      const q = `mimeType = 'application/vnd.google-apps.folder' and name = '${safeName}' and trashed = false`;
+      const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+      const searchRes = await fetch(searchUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.files && searchData.files.length > 0) {
+          const f = searchData.files[0];
+          return {
+            id: f.id,
+            name: f.name,
+            webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`
+          };
+        }
       }
     }
+
+    if (!allowCreate) return null;
 
     const body = {
       name: folderName.trim(),
@@ -820,7 +878,7 @@ const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId =
   return null;
 };
 
-const DEFAULT_DRIVE_FOLDER_PATH = '{cliente}/{proceso}';
+const DEFAULT_DRIVE_FOLDER_PATH = '{categoria}/{cliente}';
 const DRIVE_MONTHS_ES = ['01 - Enero', '02 - Febrero', '03 - Marzo', '04 - Abril', '05 - Mayo', '06 - Junio', '07 - Julio', '08 - Agosto', '09 - Septiembre', '10 - Octubre', '11 - Noviembre', '12 - Diciembre'];
 
 const sanitizeDriveFolderName = (name) => String(name || '')
@@ -844,10 +902,10 @@ const resolveDriveFolderPath = (pathTemplate, vars = {}) => {
 };
 
 // Finds or creates each folder of the path, starting at parentId. Returns the deepest folder.
-const ensureDriveFolderPath = async (accessToken, segments, parentId = null) => {
+const ensureDriveFolderPath = async (accessToken, segments, parentId = null, options = {}) => {
   let current = parentId ? { id: parentId, webViewLink: `https://drive.google.com/drive/folders/${parentId}` } : null;
   for (const segment of segments) {
-    const next = await findOrCreateDriveFolder(accessToken, segment, current?.id || null);
+    const next = await findOrCreateDriveFolder(accessToken, segment, current?.id || null, options);
     if (!next) break;
     current = next;
   }
@@ -893,6 +951,25 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         }
       }
 
+      // 1. Check if the Client ALREADY has a linked Drive folder or exists inside the Root Folder tree (e.g. Recurrentes > REDES SOCIALES > VOLT FACTORY)
+      let matchedClientFolder = null;
+      if (instRow?.client_drive_folder_id) {
+        matchedClientFolder = {
+          id: instRow.client_drive_folder_id,
+          name: effectiveClientName,
+          webViewLink: instRow.client_drive_folder_url || `https://drive.google.com/drive/folders/${instRow.client_drive_folder_id}`
+        };
+      } else if (config.matchExistingFolders !== false && effectiveClientName && rootId) {
+        matchedClientFolder = await findExistingClientFolderInTree(accessToken, effectiveClientName, rootId);
+        if (matchedClientFolder?.id) {
+          await pool.query(
+            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND LOWER(name) = LOWER($4)',
+            [matchedClientFolder.id, matchedClientFolder.webViewLink, orgId, effectiveClientName]
+          ).catch(() => {});
+        }
+      }
+
+      const allowCreateNewFolders = !config.onlyUseExistingFolders;
       const startedAt = instRow?.started_at ? new Date(instRow.started_at) : new Date();
       const vars = {
         cliente: effectiveClientName,
@@ -904,22 +981,31 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         mes: DRIVE_MONTHS_ES[startedAt.getMonth()],
         fecha: startedAt.toISOString().slice(0, 10)
       };
-      const segments = resolveDriveFolderPath(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH, vars);
-      if (segments.length === 0) segments.push(sanitizeDriveFolderName(`${instanceName} - ${templateTitle}`));
 
-      // Remember the client folder (first segment when the path starts with {cliente})
-      const template = String(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
-      if (template.trim().startsWith('{cliente}') && effectiveClientName) {
-        const clientFolder = await findOrCreateDriveFolder(accessToken, segments[0], rootId);
-        if (clientFolder) {
-          await pool.query(
-            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND LOWER(name) = LOWER($4)',
-            [clientFolder.id, clientFolder.webViewLink, orgId, effectiveClientName]
-          ).catch(() => {});
+      // If we found the Client's existing folder in Drive (e.g. VOLT FACTORY inside REDES SOCIALES):
+      if (matchedClientFolder?.id) {
+        const tpl = String(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH);
+        const afterClientPart = tpl.includes('{cliente}/') ? tpl.split('{cliente}/')[1] : '';
+        let targetFolder = matchedClientFolder;
+        if (afterClientPart && allowCreateNewFolders) {
+          const subSegments = resolveDriveFolderPath(afterClientPart, vars);
+          if (subSegments.length > 0) {
+            const subCreated = await ensureDriveFolderPath(accessToken, subSegments, matchedClientFolder.id, { allowCreate: allowCreateNewFolders });
+            if (subCreated?.id) targetFolder = subCreated;
+          }
         }
+        await pool.query(
+          'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+          [targetFolder.id, targetFolder.webViewLink, instanceData.id, orgId]
+        );
+        return { folderId: targetFolder.id, folderUrl: targetFolder.webViewLink, folderName: targetFolder.name };
       }
 
-      const execFolder = await ensureDriveFolderPath(accessToken, segments, rootId);
+      // Otherwise, follow the workspace path template if creating new folders is allowed
+      const segments = resolveDriveFolderPath(config.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH, vars);
+      if (segments.length === 0) segments.push(sanitizeDriveFolderName(effectiveClientName));
+
+      const execFolder = await ensureDriveFolderPath(accessToken, segments, rootId, { allowCreate: allowCreateNewFolders });
       if (execFolder?.id && execFolder.id !== rootId) {
         await pool.query(
           'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
@@ -929,8 +1015,7 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
       }
     }
 
-    // Fallback for Folder Link / ID mode (Camino 1) without OAuth token:
-    // Use client's dedicated subfolder if set, otherwise workspace root folder
+    // Fallback: Use client's dedicated subfolder if set, otherwise workspace root folder
     const fallbackFolderId = instRow?.client_drive_folder_id || config.rootFolderId;
     if (fallbackFolderId) {
       const folderUrl = instRow?.client_drive_folder_url || (fallbackFolderId === config.rootFolderId ? config.rootFolderUrl : '') || `https://drive.google.com/drive/folders/${fallbackFolderId}`;
@@ -1758,6 +1843,8 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         rootFolderName: rawDriveConfig.rootFolderName || '',
         folderPathTemplate: rawDriveConfig.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
         stepSubfolders: !!rawDriveConfig.stepSubfolders,
+        matchExistingFolders: rawDriveConfig.matchExistingFolders !== false,
+        onlyUseExistingFolders: !!rawDriveConfig.onlyUseExistingFolders,
         autoCreateFolders: rawDriveConfig.autoCreateFolders !== false,
         autoCreateClientFolders: rawDriveConfig.autoCreateFolders !== false,
         autoUploadStepFiles: rawDriveConfig.autoUploadStepFiles !== false,
@@ -1959,7 +2046,7 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
 
 app.put('/api/clients/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { name, email, checklist } = req.body;
+  const { name, email, checklist, driveFolderInput, driveFolderUrl, driveFolderId } = req.body;
   try {
     const updates = [];
     const params = [];
@@ -1976,6 +2063,15 @@ app.put('/api/clients/:id', authenticateToken, async (req, res) => {
     if (checklist !== undefined) {
       updates.push(`checklist = $${pIdx++}`);
       params.push(JSON.stringify(checklist));
+    }
+    const rawFolder = driveFolderInput !== undefined ? driveFolderInput : (driveFolderUrl !== undefined ? driveFolderUrl : driveFolderId);
+    if (rawFolder !== undefined) {
+      const fid = extractDriveIdFromInput(rawFolder);
+      const furl = fid ? (String(rawFolder).trim().startsWith('http') ? String(rawFolder).trim() : `https://drive.google.com/drive/folders/${fid}`) : null;
+      updates.push(`drive_folder_id = $${pIdx++}`);
+      params.push(fid || null);
+      updates.push(`drive_folder_url = $${pIdx++}`);
+      params.push(furl || null);
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Nada para actualizar' });
@@ -3903,6 +3999,8 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderName: cfg.rootFolderName || '',
         folderPathTemplate: cfg.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
         stepSubfolders: !!cfg.stepSubfolders,
+        matchExistingFolders: cfg.matchExistingFolders !== false,
+        onlyUseExistingFolders: !!cfg.onlyUseExistingFolders,
         autoCreateFolders: cfg.autoCreateFolders !== false,
         autoCreateClientFolders: cfg.autoCreateFolders !== false,
         autoUploadStepFiles: cfg.autoUploadStepFiles !== false,
@@ -3929,6 +4027,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
     rootFolderName,
     folderPathTemplate,
     stepSubfolders,
+    matchExistingFolders,
+    onlyUseExistingFolders,
     autoCreateFolders,
     autoCreateClientFolders,
     autoUploadStepFiles,
@@ -3980,6 +4080,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
       folderPathTemplate: folderPathTemplate !== undefined ? (String(folderPathTemplate).trim() || DEFAULT_DRIVE_FOLDER_PATH) : (prev.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH),
       stepSubfolders: stepSubfolders !== undefined ? !!stepSubfolders : !!prev.stepSubfolders,
+      matchExistingFolders: matchExistingFolders !== undefined ? !!matchExistingFolders : (prev.matchExistingFolders !== false),
+      onlyUseExistingFolders: onlyUseExistingFolders !== undefined ? !!onlyUseExistingFolders : !!prev.onlyUseExistingFolders,
       autoCreateFolders: resolvedAutoCreate,
       autoUploadStepFiles: autoUploadStepFiles !== undefined ? !!autoUploadStepFiles : (prev.autoUploadStepFiles !== false),
       accessToken: nextAccessToken,
@@ -4003,6 +4105,8 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderName: updated.rootFolderName,
         folderPathTemplate: updated.folderPathTemplate,
         stepSubfolders: updated.stepSubfolders,
+        matchExistingFolders: updated.matchExistingFolders,
+        onlyUseExistingFolders: updated.onlyUseExistingFolders,
         autoCreateFolders: updated.autoCreateFolders,
         autoCreateClientFolders: updated.autoCreateFolders,
         autoUploadStepFiles: updated.autoUploadStepFiles,
@@ -4017,6 +4121,99 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
   } catch (err) {
     console.error('Error saving Google Drive config:', err);
     res.status(500).json({ error: 'Error al guardar configuración de Google Drive' });
+  }
+});
+
+// Explore & Sync Workspace Root Folder Tree (discovers categories like REDES SOCIALES and client folders like VOLT FACTORY, RADAR, etc.)
+app.post('/api/integrations/google-drive/sync-tree', authenticateToken, async (req, res) => {
+  const { rootFolderInput, importMissingClients } = req.body;
+  try {
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
+    const cfg = orgRes.rows[0]?.google_drive_config || {};
+    const accessToken = await getValidGoogleDriveAccessToken(req.user.organizationId, cfg);
+    const rootId = extractDriveIdFromInput(rootFolderInput || cfg.rootFolderId || '');
+
+    if (!accessToken) {
+      return res.status(400).json({
+        error: 'Primero conecta tu cuenta con Google OAuth 2.0 (Paso 1) para que Kônsul Process pueda leer las subcarpetas dentro de tu Carpeta Madre.'
+      });
+    }
+    if (!rootId) {
+      return res.status(400).json({
+        error: 'Pega el enlace o ID de tu Carpeta Madre (ej. Recurrentes) para explorar sus subcarpetas.'
+      });
+    }
+
+    const level1Folders = await listChildFoldersInDrive(accessToken, rootId);
+    const tree = [];
+    const discoveredFoldersFlat = [];
+
+    for (const f1 of level1Folders.slice(0, 30)) {
+      const children = await listChildFoldersInDrive(accessToken, f1.id);
+      tree.push({
+        id: f1.id,
+        name: f1.name,
+        webViewLink: f1.webViewLink,
+        subfolders: children
+      });
+      discoveredFoldersFlat.push({ ...f1, parentName: '' });
+      for (const f2 of children) {
+        discoveredFoldersFlat.push({ ...f2, parentName: f1.name });
+      }
+    }
+
+    const clientsRes = await pool.query('SELECT * FROM clients WHERE organization_id = $1', [req.user.organizationId]);
+    const existingClients = clientsRes.rows;
+    let linkedCount = 0;
+    let importedCount = 0;
+
+    // 1. Auto-link existing clients by case-insensitive name match
+    for (const cli of existingClients) {
+      const cliNorm = normalizeDriveName(cli.name);
+      const match = discoveredFoldersFlat.find(df => normalizeDriveName(df.name) === cliNorm);
+      if (match) {
+        await pool.query(
+          'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+          [match.id, match.webViewLink, cli.id, req.user.organizationId]
+        );
+        linkedCount++;
+      }
+    }
+
+    // 2. Optionally import leaf folders as clients if requested
+    if (importMissingClients) {
+      const leafFolders = tree.some(t => t.subfolders.length > 0)
+        ? tree.flatMap(t => t.subfolders.map(sf => ({ ...sf, parentName: t.name })))
+        : level1Folders;
+
+      for (const lf of leafFolders) {
+        const lfNorm = normalizeDriveName(lf.name);
+        const alreadyExists = existingClients.some(c => normalizeDriveName(c.name) === lfNorm);
+        if (!alreadyExists && lf.name) {
+          const newClientId = 'cli_' + lf.name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 25) + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+          await pool.query(
+            'INSERT INTO clients (id, organization_id, name, drive_folder_id, drive_folder_url) VALUES ($1, $2, $3, $4, $5)',
+            [newClientId, req.user.organizationId, lf.name.trim(), lf.id, lf.webViewLink]
+          ).catch(() => {});
+          importedCount++;
+        }
+      }
+    }
+
+    const updatedClientsRes = await pool.query('SELECT * FROM clients WHERE organization_id = $1 ORDER BY name ASC', [req.user.organizationId]);
+
+    res.json({
+      success: true,
+      rootFolderId: rootId,
+      tree,
+      totalFoldersFound: discoveredFoldersFlat.length,
+      linkedCount,
+      importedCount,
+      clients: updatedClientsRes.rows
+    });
+  } catch (err) {
+    console.error('Error syncing Google Drive folder tree:', err);
+    res.status(500).json({ error: 'Error al explorar las subcarpetas de Google Drive' });
   }
 });
 
