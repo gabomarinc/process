@@ -4226,7 +4226,7 @@ app.get('/api/integrations/google-drive/oauth/url', authenticateToken, async (re
 
     if (!clientId) {
       return res.status(400).json({
-        error: 'Falta Google Client ID. Puedes ingresarlo en las opciones avanzadas de OAuth o conectar directamente pegando el Link/ID de tu carpeta de Google Drive.'
+        error: 'Faltan las variables de entorno GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en el servidor (Vercel).'
       });
     }
 
