@@ -5502,30 +5502,6 @@ const handleDeleteMember = async (id) => {
                             onChange={(e) => setProfileFormData({ ...profileFormData, password: e.target.value })} 
                           />
                         </div>
-                        {user?.role === 'admin' && (
-                          <>
-                            <div className="form-group">
-                              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Nombre del Acompañante/Guía por Defecto</label>
-                              <input 
-                                type="text" 
-                                className="form-input" 
-                                placeholder="Ej. Kônsul Bot" 
-                                value={profileFormData.companionName} 
-                                onChange={(e) => setProfileFormData({ ...profileFormData, companionName: e.target.value })} 
-                              />
-                            </div>
-                            <div className="form-group">
-                              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Emoji del Acompañante/Guía (Avatar)</label>
-                              <input 
-                                type="text" 
-                                className="form-input" 
-                                placeholder="Ej. Avatar URL" 
-                                value={profileFormData.companionAvatar} 
-                                onChange={(e) => setProfileFormData({ ...profileFormData, companionAvatar: e.target.value })} 
-                              />
-                            </div>
-                          </>
-                        )}
                         <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
                           Actualizar Perfil
                         </button>
@@ -7378,7 +7354,7 @@ const handleDeleteMember = async (id) => {
                     Conectar Cuenta de Google Drive del Workspace (OAuth 2.0)
                   </h4>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Autoriza a Kônsul Process para leer las carpetas existentes de tus clientes (ej. <code>REDES SOCIALES &gt; VOLT FACTORY</code>), subir entregables en el lugar exacto y consultar documentos con el Copilot.
+                    Autoriza a Kônsul Process para leer las carpetas existentes de tus clientes (ej. <code>Marketing &gt; Cliente A</code>), subir entregables en el lugar exacto y consultar documentos con el Copilot.
                   </p>
                 </div>
                 {googleDriveConfig.hasOAuthToken ? (

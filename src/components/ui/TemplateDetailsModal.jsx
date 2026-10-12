@@ -93,9 +93,6 @@ export const TemplateDetailsModal = ({
                 </div>
               </div>
               <div className="tdm-meta-row">
-                <span className="tdm-meta-badge primary">
-                  Guía: {activeTemplate.companionName}
-                </span>
                 <span className="tdm-meta-badge secondary">
                   Duración: {activeTemplate.durationDays} días
                 </span>

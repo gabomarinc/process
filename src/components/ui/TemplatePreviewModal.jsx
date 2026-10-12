@@ -169,24 +169,14 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                 rows={3}
               />
             </div>
-            <div className="tpm-form-row">
-              <div className="tpm-form-group">
-                <label>Nombre del Guía (IA)</label>
-                <input 
-                  type="text"
-                  value={template.companionName || ''} 
-                  onChange={e => handleTemplateChange('companionName', e.target.value)} 
-                />
-              </div>
-              <div className="tpm-form-group">
-                <label>Avatar (Emoji)</label>
-                <input 
-                  type="text"
-                  value={template.companionAvatar || ''} 
-                  onChange={e => handleTemplateChange('companionAvatar', e.target.value)} 
-                  maxLength={2}
-                />
-              </div>
+            <div className="tpm-form-group">
+              <label>Avatar (Emoji)</label>
+              <input 
+                type="text"
+                value={template.companionAvatar || ''} 
+                onChange={e => handleTemplateChange('companionAvatar', e.target.value)} 
+                maxLength={2}
+              />
             </div>
             <div className="tpm-form-group">
               <label>Saludo de Bienvenida</label>
