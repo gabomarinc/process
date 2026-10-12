@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle, Sparkles, CheckSquare } from 'lucide-react';
+import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle, Sparkles, CheckSquare, Paperclip } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import './TemplateDetailsModal.css';
 
@@ -241,16 +241,6 @@ export const TemplateDetailsModal = ({
 
                             <div className="tdm-form-row">
                               <div className="tdm-form-group">
-                                <label>Tipo de Acción</label>
-                                <select 
-                                  value={editingStepData.type}
-                                  onChange={(e) => setEditingStepData({ ...editingStepData, type: e.target.value })}
-                                >
-                                  <option value="manual">Paso Manual (Checkbox)</option>
-                                  <option value="digital">Acción Digital (Archivo)</option>
-                                </select>
-                              </div>
-                              <div className="tdm-form-group">
                                 <label>Mensaje Motivador</label>
                                 <input 
                                   type="text"
@@ -258,9 +248,6 @@ export const TemplateDetailsModal = ({
                                   onChange={(e) => setEditingStepData({ ...editingStepData, motivation: e.target.value })}
                                 />
                               </div>
-                            </div>
-
-                            {editingStepData.type === 'digital' && (
                               <div className="tdm-form-group">
                                 <label>📁 Subcarpeta en Google Drive (opcional)</label>
                                 <input
@@ -269,11 +256,8 @@ export const TemplateDetailsModal = ({
                                   value={editingStepData.driveSubfolder || ''}
                                   onChange={(e) => setEditingStepData({ ...editingStepData, driveSubfolder: e.target.value })}
                                 />
-                                <small style={{ color: '#64748B', fontSize: '0.72rem' }}>
-                                  El archivo de este paso se guardará en esta subcarpeta, dentro de la carpeta de la ejecución. Vacío = configuración del Workspace.
-                                </small>
                               </div>
-                            )}
+                            </div>
 
                             {/* Encargado del Paso + Equipo Asignado (Múltiple) */}
                             <div className="tdm-form-group" style={{ background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
@@ -440,9 +424,9 @@ export const TemplateDetailsModal = ({
 
                             {/* Checklist Section in Step Editor */}
                             <div className="tdm-form-group" style={{ marginTop: '0.5rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                 <label style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
-                                  <ListChecks size={15} color="#27BEA5" /> Checklist / Sub-tareas del Paso ({(editingStepData.checklist || []).length})
+                                  <ListChecks size={15} color="#27BEA5" /> Checklist Inteligente ({(editingStepData.checklist || []).length})
                                 </label>
                                 <button
                                   type="button"
@@ -464,7 +448,9 @@ export const TemplateDetailsModal = ({
                                           const newItems = data.checklist.map((t, cIdx) => ({
                                             id: `chk_${Date.now()}_${cIdx}`,
                                             text: typeof t === 'string' ? t : (t.text || String(t)),
-                                            isCompleted: false
+                                            isCompleted: false,
+                                            allowAttachment: !!(t?.allowAttachment || t?.requireAttachment),
+                                            requireAttachment: !!t?.requireAttachment
                                           }));
                                           setEditingStepData({
                                             ...editingStepData,
@@ -497,23 +483,87 @@ export const TemplateDetailsModal = ({
                                 </button>
                               </div>
 
+                              <div style={{ fontSize: '0.72rem', color: '#64748B', marginBottom: '8px' }}>
+                                Activa <strong>📎 Con Adjunto</strong> en los elementos donde se deba subir o vincular un archivo y define si es <strong>Obligatorio</strong> u <strong>Opcional</strong>.
+                              </div>
+
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                {(editingStepData.checklist || []).map((item, itemIdx) => (
-                                  <div key={item.id || itemIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#FFFFFF', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                                    <CheckSquare size={13} color="#27BEA5" />
-                                    <span style={{ flex: 1, fontSize: '0.8rem', color: '#1E293B' }}>{item.text || item}</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = (editingStepData.checklist || []).filter((_, i) => i !== itemIdx);
-                                        setEditingStepData({ ...editingStepData, checklist: updated });
-                                      }}
-                                      style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
-                                ))}
+                                {(editingStepData.checklist || []).map((item, itemIdx) => {
+                                  const itemObj = typeof item === 'string' ? { id: `chk_${itemIdx}`, text: item, isCompleted: false } : item;
+                                  const hasAtt = !!(itemObj.allowAttachment || itemObj.requireAttachment);
+                                  const isReq = !!itemObj.requireAttachment;
+                                  const updateItem = (updates) => {
+                                    const updated = (editingStepData.checklist || []).map((c, i) => {
+                                      if (i !== itemIdx) return typeof c === 'string' ? { id: `chk_${i}`, text: c, isCompleted: false } : c;
+                                      const base = typeof c === 'string' ? { id: `chk_${i}`, text: c, isCompleted: false } : c;
+                                      return { ...base, ...updates };
+                                    });
+                                    setEditingStepData({ ...editingStepData, checklist: updated });
+                                  };
+                                  return (
+                                    <div key={itemObj.id || itemIdx} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', background: '#FFFFFF', padding: '6px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                                      <CheckSquare size={13} color="#27BEA5" style={{ flexShrink: 0 }} />
+                                      <span style={{ flex: 1, minWidth: '150px', fontSize: '0.8rem', color: '#1E293B' }}>{itemObj.text}</span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateItem({
+                                            allowAttachment: !hasAtt,
+                                            requireAttachment: false
+                                          })}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            fontSize: '0.68rem',
+                                            fontWeight: 700,
+                                            padding: '2px 7px',
+                                            borderRadius: '999px',
+                                            cursor: 'pointer',
+                                            border: hasAtt ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                            background: hasAtt ? '#F0FDFA' : '#F8FAFC',
+                                            color: hasAtt ? '#0F766E' : '#64748B'
+                                          }}
+                                          title="Permitir adjuntar un archivo en este elemento del checklist"
+                                        >
+                                          <Paperclip size={11} /> {hasAtt ? 'Con Adjunto' : 'Sin Adjunto'}
+                                        </button>
+                                        {hasAtt && (
+                                          <button
+                                            type="button"
+                                            onClick={() => updateItem({
+                                              allowAttachment: true,
+                                              requireAttachment: !isReq
+                                            })}
+                                            style={{
+                                              fontSize: '0.68rem',
+                                              fontWeight: 700,
+                                              padding: '2px 7px',
+                                              borderRadius: '999px',
+                                              cursor: 'pointer',
+                                              border: isReq ? '1px solid #F59E0B' : '1px solid #CBD5E1',
+                                              background: isReq ? '#FEF3C7' : '#FFFFFF',
+                                              color: isReq ? '#B45309' : '#64748B'
+                                            }}
+                                            title="Definir si el adjunto es obligatorio u opcional"
+                                          >
+                                            {isReq ? '🔒 Obligatorio' : 'Opcional'}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = (editingStepData.checklist || []).filter((_, i) => i !== itemIdx);
+                                            setEditingStepData({ ...editingStepData, checklist: updated });
+                                          }}
+                                          style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
 
                                 <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
                                   <input
@@ -528,7 +578,7 @@ export const TemplateDetailsModal = ({
                                           const currentList = editingStepData.checklist || [];
                                           setEditingStepData({
                                             ...editingStepData,
-                                            checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false }]
+                                            checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false }]
                                           });
                                           setDetailChecklistInput('');
                                         }
@@ -543,7 +593,7 @@ export const TemplateDetailsModal = ({
                                         const currentList = editingStepData.checklist || [];
                                         setEditingStepData({
                                           ...editingStepData,
-                                          checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false }]
+                                          checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false }]
                                         });
                                         setDetailChecklistInput('');
                                       }
@@ -564,7 +614,7 @@ export const TemplateDetailsModal = ({
                               <button 
                                 className="tdm-btn-save-step"
                                 onClick={() => {
-                                  handleUpdateStep(activeTemplate.id, idx, editingStepData);
+                                  handleUpdateStep(activeTemplate.id, idx, { ...editingStepData, type: 'manual' });
                                   setEditingStepIndex(null);
                                 }}
                               >
@@ -582,12 +632,18 @@ export const TemplateDetailsModal = ({
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={cn(
-                                  "text-xs font-bold px-2 py-1 rounded-full",
-                                  step.type === 'digital' ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"
-                                )}>
-                                  {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                                </span>
+                                {(() => {
+                                  const attCount = (step.checklist || []).filter(c => c?.allowAttachment || c?.requireAttachment).length;
+                                  const reqCount = (step.checklist || []).filter(c => c?.requireAttachment).length;
+                                  if (attCount > 0) {
+                                    return (
+                                      <span className="text-xs font-bold px-2 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <Paperclip size={11} /> {attCount} adjunto{attCount > 1 ? 's' : ''}{reqCount > 0 ? ` (${reqCount} oblig.)` : ''}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 <button className="tdm-icon-btn" onClick={() => {
                                   setEditingStepIndex(idx);
                                   setEditingStepData(step);
@@ -681,17 +737,37 @@ export const TemplateDetailsModal = ({
                               )}
 
                               {step.checklist && step.checklist.length > 0 && (
-                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.8rem', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                                    <ListChecks size={13} color="#27BEA5" /> Checklist de Verificación ({step.checklist.length}):
+                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.8rem', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', width: '100%' }}>
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                                    <ListChecks size={13} color="#27BEA5" /> Checklist Inteligente ({step.checklist.length}):
                                   </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                    {step.checklist.map((item, cIdx) => (
-                                      <div key={item.id || cIdx} style={{ fontSize: '0.78rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#27BEA5', flexShrink: 0 }} />
-                                        <span>{item.text || item}</span>
-                                      </div>
-                                    ))}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {step.checklist.map((item, cIdx) => {
+                                      const hasAtt = !!(item?.allowAttachment || item?.requireAttachment);
+                                      const isReq = !!item?.requireAttachment;
+                                      return (
+                                        <div key={item.id || cIdx} style={{ fontSize: '0.78rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#27BEA5', flexShrink: 0 }} />
+                                            <span>{item.text || item}</span>
+                                          </div>
+                                          {hasAtt && (
+                                            <span style={{
+                                              fontSize: '0.68rem',
+                                              fontWeight: 700,
+                                              padding: '1px 7px',
+                                              borderRadius: '999px',
+                                              background: isReq ? '#FEF3C7' : '#F0FDFA',
+                                              color: isReq ? '#B45309' : '#0F766E',
+                                              border: isReq ? '1px solid #FDE68A' : '1px solid #CCFBF1',
+                                              whiteSpace: 'nowrap'
+                                            }}>
+                                              {isReq ? '🔒 Adjunto obligatorio' : '📎 Adjunto opcional'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}

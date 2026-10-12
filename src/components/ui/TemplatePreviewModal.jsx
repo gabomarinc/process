@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2 } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2, Paperclip } from 'lucide-react';
 import './TemplatePreviewModal.css';
 
 export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, teamMembers = [] }) => {
@@ -12,14 +12,17 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
   useEffect(() => {
     if (isOpen && initialData) {
       const cloned = JSON.parse(JSON.stringify(initialData));
-      // Ensure each step has an array for checklist
+      // Ensure each step has an array for checklist with attachment configuration
       if (Array.isArray(cloned.steps)) {
         cloned.steps = cloned.steps.map((s, idx) => ({
           ...s,
+          type: 'manual',
           checklist: Array.isArray(s.checklist) ? s.checklist.map((c, cIdx) => ({
             id: c.id || `chk_${idx}_${cIdx}_${Date.now()}`,
             text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-            isCompleted: false
+            isCompleted: false,
+            allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
+            requireAttachment: !!c?.requireAttachment
           })) : []
         }));
       }
@@ -74,12 +77,23 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
       {
         id: `chk_${stepIndex}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         text: text.trim(),
-        isCompleted: false
+        isCompleted: false,
+        allowAttachment: false,
+        requireAttachment: false
       }
     ];
     delete newSteps[stepIndex].checklistQuestion;
     setTemplate(prev => ({ ...prev, steps: newSteps }));
     setNewChecklistText(prev => ({ ...prev, [stepIndex]: '' }));
+  };
+
+  const handleUpdateChecklistItem = (stepIndex, itemIndex, updates) => {
+    const newSteps = [...template.steps];
+    const currentList = [...(newSteps[stepIndex].checklist || [])];
+    if (!currentList[itemIndex]) return;
+    currentList[itemIndex] = { ...currentList[itemIndex], ...updates };
+    newSteps[stepIndex].checklist = currentList;
+    setTemplate(prev => ({ ...prev, steps: newSteps }));
   };
 
   const handleDeleteChecklistItem = (stepIndex, itemIndex) => {
@@ -110,7 +124,9 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
           const newItems = data.checklist.map((t, cIdx) => ({
             id: `chk_${stepIndex}_${cIdx}_${Date.now()}`,
             text: typeof t === 'string' ? t : (t.text || String(t)),
-            isCompleted: false
+            isCompleted: false,
+            allowAttachment: !!(t?.allowAttachment || t?.requireAttachment),
+            requireAttachment: !!t?.requireAttachment
           }));
           newSteps[stepIndex].checklist = [...existing, ...newItems];
           delete newSteps[stepIndex].checklistQuestion;
@@ -250,14 +266,13 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                             />
                           </div>
                           <div className="tpm-form-group">
-                            <label>Tipo de Paso</label>
-                            <select 
-                              value={step.type} 
-                              onChange={e => handleStepChange(index, 'type', e.target.value)}
-                            >
-                              <option value="manual">Manual</option>
-                              <option value="digital">Digital (Subir Archivo)</option>
-                            </select>
+                            <label>📁 Subcarpeta en Google Drive (opcional)</label>
+                            <input 
+                              type="text"
+                              placeholder="Ej: 1. Onboarding, Contratos..."
+                              value={step.driveSubfolder || ''} 
+                              onChange={e => handleStepChange(index, 'driveSubfolder', e.target.value)} 
+                            />
                           </div>
                         </div>
 
@@ -403,7 +418,7 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
 
                           <div className="tpm-checklist-header">
                             <label className="tpm-checklist-title">
-                              <ListChecks size={14} /> Checklist / Verificaciones del Paso ({step.checklist?.length || 0})
+                              <ListChecks size={14} /> Checklist Inteligente ({step.checklist?.length || 0})
                             </label>
                             <button 
                               type="button" 
@@ -417,22 +432,77 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                             </button>
                           </div>
 
+                          <div style={{ fontSize: '0.72rem', color: '#64748B', marginBottom: '6px' }}>
+                            Marca <strong>📎 Adjunto</strong> en los elementos donde se deba subir o vincular un archivo, y define si es <strong>Obligatorio</strong> u <strong>Opcional</strong>.
+                          </div>
+
                           {/* Existing checklist items */}
                           <div className="tpm-checklist-items-list">
-                            {(step.checklist || []).map((item, itemIdx) => (
-                              <div key={item.id || itemIdx} className="tpm-checklist-item-row">
-                                <CheckSquare size={13} color="#27BEA5" />
-                                <span className="tpm-checklist-item-text">{item.text}</span>
-                                <button 
-                                  type="button"
-                                  className="tpm-checklist-item-del"
-                                  onClick={() => handleDeleteChecklistItem(index, itemIdx)}
-                                  title="Eliminar ítem"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            ))}
+                            {(step.checklist || []).map((item, itemIdx) => {
+                              const hasAtt = !!(item.allowAttachment || item.requireAttachment);
+                              const isReq = !!item.requireAttachment;
+                              return (
+                                <div key={item.id || itemIdx} className="tpm-checklist-item-row" style={{ flexWrap: 'wrap', gap: '6px' }}>
+                                  <CheckSquare size={13} color="#27BEA5" style={{ flexShrink: 0 }} />
+                                  <span className="tpm-checklist-item-text" style={{ flex: 1, minWidth: '160px' }}>{item.text}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateChecklistItem(index, itemIdx, {
+                                        allowAttachment: !hasAtt,
+                                        requireAttachment: !hasAtt ? false : false
+                                      })}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        padding: '2px 7px',
+                                        borderRadius: '999px',
+                                        cursor: 'pointer',
+                                        border: hasAtt ? '1px solid #0D9488' : '1px solid #CBD5E1',
+                                        background: hasAtt ? '#F0FDFA' : '#F8FAFC',
+                                        color: hasAtt ? '#0F766E' : '#64748B'
+                                      }}
+                                      title="Activar/desactivar carga de archivo en este ítem del checklist"
+                                    >
+                                      <Paperclip size={11} /> {hasAtt ? 'Con Adjunto' : 'Sin Adjunto'}
+                                    </button>
+                                    {hasAtt && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateChecklistItem(index, itemIdx, {
+                                          allowAttachment: true,
+                                          requireAttachment: !isReq
+                                        })}
+                                        style={{
+                                          fontSize: '0.68rem',
+                                          fontWeight: 700,
+                                          padding: '2px 7px',
+                                          borderRadius: '999px',
+                                          cursor: 'pointer',
+                                          border: isReq ? '1px solid #F59E0B' : '1px solid #CBD5E1',
+                                          background: isReq ? '#FEF3C7' : '#FFFFFF',
+                                          color: isReq ? '#B45309' : '#64748B'
+                                        }}
+                                        title="Definir si el archivo adjunto es obligatorio u opcional para completar este ítem"
+                                      >
+                                        {isReq ? '🔒 Obligatorio' : 'Opcional'}
+                                      </button>
+                                    )}
+                                    <button 
+                                      type="button"
+                                      className="tpm-checklist-item-del"
+                                      onClick={() => handleDeleteChecklistItem(index, itemIdx)}
+                                      title="Eliminar ítem"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                             {(!step.checklist || step.checklist.length === 0) && (
                               <span className="tpm-checklist-empty-hint">
                                 Sin checklist asignado. Puedes añadir tareas o pulsar "Sugerir con IA".

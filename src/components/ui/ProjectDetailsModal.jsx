@@ -160,6 +160,24 @@ export const ProjectDetailsModal = ({
         source: `Paso: ${step.title}`
       });
     }
+    (step.checklist || []).forEach((chk, cIdx) => {
+      if (!chk || typeof chk !== 'object') return;
+      const chkId = chk.id || cIdx;
+      const chkStoreKey = `${step.id}_${chkId}`;
+      const chkFileFromStore = fileStore?.[chkStoreKey];
+      if (chk.uploadedFileName || chk.uploadedFileUrl || chkFileFromStore) {
+        allAttachments.push({
+          id: `chk_${step.id}_${chkId}`,
+          name: chk.uploadedFileName || chkFileFromStore?.name || 'Adjunto de verificación',
+          url: chk.uploadedFileUrl || chkFileFromStore?.url || null,
+          type: getFileType(chk.uploadedFileName || chkFileFromStore?.name, chkFileFromStore?.type),
+          uploadedAt: chk.uploadedAt || step.completedAt || activeInstance.startedAt,
+          uploadedBy: step.completedBy || 'Checklist',
+          stepTitle: `${step.title} › ${chk.text || 'Verificación'}`,
+          source: `Checklist: ${chk.text || step.title}`
+        });
+      }
+    });
   });
 
   const uniqueAttachments = [];
@@ -1721,16 +1739,6 @@ export const ProjectDetailsModal = ({
                             <CheckSquare size={11} /> {step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length}
                           </span>
                         )}
-                        <span style={{
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: '99px',
-                          background: step.type === 'digital' ? '#EFF6FF' : '#F1F5F9',
-                          color: step.type === 'digital' ? '#3B82F6' : '#64748B'
-                        }}>
-                          {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                        </span>
                       </div>
 
                       {/* Expanded Step Details */}
@@ -1758,57 +1766,141 @@ export const ProjectDetailsModal = ({
                                   {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completadas
                                 </span>
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {step.checklist.map((chk, cIdx) => (
-                                  <label 
-                                    key={chk.id || cIdx} 
-                                    onClick={e => e.stopPropagation()}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={!!chk.isCompleted}
-                                      onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
-                                      style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                                    />
-                                    <span>{chk.text || chk}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {step.checklist.map((chk, cIdx) => {
+                                  const chkId = chk.id || cIdx;
+                                  const chkText = typeof chk === 'string' ? chk : chk.text;
+                                  const isDone = !!(typeof chk === 'object' && chk.isCompleted);
+                                  const allowAtt = !!(typeof chk === 'object' && (chk.allowAttachment || chk.requireAttachment || chk.uploadedFileName || chk.uploadedFileUrl));
+                                  const reqAtt = !!(typeof chk === 'object' && chk.requireAttachment);
+                                  const storeKey = `${step.id}_${chkId}`;
+                                  const fileData = fileStore?.[storeKey];
+                                  const fileName = (typeof chk === 'object' && chk.uploadedFileName) || fileData?.name || null;
+                                  const fileUrl = (typeof chk === 'object' && chk.uploadedFileUrl) || fileData?.url || null;
+                                  const hasFile = !!(fileName || fileUrl);
 
-                          {/* File upload if digital step */}
-                          {step.type === 'digital' && !step.isCompleted && (
-                            <div style={{ marginTop: '1rem' }}>
-                              <label style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                background: '#27BEA5',
-                                color: 'white',
-                                padding: '6px 14px',
-                                borderRadius: '10px',
-                                fontSize: '0.8rem',
-                                fontWeight: 700,
-                                cursor: 'pointer'
-                              }}>
-                                <Upload size={14} /> Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})
-                                <input
-                                  type="file"
-                                  style={{ display: 'none' }}
-                                  accept={getAcceptString(step.acceptedFormats)}
-                                  onChange={e => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      const url = URL.createObjectURL(file);
-                                      setFileStore(prev => ({ ...prev, [step.id]: { url, name: file.name, type: file.type } }));
-                                      handleStepComplete(activeInstance.id, step.id, true, file.name);
-                                      if (addToast) addToast(`Archivo "${file.name}" cargado y paso completado`, 'success');
-                                    }
-                                  }}
-                                />
-                              </label>
+                                  return (
+                                    <div
+                                      key={chkId}
+                                      onClick={e => e.stopPropagation()}
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
+                                        padding: '8px 10px',
+                                        borderRadius: '8px',
+                                        background: isDone ? '#F8FAFC' : '#FFFFFF',
+                                        border: reqAtt && !hasFile ? '1px solid #FDE68A' : '1px solid #F1F5F9'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                                        <label
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.82rem',
+                                            color: isDone ? '#94A3B8' : '#1E293B',
+                                            textDecoration: isDone ? 'line-through' : 'none',
+                                            flex: 1
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isDone}
+                                            onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId)}
+                                            style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#27BEA5' }}
+                                          />
+                                          <span>{chkText}</span>
+                                        </label>
+                                        {allowAtt && (
+                                          <span style={{
+                                            fontSize: '0.66rem',
+                                            fontWeight: 700,
+                                            padding: '2px 7px',
+                                            borderRadius: '99px',
+                                            background: reqAtt ? (hasFile ? '#DCFCE7' : '#FEF3C7') : '#EFF6FF',
+                                            color: reqAtt ? (hasFile ? '#15803D' : '#B45309') : '#2563EB',
+                                            border: `1px solid ${reqAtt ? (hasFile ? '#86EFAC' : '#FDE68A') : '#BFDBFE'}`
+                                          }}>
+                                            {reqAtt ? (hasFile ? '✓ Adjunto listo' : '🔒 Adjunto obligatorio') : '📎 Adjunto opcional'}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {allowAtt && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingLeft: '23px' }}>
+                                          {hasFile && (
+                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#F0FDFA', border: '1px solid #99F6E4', borderRadius: '7px', padding: '3px 8px', fontSize: '0.73rem', fontWeight: 700, color: '#0F766E' }}>
+                                              <Paperclip size={11} />
+                                              <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</span>
+                                              {fileUrl && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setPreviewFile({ name: fileName, url: fileUrl, type: getFileType(fileName, fileData?.type) })}
+                                                  style={{ background: '#27BEA5', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 5px', fontSize: '0.66rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                                >
+                                                  <Eye size={10} /> Ver
+                                                </button>
+                                              )}
+                                              {fileUrl && /^https?:\/\//i.test(fileUrl) && (
+                                                <a
+                                                  href={fileUrl}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  style={{ color: '#0284C7', display: 'inline-flex', alignItems: 'center' }}
+                                                  title="Abrir enlace externo"
+                                                >
+                                                  <ExternalLink size={11} />
+                                                </a>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          <label style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            background: hasFile ? '#F8FAFC' : '#27BEA5',
+                                            color: hasFile ? '#475569' : '#FFFFFF',
+                                            border: hasFile ? '1px solid #CBD5E1' : 'none',
+                                            padding: '4px 9px',
+                                            borderRadius: '7px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer'
+                                          }}>
+                                            <Upload size={11} /> {hasFile ? 'Cambiar archivo' : 'Subir archivo'}
+                                            <input
+                                              type="file"
+                                              style={{ display: 'none' }}
+                                              accept={getAcceptString(step.acceptedFormats)}
+                                              onChange={async e => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                const localUrl = URL.createObjectURL(file);
+                                                if (setFileStore) {
+                                                  setFileStore(prev => ({ ...prev, [storeKey]: { url: localUrl, name: file.name, type: file.type } }));
+                                                }
+                                                if (handleToggleStepChecklist) {
+                                                  await handleToggleStepChecklist(activeInstance.id, step.id, chkId, {
+                                                    isCompleted: true,
+                                                    uploadedFileName: file.name,
+                                                    uploadedFileUrl: localUrl,
+                                                    fileType: file.type
+                                                  });
+                                                }
+                                                if (addToast) addToast(`Archivo "${file.name}" adjuntado a "${chkText}"`, 'success');
+                                              }}
+                                            />
+                                          </label>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>

@@ -887,9 +887,24 @@ function App() {
     if (!inst) return;
 
     if (isCompleted) {
-      // 1. Check if the step itself has a checklist and ensure all items are completed
+      // 1. Check if the step itself has a checklist and ensure all items and mandatory attachments are completed
       const targetStep = (inst.steps || []).find(s => s.id === stepId);
       if (targetStep && Array.isArray(targetStep.checklist) && targetStep.checklist.length > 0) {
+        const missingRequiredFiles = targetStep.checklist.filter((c, cIdx) => {
+          const chkId = c.id || cIdx;
+          const hasFile = !!(c.uploadedFileName || c.uploadedFileUrl || fileStore?.[`${stepId}_${chkId}`]);
+          return c.requireAttachment && !hasFile;
+        });
+        if (missingRequiredFiles.length > 0) {
+          showAlert(
+            `Adjuntos Obligatorios Pendientes: No puedes completar este paso porque falta adjuntar archivo en ${missingRequiredFiles.length} elemento(s) obligatorio(s) del checklist:\n\n• ${missingRequiredFiles.map(p => p.text || p).join('\n• ')}\n\nSube o vincula el archivo correspondiente en el checklist para continuar.`,
+            'warning',
+            'Faltan Archivos Obligatorios en el Checklist'
+          );
+          addToast(`Faltan ${missingRequiredFiles.length} adjunto(s) obligatorio(s) en el checklist`, 'warning');
+          return;
+        }
+
         const pendingItems = targetStep.checklist.filter(c => !c.isCompleted);
         if (pendingItems.length > 0) {
           showAlert(
@@ -1029,9 +1044,11 @@ function App() {
     }
   };
 
-  const handleToggleStepChecklist = async (instanceId, stepId, checklistItemId) => {
+  const handleToggleStepChecklist = async (instanceId, stepId, checklistItemId, attachmentData = null) => {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
+
+    let blockedByRequiredAttachment = false;
 
     const updatedSteps = inst.steps.map(s => {
       if (s.id !== stepId) return s;
@@ -1039,10 +1056,33 @@ function App() {
       const updatedList = currentList.map((c, idx) => {
         const matches = (c.id && c.id === checklistItemId) || idx === checklistItemId;
         if (!matches) return c;
-        return { ...c, isCompleted: !c.isCompleted };
+
+        if (attachmentData && typeof attachmentData === 'object') {
+          return {
+            ...c,
+            isCompleted: attachmentData.isCompleted !== undefined ? attachmentData.isCompleted : true,
+            uploadedFileName: attachmentData.uploadedFileName !== undefined ? attachmentData.uploadedFileName : c.uploadedFileName,
+            uploadedFileUrl: attachmentData.uploadedFileUrl !== undefined ? attachmentData.uploadedFileUrl : c.uploadedFileUrl,
+            fileType: attachmentData.fileType !== undefined ? attachmentData.fileType : c.fileType
+          };
+        }
+
+        const nextCompleted = !c.isCompleted;
+        const chkKey = `${stepId}_${c.id || idx}`;
+        const hasFile = !!(c.uploadedFileName || c.uploadedFileUrl || fileStore?.[chkKey]);
+        if (nextCompleted && c.requireAttachment && !hasFile) {
+          blockedByRequiredAttachment = true;
+          return c;
+        }
+        return { ...c, isCompleted: nextCompleted };
       });
       return { ...s, checklist: updatedList };
     });
+
+    if (blockedByRequiredAttachment) {
+      addToast('Debes adjuntar el archivo obligatorio en este elemento del checklist para completarlo', 'warning');
+      return;
+    }
 
     setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
 
@@ -2051,7 +2091,11 @@ const handleDeleteMember = async (id) => {
           checklist: (step.checklist || []).map((c, cIdx) => ({
             id: c.id || `chk_${idx}_${cIdx}_${Date.now()}`,
             text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-            isCompleted: false
+            isCompleted: false,
+            allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
+            requireAttachment: !!c?.requireAttachment,
+            uploadedFileName: null,
+            uploadedFileUrl: null
           }))
         };
       })
@@ -2700,24 +2744,35 @@ const handleDeleteMember = async (id) => {
               type: "manual",
               relativeOffsetDays: 1,
               durationLabel: "Día 1",
-              motivation: "¡Un buen inicio asegura el éxito!"
+              motivation: "Un buen inicio asegura el control del proyecto.",
+              checklist: [
+                { text: "Confirmar asistentes y objetivos de la sesión", allowAttachment: false, requireAttachment: false },
+                { text: "Subir minuta o acuerdo de kickoff", allowAttachment: true, requireAttachment: false }
+              ]
             },
             {
-              title: "Subir entregable principal",
-              description: "Cargar el reporte de requerimientos de la primera fase.",
-              type: "digital",
-              acceptedFormats: [".pdf", ".docx", ".png", ".jpg"],
+              title: "Entregables de primera fase",
+              description: "Recopilar y validar los documentos requeridos para iniciar operaciones.",
+              type: "manual",
               relativeOffsetDays: 2,
               durationLabel: "Día 2",
-              motivation: "Almacenar tu progreso te dará tranquilidad mental."
+              motivation: "Documentar cada entregable mantiene la trazabilidad del proceso.",
+              checklist: [
+                { text: "Cargar reporte de requerimientos firmado", allowAttachment: true, requireAttachment: true },
+                { text: "Adjuntar anexos técnicos o referencias", allowAttachment: true, requireAttachment: false }
+              ]
             },
             {
-              title: "Cierre de fase 1",
-              description: "Validación de metas y firmas.",
+              title: "Cierre y validación de fase",
+              description: "Validación de metas y conformidad del cliente.",
               type: "manual",
               relativeOffsetDays: 3,
               durationLabel: "Día 3",
-              motivation: "¡Llegamos al final! Gran esfuerzo colectivo."
+              motivation: "Cierre de etapa completado con éxito.",
+              checklist: [
+                { text: "Verificar cumplimiento de entregables", allowAttachment: false, requireAttachment: false },
+                { text: "Adjuntar acta de conformidad firmada", allowAttachment: true, requireAttachment: true }
+              ]
             }
           ]
         };
@@ -2741,11 +2796,17 @@ const handleDeleteMember = async (id) => {
         Analiza el siguiente texto de directrices de un proceso organizacional y crea una plantilla estructurada de pasos interactivos en formato JSON.
         
         Asegúrate de aplicar principios de "Diseño Emocional" (Emotional Design):
-        1. Asigna un nombre encantador y avatar (emoji) a un "companion" (compañero/guía) del proceso.
-        2. Escribe saludos y mensajes de motivación empáticos y profesionales.
-        3. Identifica cuáles pasos son físicos/manuales (deben ser "manual" en el tipo) y cuáles requieren subir un documento o entregable (deben ser "digital").
-        4. Define un relativeOffsetDays (entero, ej: 1 para primer día, 3 para tercer día) para cada paso, lo cual servirá para calcular plazos a partir de una fecha de inicio.
-        5. ANÁLISIS DE CHECKLIST POR PASO (CRÍTICO): Analiza si cada paso contiene múltiples acciones secundarias, requisitos o puntos de verificación para completarlo con éxito. Si es así, incluye el campo "checklist" con un array de strings (ej: ["Verificar datos del cliente", "Adjuntar comprobante", "Notificar al líder"]). Si un paso es complejo pero el texto no especifica exactamente qué verificar, incluye en "checklistQuestion" una pregunta breve consultando qué cosas colocar para que el usuario pueda responder y definirlo en la vista previa.
+        1. Asigna un avatar (emoji) adecuado y escribe saludos y mensajes de motivación empáticos y profesionales.
+        2. Todos los pasos deben tener "type": "manual" (los archivos ya NO se suben como un único archivo madre del paso, sino directamente en los elementos del checklist que lo ameriten).
+        3. Define un relativeOffsetDays (entero, ej: 1 para primer día, 3 para tercer día) para cada paso, lo cual servirá para calcular plazos a partir de una fecha de inicio.
+        4. ANÁLISIS INTELIGENTE DE CHECKLIST Y ADJUNTOS POR PASO (CRÍTICO):
+           - Desglosa cada paso en sus acciones secundarias, requisitos, entregables o puntos de verificación dentro del array "checklist".
+           - Cada elemento de "checklist" DEBE ser un objeto con la forma:
+             { "text": "Descripción clara de la sub-tarea o entregable", "allowAttachment": true/false, "requireAttachment": true/false }
+           - Si el elemento del checklist implica subir, adjuntar, respaldar o entregar un archivo/documento/evidencia (ej: contrato, propuesta, factura, diseño, captura, comprobante, informe), pon "allowAttachment": true.
+           - Si ese archivo o documento es indispensable/obligatorio para dar por válido ese punto, pon también "requireAttachment": true (si el adjunto es opcional o de respaldo, deja "requireAttachment": false).
+           - Si el elemento es solo una acción de verificación sin archivo (ej: "Confirmar reunión con el cliente", "Revisar accesos"), pon "allowAttachment": false y "requireAttachment": false.
+           - Si un paso es complejo pero el texto no especifica exactamente qué verificar, incluye además en "checklistQuestion" una pregunta breve consultando qué cosas colocar.
         
         REGLAS DE TONO Y ESTILO (CRÍTICO):
         - NO utilices adjetivos ni palabras exageradas o floridas como "blindada", "imparable", "impecable", "espectacular", "increíble", "maravilloso", "cálido", "bonito".
@@ -2765,22 +2826,23 @@ const handleDeleteMember = async (id) => {
         Estructura esperada en caso de éxito:
         {
           "title": "Título corto y amigable del Proceso (ej: Onboarding de Marketing)",
-          "description": "Breve descripción empática del propósito del proceso",
+          "description": "Breve descripción del propósito del proceso",
           "durationDays": 3,
-          "companionName": "Nombre del guía",
-          "companionAvatar": "Un solo emoji adecuado para el guía",
-          "companionGreeting": "Saludo motivador del guía para iniciar",
+          "companionAvatar": "Un solo emoji adecuado",
+          "companionGreeting": "Saludo motivador para iniciar",
           "category": "Categoría (ej: Recursos Humanos, Operaciones, Legal)",
           "steps": [
             {
               "title": "Nombre corto del paso",
               "description": "Explicación clara de qué hacer",
               "type": "manual",
-              "acceptedFormats": [".pdf", ".docx", ".png", ".jpg"],
               "relativeOffsetDays": 1,
               "durationLabel": "Día 1",
-              "motivation": "Frase de motivación empática específica para este paso",
-              "checklist": ["Sub-tarea o verificación 1", "Sub-tarea 2"],
+              "motivation": "Frase de motivación profesional específica para este paso",
+              "checklist": [
+                { "text": "Subir contrato firmado por el cliente", "allowAttachment": true, "requireAttachment": true },
+                { "text": "Verificar datos fiscales en el sistema", "allowAttachment": false, "requireAttachment": false }
+              ],
               "checklistQuestion": "Pregunta opcional si requiere aclaración del usuario"
             }
           ]
@@ -2843,11 +2905,14 @@ const handleDeleteMember = async (id) => {
       
       const normalizedSteps = (parsedTemplate.steps || []).map((s, idx) => ({
         ...s,
+        type: 'manual',
         id: s.id || `step_${idx + 1}_${Date.now()}`,
         checklist: Array.isArray(s.checklist) ? s.checklist.map((c, cIdx) => ({
           id: `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
           text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-          isCompleted: false
+          isCompleted: false,
+          allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
+          requireAttachment: !!c?.requireAttachment
         })) : []
       }));
 

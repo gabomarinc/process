@@ -158,16 +158,27 @@ export const ActiveExecutionModal = ({
     }
   };
 
-  const handleUploadStepFileWithDrive = async (step, file) => {
+  const handleUploadStepFileWithDrive = async (step, file, checklistItemId = null) => {
     if (!file) return;
     const fileUrl = URL.createObjectURL(file);
+    const storeKey = checklistItemId !== null && checklistItemId !== undefined ? `${step.id}_${checklistItemId}` : step.id;
     setFileStore(prev => ({
       ...prev,
-      [step.id]: { url: fileUrl, name: file.name, type: file.type }
+      [storeKey]: { url: fileUrl, name: file.name, type: file.type }
     }));
 
-    // Complete locally first for snappy UX
-    onCompleteStepLocal(step.id, true, file.name, fileUrl);
+    if (checklistItemId !== null && checklistItemId !== undefined) {
+      if (handleToggleStepChecklist) {
+        await handleToggleStepChecklist(activeInstance.id, step.id, checklistItemId, {
+          isCompleted: true,
+          uploadedFileName: file.name,
+          uploadedFileUrl: fileUrl,
+          fileType: file.type
+        });
+      }
+    } else {
+      onCompleteStepLocal(step.id, true, file.name, fileUrl);
+    }
 
     // Attempt background upload to Google Drive if connected
     try {
@@ -184,6 +195,7 @@ export const ActiveExecutionModal = ({
           body: JSON.stringify({
             instanceId: activeInstance.id,
             stepId: step.id,
+            checklistItemId: checklistItemId !== null && checklistItemId !== undefined ? checklistItemId : undefined,
             fileName: file.name,
             mimeType: file.type || 'application/octet-stream',
             base64Data
@@ -194,9 +206,20 @@ export const ActiveExecutionModal = ({
           if (data.webViewLink) {
             setFileStore(prev => ({
               ...prev,
-              [step.id]: { url: data.webViewLink, name: file.name, type: file.type }
+              [storeKey]: { url: data.webViewLink, name: file.name, type: file.type }
             }));
-            onCompleteStepLocal(step.id, true, file.name, data.webViewLink);
+            if (checklistItemId !== null && checklistItemId !== undefined) {
+              if (handleToggleStepChecklist) {
+                await handleToggleStepChecklist(activeInstance.id, step.id, checklistItemId, {
+                  isCompleted: true,
+                  uploadedFileName: file.name,
+                  uploadedFileUrl: data.webViewLink,
+                  fileType: file.type
+                });
+              }
+            } else {
+              onCompleteStepLocal(step.id, true, file.name, data.webViewLink);
+            }
             if (addToast) addToast(`☁️ Archivo "${file.name}" sincronizado en Google Drive`, 'success');
           }
         }
@@ -206,12 +229,12 @@ export const ActiveExecutionModal = ({
     }
   };
 
-  const handleToggleStepDriveLinker = async (stepId) => {
-    if (driveLinkingStepId === stepId) {
+  const handleToggleStepDriveLinker = async (linkerKey) => {
+    if (driveLinkingStepId === linkerKey) {
       setDriveLinkingStepId(null);
       return;
     }
-    setDriveLinkingStepId(stepId);
+    setDriveLinkingStepId(linkerKey);
     setDriveLinkInput('');
     setIsLoadingDriveFilesForStep(true);
     try {
@@ -228,18 +251,30 @@ export const ActiveExecutionModal = ({
     }
   };
 
-  const handleLinkDriveFileToStep = (step, fileUrl, fileName) => {
+  const handleLinkDriveFileToStep = (step, fileUrl, fileName, checklistItemId = null) => {
     const cleanUrl = (fileUrl || driveLinkInput || '').trim();
     if (!cleanUrl) return;
     const displayTitle = fileName || (cleanUrl.includes('docs.google.com/document') ? 'Google Doc (Drive)' : cleanUrl.includes('docs.google.com/spreadsheets') ? 'Google Sheet (Drive)' : 'Archivo de Google Drive');
+    const storeKey = checklistItemId !== null && checklistItemId !== undefined ? `${step.id}_${checklistItemId}` : step.id;
     setFileStore(prev => ({
       ...prev,
-      [step.id]: { url: cleanUrl, name: displayTitle, type: 'drive_link' }
+      [storeKey]: { url: cleanUrl, name: displayTitle, type: 'drive_link' }
     }));
-    onCompleteStepLocal(step.id, true, displayTitle, cleanUrl);
+    if (checklistItemId !== null && checklistItemId !== undefined) {
+      if (handleToggleStepChecklist) {
+        handleToggleStepChecklist(activeInstance.id, step.id, checklistItemId, {
+          isCompleted: true,
+          uploadedFileName: displayTitle,
+          uploadedFileUrl: cleanUrl,
+          fileType: 'drive_link'
+        });
+      }
+    } else {
+      onCompleteStepLocal(step.id, true, displayTitle, cleanUrl);
+    }
     setDriveLinkingStepId(null);
     setDriveLinkInput('');
-    if (addToast) addToast(`🔗 "${displayTitle}" vinculado al paso desde Google Drive`, 'success');
+    if (addToast) addToast(`🔗 "${displayTitle}" vinculado desde Google Drive`, 'success');
   };
 
   // Email sub-modal states
@@ -454,6 +489,22 @@ export const ActiveExecutionModal = ({
         source: `Paso: ${step.title}`
       });
     }
+    (step.checklist || []).forEach((chk, cIdx) => {
+      const chkId = chk.id || cIdx;
+      const chkStore = fileStore?.[`${step.id}_${chkId}`];
+      if (chk?.uploadedFileName || chk?.uploadedFileUrl || chkStore) {
+        const fName = chk.uploadedFileName || chkStore?.name || 'Adjunto de checklist';
+        const fUrl = chk.uploadedFileUrl || chkStore?.url || null;
+        allAttachments.push({
+          id: `chk_${step.id}_${chkId}`,
+          name: fName,
+          url: fUrl,
+          type: getFileType(fName, chk.fileType || chkStore?.type),
+          stepTitle: step.title,
+          source: `Checklist (${step.title}): ${chk.text || 'Ítem'}`
+        });
+      }
+    });
   });
 
   const uniqueAttachments = [];
@@ -465,6 +516,240 @@ export const ActiveExecutionModal = ({
       uniqueAttachments.push(att);
     }
   });
+
+  const renderChecklistItemRow = (step, chk, cIdx) => {
+    const chkId = chk.id || cIdx;
+    const storeKey = `${step.id}_${chkId}`;
+    const storedFile = fileStore?.[storeKey];
+    const attachedName = chk.uploadedFileName || storedFile?.name || null;
+    const attachedUrl = chk.uploadedFileUrl || storedFile?.url || null;
+    const hasFile = !!(attachedName || attachedUrl);
+    const isReq = !!chk.requireAttachment;
+    const allowsAtt = !!(chk.allowAttachment || chk.requireAttachment || hasFile);
+
+    return (
+      <div
+        key={chkId}
+        onClick={e => e.stopPropagation()}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          padding: '7px 10px',
+          borderRadius: '8px',
+          background: chk.isCompleted ? '#F8FAFC' : (isReq && !hasFile ? '#FFFBEB' : '#FFFFFF'),
+          border: isReq && !hasFile ? '1px solid #FDE68A' : '1px solid #E2E8F0'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              flex: 1,
+              minWidth: '170px',
+              margin: 0,
+              fontSize: '0.82rem',
+              color: chk.isCompleted ? '#94A3B8' : '#1E293B',
+              textDecoration: chk.isCompleted ? 'line-through' : 'none',
+              fontWeight: isReq && !chk.isCompleted ? 600 : 500
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!chk.isCompleted}
+              onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId)}
+              style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#0D9488' }}
+            />
+            <span>{chk.text || chk}</span>
+          </label>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+            {isReq && (
+              <span style={{
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                padding: '1px 7px',
+                borderRadius: '999px',
+                background: hasFile ? '#DCFCE7' : '#FEF3C7',
+                color: hasFile ? '#166534' : '#B45309',
+                border: hasFile ? '1px solid #BBF7D0' : '1px solid #FDE68A'
+              }}>
+                {hasFile ? '✓ Adjunto obligatorio listo' : '🔒 Adjunto obligatorio'}
+              </span>
+            )}
+            {!isReq && chk.allowAttachment && !hasFile && (
+              <span style={{
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                padding: '1px 7px',
+                borderRadius: '999px',
+                background: '#F0FDFA',
+                color: '#0F766E',
+                border: '1px solid #CCFBF1'
+              }}>
+                📎 Adjunto opcional
+              </span>
+            )}
+
+            {/* File Upload / Link actions directly on the checklist item */}
+            {(allowsAtt || !chk.isCompleted) && (
+              <>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    background: hasFile ? '#F1F5F9' : '#0D9488',
+                    color: hasFile ? '#334155' : '#FFFFFF',
+                    border: hasFile ? '1px solid #CBD5E1' : 'none',
+                    margin: 0
+                  }}
+                  title="Subir archivo desde tu equipo (se sincroniza con Google Drive)"
+                >
+                  <input
+                    type="file"
+                    style={{ display: 'none' }}
+                    accept={getAcceptString(step.acceptedFormats)}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleUploadStepFileWithDrive(step, file, chkId);
+                      }
+                    }}
+                  />
+                  <Upload size={11} />
+                  <span>{hasFile ? 'Cambiar' : 'Subir archivo'}</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleStepDriveLinker(storeKey);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    background: '#EFF6FF',
+                    color: '#2563EB',
+                    border: '1px solid #BFDBFE'
+                  }}
+                  title="Vincular un archivo existente desde Google Drive"
+                >
+                  <FolderOpen size={11} /> Drive
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Attached File Pill with Preview & External Link */}
+        {hasFile && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            marginLeft: '22px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+              <FileCheck size={13} color="#16A34A" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }}>
+                {attachedName}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {attachedUrl && attachedUrl.startsWith('http') && (
+                <a
+                  href={attachedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="close-btn-aesthetic"
+                  style={{ width: '22px', height: '22px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                  title="Abrir en Google Drive / Pestaña nueva"
+                >
+                  <ExternalLink size={11} />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewFile(storedFile || {
+                    name: attachedName || 'Documento.pdf',
+                    url: attachedUrl,
+                    type: getFileType(attachedName, chk.fileType),
+                    mock: !attachedUrl
+                  });
+                }}
+                className="close-btn-aesthetic"
+                style={{ width: '22px', height: '22px', padding: 0 }}
+                title="Previsualizar archivo"
+              >
+                <Eye size={11} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Inline Google Drive Linker for this Checklist Item */}
+        {driveLinkingStepId === storeKey && (
+          <div style={{ marginLeft: '22px', background: '#FFFFFF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '7px', fontSize: '0.73rem' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: driveFilesForStep.length > 0 ? '6px' : '0' }}>
+              <input
+                type="text"
+                placeholder="Pega link de Google Drive / Docs..."
+                value={driveLinkInput}
+                onChange={(e) => setDriveLinkInput(e.target.value)}
+                style={{ flex: 1, padding: '4px 7px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.72rem' }}
+              />
+              <button
+                type="button"
+                onClick={() => handleLinkDriveFileToStep(step, driveLinkInput, null, chkId)}
+                style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
+              >
+                Vincular
+              </button>
+            </div>
+            {isLoadingDriveFilesForStep ? (
+              <div style={{ color: '#64748B', fontSize: '0.68rem' }}>Cargando archivos de Google Drive...</div>
+            ) : driveFilesForStep.length > 0 ? (
+              <div style={{ maxHeight: '95px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {driveFilesForStep.slice(0, 10).map(df => (
+                  <div
+                    key={df.id}
+                    onClick={() => handleLinkDriveFileToStep(step, df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`, df.name, chkId)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderRadius: '5px', background: '#F8FAFC', cursor: 'pointer', border: '1px solid #E2E8F0' }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px', fontWeight: 600 }}>
+                      {df.isFolder ? '📁' : '📄'} {df.name}
+                    </span>
+                    <span style={{ color: '#2563EB', fontWeight: 700, fontSize: '0.68rem' }}>Elegir</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }} onClick={onClose}>
@@ -956,28 +1241,14 @@ export const ActiveExecutionModal = ({
                               <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.85rem', marginTop: '0.5rem' }}>
                                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <ListChecks size={15} color="#27BEA5" /> Verificaciones del Paso
+                                    <ListChecks size={15} color="#27BEA5" /> Checklist y Entregables del Paso
                                   </div>
                                   <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
-                                    {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completadas
+                                    {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completados
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  {step.checklist.map((chk, cIdx) => (
-                                    <label 
-                                      key={chk.id || cIdx} 
-                                      onClick={e => e.stopPropagation()}
-                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={!!chk.isCompleted}
-                                        onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
-                                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                                      />
-                                      <span>{chk.text || chk}</span>
-                                    </label>
-                                  ))}
+                                  {step.checklist.map((chk, cIdx) => renderChecklistItemRow(step, chk, cIdx))}
                                 </div>
                               </div>
                             )}
@@ -986,283 +1257,97 @@ export const ActiveExecutionModal = ({
                           {/* Col 2: Acciones, Colaboradores y Notas */}
                           <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '260px' }}>
                             
-                            {/* Bloque de Acción Principal (Completar / Subir archivo) */}
+                            {/* Bloque de Acción Principal (Completar Paso) */}
                             <div className="trio-card-action" style={{ background: '#FAF9F6', padding: '12px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.04)' }}>
-                              {step.type === 'manual' ? (
-                                <div style={{ width: '100%' }}>
-                                  {step.isCompleted ? (
-                                    <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                                      <Check size={16} /> Paso Completado
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <button
-                                        type="button"
-                                        className="btn btn-primary"
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.55rem', borderRadius: '8px' }}
-                                        onClick={() => onCompleteStepLocal(step.id, true)}
-                                      >
-                                        {(() => {
-                                          const nextStep = activeInstance.steps[item.index + 1];
-                                          const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
-                                          return nextAssignee ? (
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                              Pasar a {nextAssignee.name} <ArrowRight size={14} />
-                                            </span>
-                                          ) : (
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                              Completar Paso <Check size={14} />
-                                            </span>
-                                          );
-                                        })()}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        disabled={step.helpRequested}
-                                        style={{ 
-                                          display: 'flex', 
-                                          alignItems: 'center', 
-                                          justifyContent: 'center', 
-                                          gap: '5px', 
-                                          width: '100%', 
-                                          fontSize: '0.75rem', 
-                                          padding: '0.4rem', 
-                                          marginTop: '0.5rem', 
-                                          background: step.helpRequested ? '#f5f5f5' : 'transparent', 
-                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #CBD5E1', 
-                                          color: step.helpRequested ? '#9e9e9e' : 'var(--color-primary)', 
-                                          borderRadius: '8px',
-                                          cursor: step.helpRequested ? 'not-allowed' : 'pointer'
-                                        }}
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                          try {
-                                            await fetch('/api/notifications', {
-                                              method: 'POST',
-                                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                              body: JSON.stringify({
-                                                id: `help-${step.id}-${Date.now()}`,
-                                                instanceId: activeInstance.id,
-                                                stepId: step.id,
-                                                instanceName: activeInstance.instanceName,
-                                                stepTitle: step.title,
-                                                message: helpMsg,
-                                                type: 'help'
-                                              })
-                                            });
-                                            window.dispatchEvent(new Event('notifications-updated'));
-                                            await handleRequestHelp(activeInstance.id, step.id);
-                                            if (addToast) addToast("¡Pedido de ayuda enviado al jefe y departamento! Un compañero vendrá al rescate.", "success");
-                                          } catch (err) {
-                                            console.error("Error al pedir ayuda:", err);
-                                          }
-                                        }}
-                                      >
-                                        {step.helpRequested ? (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <HelpCircle size={13} /> Ayuda Solicitada
+                              <div style={{ width: '100%' }}>
+                                {step.driveSubfolder && (
+                                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '6px', padding: '3px 8px', marginBottom: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    📂 Subcarpeta Drive: <code>{step.driveSubfolder}</code>
+                                  </div>
+                                )}
+                                {step.isCompleted ? (
+                                  <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                    <Check size={16} /> Paso Completado
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.55rem', borderRadius: '8px' }}
+                                      onClick={() => onCompleteStepLocal(step.id, true)}
+                                    >
+                                      {(() => {
+                                        const nextStep = activeInstance.steps[item.index + 1];
+                                        const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                        return nextAssignee ? (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                            Pasar a {nextAssignee.name} <ArrowRight size={14} />
                                           </span>
                                         ) : (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <AlertCircle size={13} /> Solicitar Apoyo
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                            Completar Paso <Check size={14} />
                                           </span>
-                                        )}
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              ) : (
-                                <div style={{ width: '100%' }}>
-                                  {step.driveSubfolder && (
-                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '6px', padding: '3px 8px', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                      📂 Subcarpeta Drive: <code>{step.driveSubfolder}</code>
-                                    </div>
-                                  )}
-                                  {step.isCompleted || step.uploadedFileName ? (
-                                    <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <FileCheck size={14} />
-                                        <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-                                          {step.uploadedFileName || 'Cargado'}
+                                        );
+                                      })()}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      disabled={step.helpRequested}
+                                      style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        gap: '5px', 
+                                        width: '100%', 
+                                        fontSize: '0.75rem', 
+                                        padding: '0.4rem', 
+                                        marginTop: '0.5rem', 
+                                        background: step.helpRequested ? '#f5f5f5' : 'transparent', 
+                                        border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #CBD5E1', 
+                                        color: step.helpRequested ? '#9e9e9e' : 'var(--color-primary)', 
+                                        borderRadius: '8px',
+                                        cursor: step.helpRequested ? 'not-allowed' : 'pointer'
+                                      }}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                        try {
+                                          await fetch('/api/notifications', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                            body: JSON.stringify({
+                                              id: `help-${step.id}-${Date.now()}`,
+                                              instanceId: activeInstance.id,
+                                              stepId: step.id,
+                                              instanceName: activeInstance.instanceName,
+                                              stepTitle: step.title,
+                                              message: helpMsg,
+                                              type: 'help'
+                                            })
+                                          });
+                                          window.dispatchEvent(new Event('notifications-updated'));
+                                          await handleRequestHelp(activeInstance.id, step.id);
+                                          if (addToast) addToast("¡Pedido de ayuda enviado al jefe y departamento! Un compañero vendrá al rescate.", "success");
+                                        } catch (err) {
+                                          console.error("Error al pedir ayuda:", err);
+                                        }
+                                      }}
+                                    >
+                                      {step.helpRequested ? (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <HelpCircle size={13} /> Ayuda Solicitada
                                         </span>
-                                      </div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {(step.uploadedFileUrl && step.uploadedFileUrl.startsWith('http')) && (
-                                          <a
-                                            href={step.uploadedFileUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="close-btn-aesthetic"
-                                            style={{ width: '24px', height: '24px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
-                                            title="Abrir en Google Drive / Pestaña nueva"
-                                          >
-                                            <ExternalLink size={12} />
-                                          </a>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
-                                            setPreviewFile(fileStore[step.id] || { 
-                                              name: step.uploadedFileName || 'Documento.pdf', 
-                                              url: url,
-                                              type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
-                                              mock: !url
-                                            });
-                                          }}
-                                          className="close-btn-aesthetic"
-                                          style={{ width: '24px', height: '24px', padding: 0 }}
-                                          title="Previsualizar archivo"
-                                        >
-                                          <Eye size={12} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <label className="step-file-upload" style={{ display: 'block', margin: 0, padding: '0.5rem', borderRadius: '8px', cursor: 'pointer' }}>
-                                        <input 
-                                          type="file" 
-                                          style={{ display: 'none' }}
-                                          accept={getAcceptString(step.acceptedFormats)}
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                              handleUploadStepFileWithDrive(step, file);
-                                            }
-                                          }}
-                                        />
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                          <Upload size={14} className="text-primary" />
-                                          <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                            Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})
-                                          </span>
-                                        </div>
-                                      </label>
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleToggleStepDriveLinker(step.id);
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          gap: '5px',
-                                          width: '100%',
-                                          fontSize: '0.76rem',
-                                          padding: '0.42rem',
-                                          marginTop: '0.45rem',
-                                          background: '#EFF6FF',
-                                          border: '1px solid #BFDBFE',
-                                          color: '#2563EB',
-                                          borderRadius: '8px',
-                                          fontWeight: 600,
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        <FolderOpen size={13} /> Vincular de Google Drive
-                                      </button>
-                                      {driveLinkingStepId === step.id && (
-                                        <div style={{ marginTop: '0.5rem', background: '#fff', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '8px', fontSize: '0.75rem' }}>
-                                          <div style={{ display: 'flex', gap: '4px', marginBottom: driveFilesForStep.length > 0 ? '6px' : '0' }}>
-                                            <input
-                                              type="text"
-                                              placeholder="Pega link de Google Drive / Docs..."
-                                              value={driveLinkInput}
-                                              onChange={(e) => setDriveLinkInput(e.target.value)}
-                                              style={{ flex: 1, padding: '5px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.73rem' }}
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => handleLinkDriveFileToStep(step, driveLinkInput)}
-                                              style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
-                                            >
-                                              Vincular
-                                            </button>
-                                          </div>
-                                          {isLoadingDriveFilesForStep ? (
-                                            <div style={{ color: '#64748B', fontSize: '0.7rem' }}>Cargando archivos de Google Drive...</div>
-                                          ) : driveFilesForStep.length > 0 ? (
-                                            <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                              {driveFilesForStep.slice(0, 10).map(df => (
-                                                <div
-                                                  key={df.id}
-                                                  onClick={() => handleLinkDriveFileToStep(step, df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`, df.name)}
-                                                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderRadius: '5px', background: '#F8FAFC', cursor: 'pointer', border: '1px solid #E2E8F0' }}
-                                                >
-                                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px', fontWeight: 600 }}>
-                                                    {df.isFolder ? '📁' : '📄'} {df.name}
-                                                  </span>
-                                                  <span style={{ color: '#2563EB', fontWeight: 700, fontSize: '0.68rem' }}>Elegir</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : null}
-                                        </div>
+                                      ) : (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <AlertCircle size={13} /> Solicitar Apoyo
+                                        </span>
                                       )}
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        disabled={step.helpRequested}
-                                        style={{ 
-                                          display: 'flex', 
-                                          alignItems: 'center', 
-                                          justifyContent: 'center', 
-                                          gap: '4px', 
-                                          width: '100%', 
-                                          fontSize: '0.75rem', 
-                                          padding: '0.4rem', 
-                                          marginTop: '0.5rem', 
-                                          background: step.helpRequested ? '#f5f5f5' : 'transparent', 
-                                          border: step.helpRequested ? '1px solid #e0e0e0' : '1px dashed #CBD5E1', 
-                                          color: step.helpRequested ? '#9e9e9e' : 'var(--color-primary)', 
-                                          borderRadius: '8px',
-                                          cursor: step.helpRequested ? 'not-allowed' : 'pointer'
-                                        }}
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                          try {
-                                            await fetch('/api/notifications', {
-                                              method: 'POST',
-                                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                              body: JSON.stringify({
-                                                id: `help-${step.id}-${Date.now()}`,
-                                                instanceId: activeInstance.id,
-                                                stepId: step.id,
-                                                instanceName: activeInstance.instanceName,
-                                                stepTitle: step.title,
-                                                message: helpMsg,
-                                                type: 'help'
-                                              })
-                                            });
-                                            window.dispatchEvent(new Event('notifications-updated'));
-                                            await handleRequestHelp(activeInstance.id, step.id);
-                                            if (addToast) addToast("¡Pedido de ayuda enviado al jefe y departamento! Un compañero vendrá al rescate.", "success");
-                                          } catch (err) {
-                                            console.error("Error al pedir ayuda:", err);
-                                          }
-                                        }}
-                                      >
-                                        {step.helpRequested ? (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <HelpCircle size={13} /> Ayuda Solicitada
-                                          </span>
-                                        ) : (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <AlertCircle size={13} /> Solicitar Apoyo
-                                          </span>
-                                        )}
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
 
                             {/* Colaboradores / Encargado y Asignados */}
@@ -1546,9 +1631,6 @@ export const ActiveExecutionModal = ({
                                   <ListChecks size={11} /> {step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length}
                                 </span>
                               )}
-                              <span className={`badge ${step.type === 'digital' ? 'success' : ''}`}>
-                                {step.type === 'digital' ? 'Acción Digital' : 'Paso Manual'}
-                              </span>
                             </div>
                           </div>
                           <p>{step.description}</p>
@@ -1558,24 +1640,11 @@ export const ActiveExecutionModal = ({
                             <div style={{ marginTop: '0.75rem', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '0.75rem' }}>
                               <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <ListChecks size={14} color="#27BEA5" /> Verificaciones ({step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length})
+                                  <ListChecks size={14} color="#27BEA5" /> Checklist y Entregables ({step.checklist.filter(c => c.isCompleted).length}/{step.checklist.length})
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                {step.checklist.map((chk, cIdx) => (
-                                  <label 
-                                    key={chk.id || cIdx} 
-                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: chk.isCompleted ? '#94A3B8' : '#1E293B', textDecoration: chk.isCompleted ? 'line-through' : 'none' }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={!!chk.isCompleted}
-                                      onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chk.id || cIdx)}
-                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
-                                    />
-                                    <span>{chk.text || chk}</span>
-                                  </label>
-                                ))}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {step.checklist.map((chk, cIdx) => renderChecklistItemRow(step, chk, cIdx))}
                               </div>
                             </div>
                           )}
@@ -1671,234 +1740,68 @@ export const ActiveExecutionModal = ({
 
                           {!isLocked && (
                              <div className="step-action-area" style={{ marginTop: '0.5rem' }}>
-                               {step.type === 'manual' ? (
-                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                                   {step.isCompleted ? (
-                                     <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                       <Check size={16} /> Paso Completado
-                                     </div>
-                                   ) : (
-                                     <>
-                                        <button
-                                          type="button"
-                                          className="btn btn-primary"
-                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
-                                          onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
-                                        >
-                                          {(() => {
-                                            const nextStep = activeInstance.steps[idx + 1];
-                                            const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
-                                            return nextAssignee ? (
-                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                                Pasar a {nextAssignee.name} <ArrowRight size={14} />
-                                              </span>
-                                            ) : (
-                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                                Completar Paso <Check size={14} />
-                                              </span>
-                                            );
-                                          })()}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="btn btn-secondary"
-                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                            try {
-                                              await fetch('/api/notifications', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                                body: JSON.stringify({
-                                                  id: `help-${step.id}-${Date.now()}`,
-                                                  instanceId: activeInstance.id,
-                                                  stepId: step.id,
-                                                  instanceName: activeInstance.instanceName,
-                                                  stepTitle: step.title,
-                                                  message: helpMsg,
-                                                  type: 'alert'
-                                                })
-                                              });
-                                           window.dispatchEvent(new Event('notifications-updated'));
-                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                            } catch (err) {
-                                              console.error("Error al pedir ayuda:", err);
-                                            }
-                                          }}
-                                        >
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <AlertCircle size={13} /> Solicitar Apoyo
-                                          </span>
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                ) : (
-                                   <div style={{ width: '100%' }}>
-                                    {step.isCompleted || step.uploadedFileName ? (
-                                      <div className="uploaded-badge" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                          <FileCheck size={14} />
-                                          <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-                                            {step.uploadedFileName || 'Cargado'}
-                                          </span>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          {(step.uploadedFileUrl && step.uploadedFileUrl.startsWith('http')) && (
-                                            <a
-                                              href={step.uploadedFileUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="close-btn-aesthetic"
-                                              style={{ width: '24px', height: '24px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
-                                              title="Abrir en Google Drive / Pestaña nueva"
-                                            >
-                                              <ExternalLink size={12} />
-                                            </a>
-                                          )}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const url = step.uploadedFileUrl || (typeof step.uploadedFileName === 'string' && (step.uploadedFileName.startsWith('http') || step.uploadedFileName.startsWith('data:')) ? step.uploadedFileName : null);
-                                              setPreviewFile(fileStore[step.id] || { 
-                                                name: step.uploadedFileName || 'Documento.pdf', 
-                                                url: url,
-                                                type: getFileType(step.uploadedFileName, url?.includes('invoices') ? 'application/pdf' : null),
-                                                mock: !url
-                                              });
-                                            }}
-                                            className="close-btn-aesthetic"
-                                            style={{ width: '24px', height: '24px', padding: 0 }}
-                                          >
-                                            <Eye size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <label className="step-file-upload">
-                                          <input 
-                                            type="file" 
-                                            style={{ display: 'none' }}
-                                            accept={getAcceptString(step.acceptedFormats)}
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) {
-                                                handleUploadStepFileWithDrive(step, file);
-                                              }
-                                            }}
-                                          />
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Upload size={16} className="text-primary" />
-                                            <span>Subir archivo ({getEffectiveAcceptedFormats(step.acceptedFormats).join(', ')})</span>
-                                          </div>
-                                        </label>
-                                        <button
-                                          type="button"
-                                          className="btn btn-secondary"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleToggleStepDriveLinker(step.id);
-                                          }}
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '5px',
-                                            width: '100%',
-                                            fontSize: '0.75rem',
-                                            padding: '0.4rem',
-                                            marginTop: '0.45rem',
-                                            background: '#EFF6FF',
-                                            border: '1px solid #BFDBFE',
-                                            color: '#2563EB',
-                                            borderRadius: '8px',
-                                            fontWeight: 600,
-                                            cursor: 'pointer'
-                                          }}
-                                        >
-                                          <FolderOpen size={13} /> Vincular de Google Drive
-                                        </button>
-                                        {driveLinkingStepId === step.id && (
-                                          <div style={{ marginTop: '0.5rem', background: '#fff', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '8px', fontSize: '0.75rem' }}>
-                                            <div style={{ display: 'flex', gap: '4px', marginBottom: driveFilesForStep.length > 0 ? '6px' : '0' }}>
-                                              <input
-                                                type="text"
-                                                placeholder="Pega link de Google Drive / Docs..."
-                                                value={driveLinkInput}
-                                                onChange={(e) => setDriveLinkInput(e.target.value)}
-                                                style={{ flex: 1, padding: '5px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.73rem' }}
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={() => handleLinkDriveFileToStep(step, driveLinkInput)}
-                                                style={{ background: '#2563EB', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
-                                              >
-                                                Vincular
-                                              </button>
-                                            </div>
-                                            {isLoadingDriveFilesForStep ? (
-                                              <div style={{ color: '#64748B', fontSize: '0.7rem' }}>Cargando archivos de Google Drive...</div>
-                                            ) : driveFilesForStep.length > 0 ? (
-                                              <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                                {driveFilesForStep.slice(0, 10).map(df => (
-                                                  <div
-                                                    key={df.id}
-                                                    onClick={() => handleLinkDriveFileToStep(step, df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`, df.name)}
-                                                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', borderRadius: '5px', background: '#F8FAFC', cursor: 'pointer', border: '1px solid #E2E8F0' }}
-                                                  >
-                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px', fontWeight: 600 }}>
-                                                      {df.isFolder ? '📁' : '📄'} {df.name}
-                                                    </span>
-                                                    <span style={{ color: '#2563EB', fontWeight: 700, fontSize: '0.68rem' }}>Elegir</span>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            ) : null}
-                                          </div>
-                                        )}
-                                        <button
-                                          type="button"
-                                          className="btn btn-secondary"
-                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', marginTop: '0.5rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
-                                            try {
-                                              await fetch('/api/notifications', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                                                body: JSON.stringify({
-                                                  instanceId: activeInstance.id,
-                                                  stepId: step.id,
-                                                  instanceName: activeInstance.instanceName,
-                                                  stepTitle: step.title,
-                                                  message: helpMsg
-                                                })
-                                              });
-                                              handleRequestHelp(activeInstance.id, step.id);
-                                              if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
-                                            } catch (err) {
-                                              console.error("Error al registrar solicitud de ayuda:", err);
-                                              handleRequestHelp(activeInstance.id, step.id);
-                                            }
-                                          }}
-                                        >
-                                          {step.helpRequested ? (
-                                            <span style={{ color: '#0D9488', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                              <AlertCircle size={14} /> Ayuda Solicitada
+                               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                                 {step.isCompleted ? (
+                                   <div style={{ color: 'var(--color-primary-hover)', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                     <Check size={16} /> Paso Completado
+                                   </div>
+                                 ) : (
+                                   <>
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', fontSize: '0.85rem', padding: '0.5rem' }}
+                                        onClick={() => handleStepComplete(activeInstance.id, step.id, true)}
+                                      >
+                                        {(() => {
+                                          const nextStep = activeInstance.steps[idx + 1];
+                                          const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                          return nextAssignee ? (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                              Pasar a {nextAssignee.name} <ArrowRight size={14} />
                                             </span>
                                           ) : (
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                              <HelpCircle size={14} /> Pedir Ayuda
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                              Completar Paso <Check size={14} />
                                             </span>
-                                          )}
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                )}
+                                          );
+                                        })()}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', fontSize: '0.75rem', padding: '0.35rem', background: 'transparent', border: '1px dashed #CBD5E1', color: 'var(--color-primary)' }}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                          try {
+                                            await fetch('/api/notifications', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                              body: JSON.stringify({
+                                                id: `help-${step.id}-${Date.now()}`,
+                                                instanceId: activeInstance.id,
+                                                stepId: step.id,
+                                                instanceName: activeInstance.instanceName,
+                                                stepTitle: step.title,
+                                                message: helpMsg,
+                                                type: 'alert'
+                                              })
+                                            });
+                                            window.dispatchEvent(new Event('notifications-updated'));
+                                            if (addToast) addToast("¡Pedido de ayuda enviado al equipo! Un compañero vendrá al rescate.", "success");
+                                          } catch (err) {
+                                            console.error("Error al pedir ayuda:", err);
+                                          }
+                                        }}
+                                      >
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <AlertCircle size={13} /> Solicitar Apoyo
+                                        </span>
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                              </div>
                            )}
                         </div>

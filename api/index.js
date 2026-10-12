@@ -4562,7 +4562,7 @@ app.post('/api/integrations/google-drive/set-instance-folder', authenticateToken
 
 // Upload a step deliverable directly to the execution's Google Drive folder
 app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, async (req, res) => {
-  const { instanceId, stepId, fileName, mimeType, base64Data } = req.body;
+  const { instanceId, stepId, checklistItemId, fileName, mimeType, base64Data } = req.body;
   if (!fileName || !base64Data) {
     return res.status(400).json({ error: 'fileName y base64Data son requeridos' });
   }
@@ -4612,13 +4612,30 @@ app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, a
       parentFolderId
     });
 
-    // If uploaded to Drive and instanceId + stepId were provided, persist webViewLink on the step
+    // If uploaded to Drive and instanceId + stepId were provided, persist webViewLink on the checklist item (or step fallback)
     if (result.uploadedToDrive && instanceId && stepId) {
       const instRes = await pool.query('SELECT steps FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
       if (instRes.rows.length > 0) {
         const steps = typeof instRes.rows[0].steps === 'string' ? JSON.parse(instRes.rows[0].steps) : (instRes.rows[0].steps || []);
         const updatedSteps = steps.map(s => {
           if (String(s.id) === String(stepId)) {
+            if (checklistItemId && Array.isArray(s.checklist)) {
+              const updatedChecklist = s.checklist.map((c, idx) => {
+                const isTarget = (c.id && String(c.id) === String(checklistItemId)) || String(idx) === String(checklistItemId);
+                if (!isTarget) return c;
+                return {
+                  ...c,
+                  isCompleted: true,
+                  uploadedFileName: result.fileName || fileName,
+                  uploadedFileUrl: result.webViewLink,
+                  driveFileId: result.fileId
+                };
+              });
+              return {
+                ...s,
+                checklist: updatedChecklist
+              };
+            }
             return {
               ...s,
               uploadedFileName: result.fileName || fileName,
@@ -6077,8 +6094,16 @@ const AGENT_TOOLS_DECLARATIONS = [
               durationDays: { type: 'NUMBER', description: 'Plazo en días estimado para este paso' },
               checklist: { 
                 type: 'ARRAY', 
-                description: 'Lista de ítems de checklist, sub-tareas o verificaciones que componen o validan este paso (ej. ["Verificar accesos", "Confirmar pago", "Enviar contrato firmado"])',
-                items: { type: 'STRING' }
+                description: 'Lista de ítems de checklist o sub-tareas que componen o validan este paso. Cada elemento puede definir si amerita subir un archivo adjunto (allowAttachment) y si ese adjunto es obligatorio (requireAttachment).',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    text: { type: 'STRING', description: 'Descripción de la sub-tarea o verificación del checklist' },
+                    allowAttachment: { type: 'BOOLEAN', description: 'True si este elemento del checklist amerita adjuntar un documento, entregable, comprobante o captura' },
+                    requireAttachment: { type: 'BOOLEAN', description: 'True si el archivo adjunto en este elemento del checklist debe ser obligatorio para marcarlo como completado' }
+                  },
+                  required: ['text']
+                }
               }
             },
             required: ['title']
@@ -6309,11 +6334,19 @@ async function executeAgentTool(toolName, args, user) {
       const steps = (args.steps || []).map((s, idx) => {
         let stepChecklist = [];
         if (Array.isArray(s.checklist) && s.checklist.length > 0) {
-          stepChecklist = s.checklist.map((c, cIdx) => ({
-            id: `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
-            text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-            isCompleted: false
-          }));
+          stepChecklist = s.checklist.map((c, cIdx) => {
+            const isObj = c && typeof c === 'object';
+            const textVal = isObj ? (c.text || c.title || String(c)) : String(c);
+            const reqAtt = isObj ? !!c.requireAttachment : false;
+            const allowAtt = isObj ? !!(c.allowAttachment || c.requireAttachment) : false;
+            return {
+              id: `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
+              text: textVal,
+              isCompleted: false,
+              allowAttachment: allowAtt,
+              requireAttachment: reqAtt
+            };
+          });
         }
         return {
           id: `step_${idx + 1}_${Date.now()}`,
@@ -6321,6 +6354,7 @@ async function executeAgentTool(toolName, args, user) {
           description: s.description || '',
           motivation: s.motivation || '',
           durationDays: s.durationDays || 1,
+          type: 'manual',
           isCompleted: false,
           comments: [],
           checklist: stepChecklist
@@ -6645,7 +6679,7 @@ async function executeAgentTool(toolName, args, user) {
   }
 }
 
-// Suggest checklist for a step using AI (analiza si amerita checklist y sugiere ítems)
+// Suggest checklist for a step using AI (analiza si amerita checklist y sugiere ítems con propuesta inteligente de adjuntos)
 app.post('/api/ai/suggest-step-checklist', authenticateToken, async (req, res) => {
   const { title, description } = req.body;
   if (!title) return res.status(400).json({ error: 'El título del paso es requerido.' });
@@ -6657,12 +6691,19 @@ app.post('/api/ai/suggest-step-checklist', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Configura tu Gemini API Key en Kônsul para sugerir checklists con IA.' });
     }
 
-    const prompt = `Analiza este paso de un proceso de negocio y genera un checklist conciso de entre 2 y 4 sub-tareas, entregables o verificaciones clave necesarias para completarlo con éxito.
+    const prompt = `Analiza este paso de un proceso de negocio y genera un checklist inteligente de entre 2 y 4 sub-tareas, entregables o verificaciones clave necesarias para completarlo con éxito.
 Título del paso: "${title}"
 Descripción: "${description || ''}"
 
-Responde ÚNICAMENTE con un array JSON de strings con las tareas, por ejemplo:
-["Revisar requerimientos", "Ejecutar validación", "Confirmar con el cliente"]`;
+Para cada elemento del checklist, evalúa inteligentemente:
+1. "allowAttachment" (boolean): true si este punto del checklist amerita o se beneficia de adjuntar un archivo, documento, comprobante, captura, diseño, contrato o entregable; false si es una acción o verificación puramente manual.
+2. "requireAttachment" (boolean): true únicamente si el archivo adjunto en ese punto es indispensable/obligatorio para dar por válido el punto (ej. subir contrato firmado, comprobante de pago, entregable final); false si es opcional o no lleva adjunto.
+
+Responde ÚNICAMENTE con un array JSON de objetos con esta estructura exacta:
+[
+  { "text": "Subir contrato firmado por el cliente", "allowAttachment": true, "requireAttachment": true },
+  { "text": "Verificar datos fiscales y accesos", "allowAttachment": false, "requireAttachment": false }
+]`;
 
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
     const geminiRes = await fetch(apiEndpoint, {
