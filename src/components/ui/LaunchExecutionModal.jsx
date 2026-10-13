@@ -21,19 +21,43 @@ export const LaunchExecutionModal = ({
   teamMembers,
   clients = [],
   initialTemplateId,
+  initialClientId = "",
+  initialClientName = "",
+  initialInstanceName = "",
   onSchedule,
   onCancel,
 }) => {
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [startDate, setStartDate] = useState(new Date());
   
-  const [launchInstanceName, setLaunchInstanceName] = useState("");
+  const [launchInstanceName, setLaunchInstanceName] = useState(initialInstanceName || initialClientName || "");
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId || "");
-  const [clientMode, setClientMode] = useState("existing");
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [clientNameInput, setClientNameInput] = useState("");
-  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [clientMode, setClientMode] = useState(initialClientId ? "existing" : (initialClientName ? "new" : "existing"));
+  const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
+  const [clientNameInput, setClientNameInput] = useState(initialClientName || "");
+  const [clientSearchQuery, setClientSearchQuery] = useState(initialClientName || "");
   const [showClientDropdown, setShowClientDropdown] = useState(false);
+
+  useEffect(() => {
+    if (initialClientId) {
+      setSelectedClientId(initialClientId);
+      const cl = clients.find(c => String(c.id) === String(initialClientId));
+      if (cl) {
+        setClientSearchQuery(cl.name);
+        setClientNameInput(cl.name);
+        setClientMode("existing");
+        if (!launchInstanceName) {
+          setLaunchInstanceName(`${cl.name} - Proceso`);
+        }
+      }
+    } else if (initialClientName) {
+      setClientSearchQuery(initialClientName);
+      setClientNameInput(initialClientName);
+      if (!launchInstanceName) {
+        setLaunchInstanceName(`${initialClientName} - Proceso`);
+      }
+    }
+  }, [initialClientId, initialClientName, clients]);
 
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 }), // Week starts on Monday

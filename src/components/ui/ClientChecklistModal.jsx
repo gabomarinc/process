@@ -44,8 +44,6 @@ import {
 } from '../../utils/clientSemaforo';
 import './ClientChecklistModal.css';
 
-const CLIENT_STAGES = ['Nuevo', 'Contactado', 'Onboarding', 'En Proceso', 'Activo'];
-
 const SUGGESTED_TEMPLATE_ITEMS = [
   { id: 'item_video_sug', name: 'Video', type: 'counter', checked: false, current: 0, target: 6 },
   { id: 'item_post_sug', name: 'Post', type: 'counter', checked: false, current: 0, target: 12 },
@@ -59,6 +57,7 @@ export default function ClientChecklistModal({
   onClose,
   client,
   instances = [],
+  kanbanColumns = ["Por hacer", "En curso", "Terminado"],
   onSaveChecklist,
   onDeleteClient,
   onOpenInstance,
@@ -66,11 +65,15 @@ export default function ClientChecklistModal({
 }) {
   if (!isOpen || !client) return null;
 
+  const clientStages = kanbanColumns && kanbanColumns.length > 0 
+    ? kanbanColumns 
+    : ["Por hacer", "En curso", "Terminado"];
+
   const [activeTab, setActiveTab] = useState('checklist'); // 'detalles' | 'checklist' | 'active' | 'completed'
   const [items, setItems] = useState(() => normalizeChecklistItems(client.checklist));
   const [clientEmail, setClientEmail] = useState(client.email || '');
   const [clientPhone, setClientPhone] = useState(client.phone || '');
-  const [clientStage, setClientStage] = useState(client.stage || 'Nuevo');
+  const [clientStage, setClientStage] = useState(client.stage || clientStages[0]);
   const [clientNotes, setClientNotes] = useState(client.notes || '');
   const [clientDriveUrl, setClientDriveUrl] = useState(
     client.drive_folder_url || (client.drive_folder_id ? `https://drive.google.com/drive/folders/${client.drive_folder_id}` : '')
@@ -93,13 +96,13 @@ export default function ClientChecklistModal({
       setItems(normalizeChecklistItems(client.checklist));
       setClientEmail(client.email || '');
       setClientPhone(client.phone || '');
-      setClientStage(client.stage || 'Nuevo');
+      setClientStage(client.stage || clientStages[0]);
       setClientNotes(client.notes || '');
       setClientDriveUrl(
         client.drive_folder_url || (client.drive_folder_id ? `https://drive.google.com/drive/folders/${client.drive_folder_id}` : '')
       );
     }
-  }, [client]);
+  }, [client, clientStages]);
 
   const semaforo = getClientTrafficLightStatus({ items });
 
@@ -300,7 +303,7 @@ export default function ClientChecklistModal({
     return <CheckSquare size={16} />;
   };
 
-  const currentStageIdx = CLIENT_STAGES.findIndex(s => s.toLowerCase() === (clientStage || 'nuevo').toLowerCase());
+  const currentStageIdx = clientStages.findIndex(s => s.toLowerCase() === (clientStage || clientStages[0]).toLowerCase());
   const activeStageIdx = currentStageIdx >= 0 ? currentStageIdx : 0;
 
   return (
@@ -404,12 +407,12 @@ export default function ClientChecklistModal({
           {/* Stepper / Pipeline Progress Trail */}
           <div className="crm-pipeline-container">
             <div className="crm-pipeline-header">
-              <span className="crm-pipeline-title">ETAPA DEL CLIENTE</span>
+              <span className="crm-pipeline-title">ETAPA EN VISTA DE TABLERO</span>
               <span className="crm-pipeline-hint">Haz clic en una etapa para actualizar</span>
             </div>
 
             <div className="crm-pipeline-trail">
-              {CLIENT_STAGES.map((st, idx) => {
+              {clientStages.map((st, idx) => {
                 const isPassed = idx < activeStageIdx;
                 const isCurrent = idx === activeStageIdx;
 
@@ -426,7 +429,7 @@ export default function ClientChecklistModal({
                       <span className="crm-pipeline-node-label">{st}</span>
                     </div>
 
-                    {idx < CLIENT_STAGES.length - 1 && (
+                    {idx < clientStages.length - 1 && (
                       <div className={`crm-pipeline-line ${idx < activeStageIdx ? 'active' : ''}`} />
                     )}
                   </React.Fragment>
@@ -494,7 +497,10 @@ export default function ClientChecklistModal({
             {onLaunchForClient && (
               <button 
                 className="crm-action-pill"
-                onClick={() => onLaunchForClient(client)}
+                onClick={() => {
+                  onClose();
+                  onLaunchForClient(client);
+                }}
               >
                 <Rocket size={14} color="#27BEA5" /> Lanzar Proceso
               </button>
@@ -866,13 +872,13 @@ export default function ClientChecklistModal({
                   </div>
                   <div className="crm-card-body">
                     <div className="crm-field-group">
-                      <label>Etapa del Pipeline</label>
+                      <label>Etapa en Vista de Tablero</label>
                       <select 
                         className="crm-select"
                         value={clientStage}
                         onChange={e => setClientStage(e.target.value)}
                       >
-                        {CLIENT_STAGES.map(st => (
+                        {clientStages.map(st => (
                           <option key={st} value={st}>{st}</option>
                         ))}
                       </select>
@@ -937,7 +943,10 @@ export default function ClientChecklistModal({
                     <button 
                       type="button" 
                       className="crm-empty-btn-primary"
-                      onClick={() => onLaunchForClient(client)}
+                      onClick={() => {
+                        onClose();
+                        onLaunchForClient(client);
+                      }}
                     >
                       <Rocket size={16} /> Lanzar Nuevo Proceso
                     </button>

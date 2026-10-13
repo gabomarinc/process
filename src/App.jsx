@@ -446,6 +446,8 @@ function App() {
   // Modal / Form States
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [launchInstanceName, setLaunchInstanceName] = useState('');
+  const [launchClientId, setLaunchClientId] = useState('');
+  const [launchClientName, setLaunchClientName] = useState('');
   const [launchStartDate, setLaunchStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [launchTemplateId, setLaunchTemplateId] = useState(''); // template selected inside the launch modal
 
@@ -3460,7 +3462,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
                         }}
                       >
                         <LayoutGrid size={16} style={{ transform: 'rotate(90deg)' }} />
-                        <span>Tablero de Control</span>
+                        <span>Vista de tablero</span>
                       </div>
                       <div 
                         className="nav-small-item-link"
@@ -4969,7 +4971,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
                               setActiveTab('instances');
                             }}
                           >
-                            Ver en Tablero
+                            Vista de tablero
                           </button>
                           <button 
                             className="btn btn-secondary" 
@@ -6633,11 +6635,23 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           teamMembers={teamMembers}
           clients={clients}
           initialTemplateId={activeTemplate?.id || launchTemplateId}
+          initialClientId={launchClientId}
+          initialClientName={launchClientName}
+          initialInstanceName={launchInstanceName}
           onSchedule={(data) => {
             handleLaunchInstance(data);
             setShowLaunchModal(false);
+            setLaunchClientId('');
+            setLaunchClientName('');
+            setLaunchInstanceName('');
           }}
-          onCancel={() => { setShowLaunchModal(false); setLaunchModalStep(1); }}
+          onCancel={() => { 
+            setShowLaunchModal(false); 
+            setLaunchModalStep(1); 
+            setLaunchClientId('');
+            setLaunchClientName('');
+            setLaunchInstanceName('');
+          }}
         />
       )}
 
@@ -8094,6 +8108,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         onClose={() => setChecklistModalClient(null)}
         client={checklistModalClient}
         instances={instances}
+        kanbanColumns={kanbanColumns}
         onSaveChecklist={handleSaveClientChecklist}
         onDeleteClient={handleDeleteClient}
         onOpenInstance={(instId) => {
@@ -8102,7 +8117,10 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           window.location.hash = '#/instances';
         }}
         onLaunchForClient={(cl) => {
-          setLaunchInstanceName(cl.name || '');
+          setChecklistModalClient(null);
+          setLaunchClientId(cl.id || '');
+          setLaunchClientName(cl.name || '');
+          setLaunchInstanceName(cl.name ? `${cl.name} - Proceso` : '');
           setLaunchStartDate(new Date().toISOString().split('T')[0]);
           setShowLaunchModal(true);
         }}

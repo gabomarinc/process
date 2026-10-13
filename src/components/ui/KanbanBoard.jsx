@@ -167,7 +167,7 @@ export const KanbanBoard = ({
       <div className="kanban-board-header">
         <div className="kanban-header-left">
           <div>
-            <h2 className="kanban-board-title">Tablero de Control</h2>
+            <h2 className="kanban-board-title">Vista de tablero</h2>
             <div className="kanban-board-subtitle">Gestiona tus procesos activos con drag & drop.</div>
           </div>
         </div>

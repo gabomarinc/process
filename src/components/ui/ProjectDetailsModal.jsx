@@ -30,7 +30,12 @@ import {
   RefreshCw,
   ChevronDown,
   Eye,
-  ShieldAlert
+  ShieldAlert,
+  CheckSquare,
+  BarChart2,
+  Flag,
+  Target,
+  Timer
 } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 
@@ -107,6 +112,8 @@ export const ProjectDetailsModal = ({
   const today = new Date();
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
+  const [calendarSubTab, setCalendarSubTab] = useState('both'); // 'both', 'calendar', 'gantt'
 
   // Attachment free-upload state
   const [attachStepId, setAttachStepId] = useState('');
@@ -120,6 +127,8 @@ export const ProjectDetailsModal = ({
       setNoteText('');
       setShowTopAttachments(false);
       setPreviewFile(null);
+      setSelectedCalendarDay(null);
+      setCalendarSubTab('both');
     }
   }, [activeInstance?.id]);
 
@@ -445,17 +454,115 @@ export const ProjectDetailsModal = ({
     }
   };
 
-  // Calendar Helpers
+  // Calendar & Gantt Schedule Helpers
   const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (month, year) => new Date(year, month, 1).getDay();
   const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  const stepsWithDates = steps.filter(s => s.dueDate);
-  const dateStepMap = {};
-  stepsWithDates.forEach(step => {
-    const key = step.dueDate.split('T')[0];
-    if (!dateStepMap[key]) dateStepMap[key] = [];
-    dateStepMap[key].push(step);
+  const projectStartDate = activeInstance.startedAt ? new Date(activeInstance.startedAt) : new Date();
+
+  // Calculate detailed timeline, start date and end date for each step
+  const scheduledSteps = steps.map((step, idx) => {
+    let dueDateObj = step.dueDate ? new Date(step.dueDate) : null;
+    let startDateObj = step.startDate ? new Date(step.startDate) : null;
+
+    if (!dueDateObj) {
+      const offsetDays = typeof step.relativeOffsetDays === 'number' ? step.relativeOffsetDays : (idx + 1);
+      dueDateObj = new Date(projectStartDate.getTime() + offsetDays * 24 * 60 * 60 * 1000);
+    }
+
+    if (!startDateObj) {
+      if (idx === 0) {
+        startDateObj = new Date(projectStartDate.getTime());
+      } else {
+        const prevStep = steps[idx - 1];
+        if (prevStep?.dueDate) {
+          startDateObj = new Date(prevStep.dueDate);
+        } else {
+          startDateObj = new Date(dueDateObj.getTime() - 24 * 60 * 60 * 1000);
+        }
+      }
+    }
+
+    // Ensure start date is before or equal to due date
+    if (startDateObj > dueDateObj) {
+      startDateObj = new Date(dueDateObj.getTime() - 24 * 60 * 60 * 1000);
+    }
+
+    const durationDays = Math.max(1, Math.round((dueDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)));
+    const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const dueTime = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate()).getTime();
+    const startTime = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate()).getTime();
+
+    const isOverdue = !step.isCompleted && dueTime < todayTime;
+    const isDueToday = dueTime === todayTime;
+    const isStartsToday = startTime === todayTime;
+
+    let status = 'upcoming';
+    let statusLabel = 'Programado';
+    let statusColor = '#64748B';
+    let statusBg = '#F1F5F9';
+    let statusBorder = '#E2E8F0';
+
+    if (step.isCompleted) {
+      status = 'completed';
+      statusLabel = 'Completado';
+      statusColor = '#10B981';
+      statusBg = '#ECFDF5';
+      statusBorder = '#A7F3D0';
+    } else if (isOverdue) {
+      status = 'overdue';
+      statusLabel = 'Atrasado';
+      statusColor = '#EF4444';
+      statusBg = '#FEF2F2';
+      statusBorder = '#FECACA';
+    } else if (todayTime >= startTime && todayTime <= dueTime) {
+      status = 'in_progress';
+      statusLabel = 'En curso';
+      statusColor = '#27BEA5';
+      statusBg = '#F0FDFA';
+      statusBorder = '#99F6E4';
+    }
+
+    const assignedMember = teamMembers.find(m => String(m.id) === String(step.assignedTo) || m.email === step.assignedTo);
+
+    return {
+      ...step,
+      stepIndex: idx + 1,
+      startDateObj,
+      dueDateObj,
+      durationDays,
+      status,
+      statusLabel,
+      statusColor,
+      statusBg,
+      statusBorder,
+      isOverdue,
+      isDueToday,
+      isStartsToday,
+      assignedMember
+    };
+  });
+
+  // Calculate project boundary dates for Gantt rail
+  const allStartTimes = scheduledSteps.map(s => s.startDateObj.getTime());
+  const allEndTimes = scheduledSteps.map(s => s.dueDateObj.getTime());
+  const minProjectTime = allStartTimes.length > 0 ? Math.min(...allStartTimes) : projectStartDate.getTime();
+  const maxProjectTime = allEndTimes.length > 0 ? Math.max(...allEndTimes) : projectStartDate.getTime() + 7 * 24 * 60 * 60 * 1000;
+  const totalProjectSpanMs = Math.max(24 * 60 * 60 * 1000, maxProjectTime - minProjectTime);
+  const totalProjectDays = Math.max(1, Math.round(totalProjectSpanMs / (1000 * 60 * 60 * 24)));
+
+  // Deliverables by calendar date key (YYYY-MM-DD)
+  const dateDeliverableMap = {};
+  scheduledSteps.forEach(step => {
+    const dueKey = `${step.dueDateObj.getFullYear()}-${String(step.dueDateObj.getMonth() + 1).padStart(2, '0')}-${String(step.dueDateObj.getDate()).padStart(2, '0')}`;
+    const startKey = `${step.startDateObj.getFullYear()}-${String(step.startDateObj.getMonth() + 1).padStart(2, '0')}-${String(step.startDateObj.getDate()).padStart(2, '0')}`;
+
+    if (!dateDeliverableMap[dueKey]) dateDeliverableMap[dueKey] = { due: [], start: [] };
+    dateDeliverableMap[dueKey].due.push(step);
+
+    if (!dateDeliverableMap[startKey]) dateDeliverableMap[startKey] = { due: [], start: [] };
+    dateDeliverableMap[startKey].start.push(step);
   });
 
   const renderCalendar = () => {
@@ -466,82 +573,705 @@ export const ProjectDetailsModal = ({
     for (let i = 0; i < startOffset; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const formattedProjectStart = new Date(minProjectTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+    const formattedProjectEnd = new Date(maxProjectTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    // Today indicator position on the global timeline
+    const todayTimestamp = today.getTime();
+    const todayOffsetPercent = Math.max(0, Math.min(100, ((todayTimestamp - minProjectTime) / totalProjectSpanMs) * 100));
+    const isTodayWithinProject = todayTimestamp >= minProjectTime && todayTimestamp <= maxProjectTime;
+
+    // Selected day deliverables
+    const selectedDayData = selectedCalendarDay ? (dateDeliverableMap[selectedCalendarDay] || { due: [], start: [] }) : null;
 
     return (
-      <div style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <button
-            onClick={() => {
-              if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
-              else setCalMonth(m => m - 1);
-            }}
-            style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', color: '#64748B' }}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A' }}>
-            {monthNames[calMonth]} {calYear}
-          </span>
-          <button
-            onClick={() => {
-              if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
-              else setCalMonth(m => m + 1);
-            }}
-            style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', color: '#64748B' }}
-          >
-            <ChevronRight size={16} />
-          </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
+        {/* Top Control Bar & Mode Toggles */}
+        <div style={{
+          background: '#FFFFFF',
+          borderRadius: '18px',
+          border: '1px solid #E2E8F0',
+          padding: '1rem 1.25rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+        }}>
+          <div>
+            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={18} color="#27BEA5" />
+              <span>Cronograma & Calendario de Entregables</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+              Proceso: <strong>{activeInstance.instanceName}</strong> • {totalSteps} pasos planificados
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', padding: '4px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <button
+              onClick={() => setCalendarSubTab('both')}
+              style={{
+                background: calendarSubTab === 'both' ? '#FFFFFF' : 'transparent',
+                color: calendarSubTab === 'both' ? '#0F172A' : '#64748B',
+                boxShadow: calendarSubTab === 'both' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                border: 'none',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <Layers size={13} /> Vista Completa
+            </button>
+            <button
+              onClick={() => setCalendarSubTab('calendar')}
+              style={{
+                background: calendarSubTab === 'calendar' ? '#FFFFFF' : 'transparent',
+                color: calendarSubTab === 'calendar' ? '#0F172A' : '#64748B',
+                boxShadow: calendarSubTab === 'calendar' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                border: 'none',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <Calendar size={13} /> Calendario Mensual
+            </button>
+            <button
+              onClick={() => setCalendarSubTab('gantt')}
+              style={{
+                background: calendarSubTab === 'gantt' ? '#FFFFFF' : 'transparent',
+                color: calendarSubTab === 'gantt' ? '#0F172A' : '#64748B',
+                boxShadow: calendarSubTab === 'gantt' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                border: 'none',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <BarChart2 size={13} /> Gantt Simplificado
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '6px' }}>
-          {['Lu','Ma','Mi','Ju','Vi','Sa','Do'].map(d => (
-            <div key={d} style={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 800, color: '#94A3B8', padding: '4px 0', textTransform: 'uppercase' }}>{d}</div>
-          ))}
+        {/* Global Process Metrics Pill Bar */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+          gap: '10px'
+        }}>
+          <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#EFF6FF', color: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Flag size={16} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase' }}>DÍA QUE INICIA</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0F172A' }}>{formattedProjectStart}</div>
+            </div>
+          </div>
+
+          <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#F0FDF4', color: '#10B981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Target size={16} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase' }}>DÍA QUE ACABA</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0F172A' }}>{formattedProjectEnd}</div>
+            </div>
+          </div>
+
+          <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Timer size={16} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase' }}>DURACIÓN TOTAL</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0F172A' }}>{totalProjectDays} {totalProjectDays === 1 ? 'día' : 'días'}</div>
+            </div>
+          </div>
+
+          <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#E6FFFA', color: '#27BEA5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 size={16} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase' }}>AVANCE EJECUCIÓN</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#27BEA5' }}>{completedSteps} de {totalSteps} completados ({progressPct}%)</div>
+            </div>
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
-          {cells.map((day, idx) => {
-            if (day === null) return <div key={`empty-${idx}`} />;
-            const dateKey = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-            const daySteps = dateStepMap[dateKey] || [];
-            const isToday = dateKey === todayKey;
-            const hasOverdue = daySteps.some(s => !s.isCompleted && new Date(s.dueDate) < today);
-            const hasPending = daySteps.some(s => !s.isCompleted);
-
-            let dotColor = null;
-            if (daySteps.length > 0) {
-              dotColor = hasOverdue ? '#EF4444' : hasPending ? '#27BEA5' : '#10B981';
-            }
-
-            return (
-              <div
-                key={dateKey}
-                title={daySteps.map(s => s.title).join('\n')}
-                style={{
-                  minHeight: '40px',
-                  borderRadius: '10px',
-                  background: isToday ? '#27BEA5' : daySteps.length > 0 ? '#F0FDFA' : '#F8FAFC',
-                  border: isToday ? 'none' : daySteps.length > 0 ? '1px solid #CCFBF1' : '1px solid #F1F5F9',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '2px',
-                  padding: '4px',
-                  cursor: daySteps.length > 0 ? 'pointer' : 'default'
-                }}
-              >
-                <span style={{ fontSize: '0.8rem', fontWeight: isToday ? 800 : daySteps.length > 0 ? 700 : 500, color: isToday ? 'white' : '#0F172A' }}>
-                  {day}
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 1: CALENDARIO MENSUAL CON ENTREGABLES DIARIOS
+        ═══════════════════════════════════════════════════════════════ */}
+        {(calendarSubTab === 'both' || calendarSubTab === 'calendar') && (
+          <div style={{ background: '#FFFFFF', padding: '1.5rem', borderRadius: '20px', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            {/* Header with Month Navigation */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
+                    else setCalMonth(m => m - 1);
+                  }}
+                  style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '7px 12px', borderRadius: '8px', color: '#64748B', display: 'flex', alignItems: 'center' }}
+                  title="Mes anterior"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0F172A', minWidth: '150px', textAlign: 'center' }}>
+                  {monthNames[calMonth]} {calYear}
                 </span>
-                {dotColor && (
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isToday ? 'white' : dotColor }} />
+                <button
+                  onClick={() => {
+                    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
+                    else setCalMonth(m => m + 1);
+                  }}
+                  style={{ background: '#F1F5F9', border: 'none', cursor: 'pointer', padding: '7px 12px', borderRadius: '8px', color: '#64748B', display: 'flex', alignItems: 'center' }}
+                  title="Mes siguiente"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    setCalMonth(today.getMonth());
+                    setCalYear(today.getFullYear());
+                  }}
+                  style={{
+                    background: '#F1F5F9',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    color: '#475569',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Mes Actual
+                </button>
+                {selectedCalendarDay && (
+                  <button
+                    onClick={() => setSelectedCalendarDay(null)}
+                    style={{
+                      background: '#FEE2E2',
+                      border: 'none',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      fontSize: '0.73rem',
+                      fontWeight: 700,
+                      color: '#DC2626',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Deseleccionar día
+                  </button>
                 )}
               </div>
-            );
-          })}
-        </div>
+            </div>
+
+            {/* Weekday Labels */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '8px' }}>
+              {['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d => (
+                <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 800, color: '#94A3B8', padding: '4px 0', textTransform: 'uppercase' }}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Calendar Cells Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+              {cells.map((day, idx) => {
+                if (day === null) return <div key={`empty-${idx}`} style={{ minHeight: '92px', background: '#FAFAFA', borderRadius: '12px', border: '1px dashed #F1F5F9' }} />;
+                
+                const dateKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const deliverables = dateDeliverableMap[dateKey] || { due: [], start: [] };
+                const isToday = dateKey === todayKey;
+                const isSelected = selectedCalendarDay === dateKey;
+                const hasDeliverables = deliverables.due.length > 0 || deliverables.start.length > 0;
+
+                return (
+                  <div
+                    key={dateKey}
+                    onClick={() => setSelectedCalendarDay(isSelected ? null : dateKey)}
+                    style={{
+                      minHeight: '92px',
+                      borderRadius: '12px',
+                      background: isSelected ? '#F0FDFA' : isToday ? '#FAF5FF' : hasDeliverables ? '#FFFFFF' : '#F8FAFC',
+                      border: isSelected ? '2px solid #27BEA5' : isToday ? '2px solid #A855F7' : hasDeliverables ? '1px solid #CBD5E1' : '1px solid #F1F5F9',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isSelected ? '0 4px 12px rgba(39, 190, 165, 0.15)' : 'none'
+                    }}
+                  >
+                    {/* Top row in cell: day number + badges */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{
+                        fontSize: '0.82rem',
+                        fontWeight: isToday || isSelected ? 800 : 700,
+                        color: isToday ? '#7E22CE' : isSelected ? '#0F766E' : '#0F172A'
+                      }}>
+                        {day}
+                      </span>
+                      {isToday && (
+                        <span style={{ fontSize: '0.58rem', fontWeight: 800, background: '#A855F7', color: '#FFFFFF', padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                          Hoy
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Daily Deliverables inside cell */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, overflow: 'hidden' }}>
+                      {/* Steps Due on this day */}
+                      {deliverables.due.map(step => (
+                        <div
+                          key={`due_${step.id}`}
+                          style={{
+                            background: step.statusBg,
+                            border: `1px solid ${step.statusBorder}`,
+                            borderRadius: '6px',
+                            padding: '3px 5px',
+                            fontSize: '0.67rem',
+                            fontWeight: 700,
+                            color: step.statusColor,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title={`Cumplir hoy: Paso ${step.stepIndex} - ${step.title} (${step.statusLabel})`}
+                        >
+                          {step.status === 'completed' ? <CheckCircle2 size={10} style={{ flexShrink: 0 }} /> : step.status === 'overdue' ? <AlertTriangle size={10} style={{ flexShrink: 0 }} /> : <Target size={10} style={{ flexShrink: 0 }} />}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            P{step.stepIndex}: {step.title}
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Steps Starting on this day (if not already due on same day) */}
+                      {deliverables.start
+                        .filter(s => {
+                          const dueStr = `${s.dueDateObj.getFullYear()}-${String(s.dueDateObj.getMonth() + 1).padStart(2, '0')}-${String(s.dueDateObj.getDate()).padStart(2, '0')}`;
+                          return dueStr !== dateKey;
+                        })
+                        .map(step => (
+                          <div
+                            key={`start_${step.id}`}
+                            style={{
+                              background: '#EFF6FF',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '6px',
+                              padding: '2px 5px',
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              color: '#1E40AF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={`Inicia hoy: Paso ${step.stepIndex} - ${step.title}`}
+                          >
+                            <Flag size={9} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              Inicia: P{step.stepIndex}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Selected Day Expanded Detail Panel */}
+            {selectedCalendarDay && (
+              <div style={{
+                marginTop: '1.25rem',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '16px',
+                padding: '1.25rem',
+                animation: 'fadeIn 0.2s ease-in-out'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={16} color="#27BEA5" />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0F172A' }}>
+                      Detalle de Entregables para el {new Date(`${selectedCalendarDay}T12:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCalendarDay(null)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {(!selectedDayData || (selectedDayData.due.length === 0 && selectedDayData.start.length === 0)) ? (
+                  <div style={{ fontSize: '0.82rem', color: '#94A3B8', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                    No hay entregables ni inicios programados para esta fecha en este proceso.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {selectedDayData.due.map(step => (
+                      <div
+                        key={`sel_due_${step.id}`}
+                        style={{
+                          background: '#FFFFFF',
+                          border: `1px solid ${step.statusBorder}`,
+                          borderRadius: '12px',
+                          padding: '10px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: step.statusBg, color: step.statusColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {step.status === 'completed' ? <CheckCircle2 size={16} /> : <Target size={16} />}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0F172A' }}>
+                              Paso {step.stepIndex}: {step.title}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                              <span>Día que debe acabarse: <strong>{step.dueDateObj.toLocaleDateString('es-ES')}</strong></span>
+                              <span>• Inició: <strong>{step.startDateObj.toLocaleDateString('es-ES')}</strong></span>
+                              {step.assignedMember && <span>• Responsable: <strong>{step.assignedMember.name}</strong></span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: '99px',
+                            background: step.statusBg,
+                            color: step.statusColor,
+                            border: `1px solid ${step.statusBorder}`
+                          }}>
+                            {step.statusLabel}
+                          </span>
+                          <button
+                            onClick={() => setActiveModalTab('tareas')}
+                            style={{
+                              background: '#27BEA5',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              padding: '5px 12px',
+                              borderRadius: '8px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Ver en Checklist
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {selectedDayData.start
+                      .filter(s => {
+                        const dueStr = `${s.dueDateObj.getFullYear()}-${String(s.dueDateObj.getMonth() + 1).padStart(2, '0')}-${String(s.dueDateObj.getDate()).padStart(2, '0')}`;
+                        return dueStr !== selectedCalendarDay;
+                      })
+                      .map(step => (
+                        <div
+                          key={`sel_start_${step.id}`}
+                          style={{
+                            background: '#FFFFFF',
+                            border: '1px solid #BFDBFE',
+                            borderRadius: '12px',
+                            padding: '10px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#EFF6FF', color: '#1E40AF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Flag size={15} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0F172A' }}>
+                                Inicio del Paso {step.stepIndex}: {step.title}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+                                Inicia hoy y debe acabarse el <strong>{step.dueDateObj.toLocaleDateString('es-ES')}</strong> (Duración: {step.durationDays} días)
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setActiveModalTab('tareas')}
+                            style={{
+                              background: '#EFF6FF',
+                              color: '#1E40AF',
+                              border: '1px solid #BFDBFE',
+                              padding: '5px 12px',
+                              borderRadius: '8px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Ir al Paso
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            SECTION 2: CRONOGRAMA & GANTT SIMPLIFICADO DEL PROCESO
+        ═══════════════════════════════════════════════════════════════ */}
+        {(calendarSubTab === 'both' || calendarSubTab === 'gantt') && (
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            border: '1px solid #E2E8F0',
+            padding: '1.5rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BarChart2 size={20} color="#27BEA5" />
+                  <span>Cronograma & Gantt Simplificado del Proceso</span>
+                </div>
+                <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: '#64748B' }}>
+                  Visualización secuencial paso a paso con fechas de inicio, fechas de entrega y duración estimada.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981' }} /> Completado
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#27BEA5' }} /> En curso
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#EF4444' }} /> Atrasado
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#94A3B8' }} /> Programado
+                </span>
+              </div>
+            </div>
+
+            {/* Steps Gantt Timeline List */}
+            {scheduledSteps.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#94A3B8', fontStyle: 'italic' }}>
+                Este proceso no contiene pasos registrados.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {scheduledSteps.map(step => {
+                  const startFormatted = step.startDateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+                  const dueFormatted = step.dueDateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+                  // Calculate proportional offset & width for Gantt bar
+                  const stepStartTime = step.startDateObj.getTime();
+                  const stepEndTime = step.dueDateObj.getTime();
+                  const leftPct = Math.max(0, Math.min(95, ((stepStartTime - minProjectTime) / totalProjectSpanMs) * 100));
+                  const widthPct = Math.max(6, Math.min(100 - leftPct, ((stepEndTime - stepStartTime) / totalProjectSpanMs) * 100));
+
+                  const chkCompleted = (step.checklist || []).filter(c => c.isCompleted).length;
+                  const chkTotal = (step.checklist || []).length;
+
+                  return (
+                    <div
+                      key={step.id}
+                      style={{
+                        background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '16px',
+                        padding: '1.1rem 1.25rem',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {/* Step Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '0.65rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                          <span style={{
+                            background: '#0F172A',
+                            color: '#FFFFFF',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            letterSpacing: '0.04em'
+                          }}>
+                            Paso {step.stepIndex}
+                          </span>
+                          <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {step.title}
+                          </span>
+                          {chkTotal > 0 && (
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              background: '#FFFFFF',
+                              border: '1px solid #CBD5E1',
+                              padding: '2px 7px',
+                              borderRadius: '99px',
+                              color: '#475569',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <CheckSquare size={11} color="#27BEA5" /> {chkCompleted}/{chkTotal}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status Badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {step.assignedMember && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#FFFFFF', border: '1px solid #E2E8F0', padding: '3px 8px', borderRadius: '99px', fontSize: '0.72rem', fontWeight: 700, color: '#334155' }}>
+                              <User size={11} color="#27BEA5" />
+                              <span>{step.assignedMember.name}</span>
+                            </div>
+                          )}
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            padding: '4px 10px',
+                            borderRadius: '99px',
+                            background: step.statusBg,
+                            color: step.statusColor,
+                            border: `1px solid ${step.statusBorder}`
+                          }}>
+                            {step.statusLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Explicit Date Details: Inicia, Debe acabar, Duración */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px',
+                        fontSize: '0.78rem',
+                        color: '#475569',
+                        flexWrap: 'wrap',
+                        marginBottom: '0.75rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Flag size={13} color="#3B82F6" />
+                          <span>Día que inicia: <strong style={{ color: '#0F172A' }}>{startFormatted}</strong></span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Target size={13} color={step.isOverdue ? '#EF4444' : '#10B981'} />
+                          <span>Día que debe acabar: <strong style={{ color: step.isOverdue ? '#EF4444' : '#0F172A' }}>{dueFormatted}</strong></span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Timer size={13} color="#F59E0B" />
+                          <span>Duración: <strong style={{ color: '#0F172A' }}>{step.durationDays} {step.durationDays === 1 ? 'día' : 'días'}</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Visual Gantt Bar Track */}
+                      <div style={{ position: 'relative', width: '100%', height: '26px', background: '#E2E8F0', borderRadius: '8px', overflow: 'hidden' }}>
+                        {/* Progress Bar */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                            top: '3px',
+                            bottom: '3px',
+                            borderRadius: '6px',
+                            background: step.status === 'completed'
+                              ? 'linear-gradient(90deg, #10B981, #059669)'
+                              : step.status === 'overdue'
+                              ? 'linear-gradient(90deg, #EF4444, #DC2626)'
+                              : step.status === 'in_progress'
+                              ? 'linear-gradient(90deg, #27BEA5, #0D9488)'
+                              : 'linear-gradient(90deg, #94A3B8, #64748B)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#FFFFFF',
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            padding: '0 6px',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={`Paso ${step.stepIndex}: Del ${startFormatted} al ${dueFormatted} (${step.durationDays} días)`}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {step.durationDays}d
+                          </span>
+                        </div>
+
+                        {/* Today Marker Line inside track */}
+                        {isTodayWithinProject && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${todayOffsetPercent}%`,
+                              top: 0,
+                              bottom: 0,
+                              width: '2px',
+                              background: '#A855F7',
+                              zIndex: 3
+                            }}
+                            title="Línea de fecha actual (Hoy)"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
