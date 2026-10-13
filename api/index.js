@@ -2158,6 +2158,37 @@ app.put('/api/clients/:id/checklist', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete a client
+app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const clientCheck = await pool.query(
+      'SELECT id, name FROM clients WHERE id = $1 AND organization_id = $2',
+      [id, req.user.organizationId]
+    );
+    if (clientCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Cliente no encontrado.' });
+    }
+
+    // Decouple client from instances
+    await pool.query(
+      'UPDATE instances SET client_id = NULL WHERE client_id = $1 AND organization_id = $2',
+      [id, req.user.organizationId]
+    );
+
+    // Delete client
+    await pool.query(
+      'DELETE FROM clients WHERE id = $1 AND organization_id = $2',
+      [id, req.user.organizationId]
+    );
+
+    res.json({ message: 'Cliente eliminado con éxito.', id });
+  } catch (err) {
+    console.error('Error al eliminar cliente:', err);
+    res.status(500).json({ error: 'Error al eliminar el cliente.' });
+  }
+});
+
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
     const { id, templateId, title, instanceName, clientId, clientName, clientEmail, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
@@ -5936,6 +5967,23 @@ app.get('/api/v1/clients/:id', authenticateApiKey, async (req, res) => {
   } catch (err) {
     console.error('API v1 Get Client error:', err);
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al obtener cliente' } });
+  }
+});
+
+// Delete client by id
+app.delete('/api/v1/clients/:id', authenticateApiKey, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const clientRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    if (clientRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Cliente no encontrado' } });
+    }
+    await pool.query('UPDATE instances SET client_id = NULL WHERE client_id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    await pool.query('DELETE FROM clients WHERE id = $1 AND organization_id = $2', [id, req.user.organizationId]);
+    res.json({ success: true, message: 'Cliente eliminado correctamente', meta: { app: 'konsulprocess', version: '1' } });
+  } catch (err) {
+    console.error('API v1 Delete Client error:', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Error al eliminar cliente' } });
   }
 });
 

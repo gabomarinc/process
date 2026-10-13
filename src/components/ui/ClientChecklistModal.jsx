@@ -60,6 +60,7 @@ export default function ClientChecklistModal({
   client,
   instances = [],
   onSaveChecklist,
+  onDeleteClient,
   onOpenInstance,
   onLaunchForClient
 }) {
@@ -214,7 +215,9 @@ export default function ClientChecklistModal({
 
   // Delete an item
   const handleDeleteItem = (itemId) => {
-    if (window.confirm("¿Estás seguro de eliminar este requerimiento del cliente?")) {
+    const target = items.find(i => i.id === itemId);
+    const itemName = target?.name || 'este requerimiento';
+    if (window.confirm(`¿Estás seguro de que deseas eliminar el requerimiento "${itemName}" del cliente?`)) {
       setItems(prev => prev.filter(item => item.id !== itemId));
     }
   };
@@ -330,6 +333,20 @@ export default function ClientChecklistModal({
             </div>
 
             <div className="crm-header-actions">
+              {onDeleteClient && (
+                <button 
+                  className="crm-header-delete-btn" 
+                  onClick={() => {
+                    if (window.confirm(`¿Estás seguro de que deseas eliminar permanentemente al cliente "${client.name}" y todos sus requerimientos? Esta acción no se puede deshacer.`)) {
+                      onDeleteClient(client.id);
+                      onClose();
+                    }
+                  }} 
+                  title="Eliminar Cliente"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
               <button className="crm-close-btn" onClick={onClose} title="Cerrar modal">
                 <X size={18} />
               </button>
@@ -881,6 +898,24 @@ export default function ClientChecklistModal({
                         onChange={e => setClientNotes(e.target.value)}
                       />
                     </div>
+
+                    {onDeleteClient && (
+                      <div className="crm-field-group" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #FEE2E2' }}>
+                        <label style={{ color: '#DC2626' }}>Zona de Peligro</label>
+                        <button
+                          type="button"
+                          className="crm-btn-danger"
+                          onClick={() => {
+                            if (window.confirm(`¿Estás seguro de que deseas eliminar permanentemente al cliente "${client.name}" y todos sus requerimientos? Esta acción no se puede deshacer.`)) {
+                              onDeleteClient(client.id);
+                              onClose();
+                            }
+                          }}
+                        >
+                          <Trash2 size={15} /> Eliminar Cliente de Process
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 

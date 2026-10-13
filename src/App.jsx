@@ -557,6 +557,36 @@ function App() {
     }
   };
 
+  const handleDeleteClient = async (clientId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const cl = clients.find(c => c.id === clientId);
+    const clientName = cl?.name || 'este cliente';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente al cliente "${clientName}"? Esta acción no se puede deshacer.`)) return;
+
+    setClients(prev => prev.filter(c => c.id !== clientId));
+    if (checklistModalClient?.id === clientId) {
+      setChecklistModalClient(null);
+    }
+
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (res.ok) {
+        addToast(`Cliente "${clientName}" eliminado con éxito`, 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        addToast(data.error || 'Error al eliminar cliente', 'error');
+      }
+    } catch (err) {
+      console.error('Error deleting client:', err);
+      addToast('Error de conexión al eliminar cliente', 'error');
+    }
+  };
+
   // Celebration state
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMsg, setCelebrationMsg] = useState('');
@@ -1473,9 +1503,13 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
   };
 
   const handleDeleteClickupRule = async (ruleId) => {
+    if (!window.confirm("¿Estás seguro de que deseas eliminar esta regla de automatización de ClickUp?")) return;
     try {
       const res = await fetch(`/api/integrations/clickup/rules/${ruleId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1703,9 +1737,13 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
   };
 
   const handleDeleteGoogleDriveRule = async (ruleId) => {
+    if (!window.confirm("¿Estás seguro de que deseas eliminar esta regla de automatización de Google Drive?")) return;
     try {
       const res = await fetch(`/api/integrations/google-drive/rules/${ruleId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
       if (!res.ok) throw new Error('No se pudo eliminar la regla.');
       setGoogleDriveRules(prev => prev.filter(r => r.id !== ruleId));
@@ -1891,14 +1929,22 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
   };
 
   const handleDeleteOrgUser = async (userId) => {
-    if (!window.confirm('¿Estás seguro de eliminar a este usuario? Ya no podrá acceder al sistema.')) return;
+    const user = orgUsers.find(u => u.id === userId);
+    const userName = user?.name || user?.email || 'este usuario';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar al usuario "${userName}"? Ya no podrá acceder al sistema.`)) return;
     try {
-      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/users/${userId}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al eliminar usuario.');
       setOrgUsers(prev => prev.filter(u => u.id !== userId));
+      addToast(`Usuario "${userName}" eliminado con éxito`, 'success');
     } catch (err) {
-      showAlert(err.message);
+      showAlert(err.message, 'error');
     }
   };
 
@@ -2025,15 +2071,27 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     }
   };
 
-const handleDeleteMember = async (id) => {
-    if (!window.confirm("¿Estás seguro de eliminar a este miembro del equipo?")) return;
+  const handleDeleteMember = async (id) => {
+    const member = teamMembers.find(m => m.id === id);
+    const memberName = member?.name || 'este miembro';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente a "${memberName}" del equipo?`)) return;
     try {
-      const res = await fetch(`/api/team/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/team/${id}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       if (res.ok) {
         setTeamMembers(prev => prev.filter(m => m.id !== id));
+        addToast(`Miembro "${memberName}" eliminado con éxito`, 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        addToast(data.error || 'Error al eliminar miembro del equipo', 'error');
       }
     } catch (err) {
       console.error("Error al eliminar miembro del equipo:", err);
+      addToast('Error al eliminar miembro del equipo', 'error');
     }
   };
 
@@ -2183,8 +2241,13 @@ const handleDeleteMember = async (id) => {
     }
   };
 
-  const deleteInstance = async (id, e) => {
+  const deleteInstance = async (id, e, alreadyConfirmed = false) => {
     if (e && e.stopPropagation) e.stopPropagation();
+    const inst = instances.find(i => i.id === id);
+    const instName = inst?.instanceName || 'esta ejecución';
+    if (!alreadyConfirmed) {
+      if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente el proceso "${instName}"?`)) return;
+    }
     setInstances(prev => prev.filter(inst => inst.id !== id));
     if (selectedInstanceId === id) {
       setSelectedInstanceId("");
@@ -2194,11 +2257,15 @@ const handleDeleteMember = async (id) => {
     // Call Express DELETE endpoint
     try {
       await fetch(`/api/instances/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
-      addToast('Ejecución eliminada con éxito', 'success');
+      addToast(`Proceso "${instName}" eliminado con éxito`, 'success');
     } catch (err) {
       console.error("Error al eliminar ejecución en Neon:", err);
+      addToast('Error al eliminar proceso', 'error');
     }
   };
 
@@ -2399,6 +2466,7 @@ const handleDeleteMember = async (id) => {
   const handleDeleteColumn = async (index, colName) => {
     const updated = kanbanColumns.filter((_, idx) => idx !== index);
     const fallbackStatus = updated[0] || 'Por hacer';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar la etapa "${colName}"? Las ejecuciones en este estado se moverán a "${fallbackStatus}".`)) return;
     handleSaveKanbanColumns(updated);
 
     // Update all instances in that column to fallback status
@@ -2442,15 +2510,26 @@ const handleDeleteMember = async (id) => {
   };
 
   const handleDeleteTemplate = async (id) => {
-    if (!window.confirm("¿Estás seguro de que deseas eliminar esta plantilla de forma permanente? Se borrará de Neon.")) return;
+    const temp = templates.find(t => t.id === id);
+    const templateTitle = temp?.title || 'esta plantilla';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente la plantilla "${templateTitle}"? Esta acción no se puede deshacer.`)) return;
     setTemplates(prev => prev.filter(t => t.id !== id));
     setSelectedTemplateId("");
     try {
-      await fetch(`/api/templates/${id}`, {
-        method: 'DELETE'
+      const res = await fetch(`/api/templates/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
+      if (res.ok) {
+        addToast(`Plantilla "${templateTitle}" eliminada con éxito`, 'success');
+      } else {
+        addToast('Error al eliminar la plantilla', 'error');
+      }
     } catch (err) {
       console.error("Error al eliminar la plantilla en Neon:", err);
+      addToast('Error al eliminar la plantilla', 'error');
     }
   };
 
@@ -2493,6 +2572,8 @@ const handleDeleteMember = async (id) => {
   const handleDeleteStep = (templateId, stepIndex) => {
     const temp = templates.find(t => t.id === templateId);
     if (!temp) return;
+    const stepTitle = temp.steps?.[stepIndex]?.title || 'este paso';
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el paso "${stepTitle}" de esta plantilla?`)) return;
     const updatedSteps = temp.steps.filter((_, idx) => idx !== stepIndex);
     
     // Recalculate durationDays
@@ -4889,6 +4970,14 @@ const handleDeleteMember = async (id) => {
                             }}
                           >
                             Ver en Tablero
+                          </button>
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ padding: '0.45rem 0.65rem', fontSize: '0.8rem', borderRadius: '10px', color: '#DC2626', borderColor: '#FCA5A5' }}
+                            onClick={(e) => handleDeleteClient(c.id || client.id, e)}
+                            title="Eliminar Cliente"
+                          >
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
@@ -8006,6 +8095,7 @@ const handleDeleteMember = async (id) => {
         client={checklistModalClient}
         instances={instances}
         onSaveChecklist={handleSaveClientChecklist}
+        onDeleteClient={handleDeleteClient}
         onOpenInstance={(instId) => {
           setSelectedInstanceId(instId);
           setActiveTab('instances');

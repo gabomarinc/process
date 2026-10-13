@@ -115,6 +115,48 @@
   transform: scale(1.05);
 }
 
+.crm-header-delete-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: #F87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.crm-header-delete-btn:hover {
+  background: rgba(220, 38, 38, 0.35);
+  color: #FFFFFF;
+  border-color: #EF4444;
+  transform: scale(1.05);
+}
+
+.crm-btn-danger {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FCA5A5;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.crm-btn-danger:hover {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    IDENTITY BANNER (Avatar, Client Title, Semáforo Card)
 ═══════════════════════════════════════════════════════════════ */
