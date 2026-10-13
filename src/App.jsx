@@ -170,6 +170,10 @@ function App() {
 
     const tokenParam = params.get('resetToken');
     if (tokenParam) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setToken(null);
+      setUser(null);
       setResetToken(tokenParam);
       setAuthView('reset');
       setShowAuthScreen(true);
@@ -253,23 +257,43 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+
+      let data;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        await res.text();
+        throw new Error(res.status === 404 ? 'Servicio de autenticación no disponible.' : `Error de servidor (${res.status}). Intenta nuevamente.`);
+      }
+
       if (!res.ok) throw new Error(data.error || 'Operación fallida');
       
       if (authView === 'forgot') {
         setAuthSuccessMsg(data.message);
         setAuthForm({ ...authForm, email: '' });
       } else if (authView === 'reset') {
-        setAuthSuccessMsg(data.message);
-        setTimeout(() => {
-          setAuthView('login');
+        if (data.token && data.user) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setToken(data.token);
+          setUser(data.user);
+          setShowAuthScreen(false);
+          showAlert('¡Contraseña configurada con éxito! Bienvenido a Kônsul.', 'success');
           window.history.replaceState({}, document.title, "/");
-        }, 3000);
+        } else {
+          setAuthSuccessMsg(data.message || 'Contraseña configurada exitosamente.');
+          setTimeout(() => {
+            setAuthView('login');
+            window.history.replaceState({}, document.title, "/");
+          }, 2000);
+        }
       } else {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.token);
         setUser(data.user);
+        setShowAuthScreen(false);
       }
     } catch (err) {
       setAuthError(err.message);
@@ -3211,8 +3235,14 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
     if (!showAuthScreen) {
       return (
         <LandingPage 
-          onLoginClick={() => { window.location.href = '/api/auth/login'; }}
-          onStartFree={(email) => { window.location.href = '/api/auth/register'; }}
+          onLoginClick={() => { setShowAuthScreen(true); setAuthView('login'); setAuthError(''); setAuthSuccessMsg(''); }}
+          onStartFree={(email) => { 
+            setShowAuthScreen(true); 
+            setAuthView('register'); 
+            setAuthError(''); 
+            setAuthSuccessMsg('');
+            if (email) setAuthForm(prev => ({ ...prev, email }));
+          }}
         />
       );
     }
@@ -3316,6 +3346,38 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
             </button>
           </form>
 
+          {authView === 'login' && (
+            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', margin: '0.75rem 0' }}>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
+                <span style={{ padding: '0 0.5rem', fontSize: '0.8rem', color: '#9ca3af' }}>o</span>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
+              </div>
+              <button
+                type="button"
+                onClick={() => { window.location.href = '/api/auth/login'; }}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 1rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  background: '#ffffff',
+                  color: '#374151',
+                  fontSize: '0.9rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+              >
+                <Key size={16} />
+                Continuar con SSO (Kinde)
+              </button>
+            </div>
+          )}
+
           {authView !== 'login' && authView !== 'reset' && (
             <div className="auth-switch" style={{marginTop: '1.5rem'}}>
               <span onClick={() => { setAuthView('login'); setAuthError(''); setAuthSuccessMsg(''); }}>
@@ -3325,7 +3387,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           )}
           
           {authView === 'login' && (
-            <div className="auth-switch">
+            <div className="auth-switch" style={{ marginTop: '1.25rem' }}>
               ¿No tienes cuenta?{' '}
               <span onClick={() => { setAuthView('register'); setAuthError(''); setAuthSuccessMsg(''); }}>
                 Regístrate aquí

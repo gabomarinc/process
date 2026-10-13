@@ -1748,10 +1748,172 @@ app.get('/api/auth/logout', async (req, res) => {
 });
 
 
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Correo electrónico y contraseña requeridos.' });
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+
+  try {
+    const userResult = await pool.query(
+      'SELECT id, organization_id, name, email, password_hash, role FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1',
+      [cleanEmail]
+    );
+
+    if (userResult.rows.length === 0) {
+      const tmResult = await pool.query(
+        'SELECT id, organization_id, name, email, role FROM team_members WHERE LOWER(TRIM(email)) = $1 LIMIT 1',
+        [cleanEmail]
+      );
+      if (tmResult.rows.length > 0) {
+        return res.status(400).json({
+          error: 'Esta cuenta aún no ha activado su contraseña. Por favor usa el enlace de invitación recibido por correo.'
+        });
+      }
+      return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    }
+
+    const user = userResult.rows[0];
+
+    if (!user.password_hash || user.password_hash === 'INVITED_PENDING') {
+      return res.status(400).json({
+        error: 'Esta cuenta aún no ha activado su contraseña. Por favor usa el enlace de activación que recibiste por correo para definir tu clave.'
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    }
+
+    let effectiveRole = user.role || 'colaborador';
+    const tmRes = await pool.query(
+      'SELECT role FROM team_members WHERE LOWER(TRIM(email)) = $1 AND organization_id = $2 LIMIT 1',
+      [cleanEmail, user.organization_id]
+    );
+    if (tmRes.rows.length > 0 && tmRes.rows[0].role) {
+      const tmRole = tmRes.rows[0].role.toLowerCase();
+      if (tmRole.includes('admin')) effectiveRole = 'admin';
+      else if (tmRole.includes('geren')) effectiveRole = 'gerente';
+      else if (effectiveRole === 'guest') effectiveRole = 'colaborador';
+    }
+
+    const token = jwt.sign(
+      {
+        id: user.id,
+        organizationId: user.organization_id,
+        role: effectiveRole,
+        email: user.email,
+        name: user.name
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: effectiveRole,
+        organizationId: user.organization_id
+      }
+    });
+  } catch (err) {
+    console.error('Error in POST /api/auth/login:', err);
+    return res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password, companyName } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Nombre, correo y contraseña son obligatorios.' });
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+
+  try {
+    const existing = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [cleanEmail]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.' });
+    }
+
+    const orgId = await resolveOrCreateOrganizationByEmail(cleanEmail, companyName?.trim() || `Espacio de ${name}`);
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const orgUsersCount = await pool.query('SELECT COUNT(*) FROM users WHERE organization_id = $1', [orgId]);
+    const isFirstUser = parseInt(orgUsersCount.rows[0].count, 10) === 0;
+    const role = isFirstUser ? 'admin' : 'colaborador';
+
+    const newUserRes = await pool.query(
+      `INSERT INTO users (organization_id, name, email, password_hash, role)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, organization_id, name, email, role`,
+      [orgId, name.trim(), cleanEmail, passwordHash, role]
+    );
+    const newUser = newUserRes.rows[0];
+
+    const tmExists = await pool.query('SELECT id FROM team_members WHERE LOWER(TRIM(email)) = $1 AND organization_id = $2', [cleanEmail, orgId]);
+    if (tmExists.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO team_members (id, organization_id, name, role, email, avatar, department)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          (isFirstUser ? 'admin_' : 'mem_') + newUser.id,
+          orgId,
+          name.trim(),
+          isFirstUser ? 'Fundador/Admin' : 'Colaborador',
+          cleanEmail,
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+          isFirstUser ? 'Dirección' : 'Operaciones'
+        ]
+      );
+    }
+
+    const token = jwt.sign(
+      {
+        id: newUser.id,
+        organizationId: newUser.organization_id,
+        role: newUser.role,
+        email: newUser.email,
+        name: newUser.name
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    return res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        organizationId: newUser.organization_id
+      }
+    });
+  } catch (err) {
+    console.error('Error in POST /api/auth/register:', err);
+    return res.status(500).json({ error: 'Error al registrar la cuenta' });
+  }
+});
+
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Correo electrónico requerido' });
+  }
+  const cleanEmail = String(email).trim().toLowerCase();
   try {
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const userResult = await pool.query('SELECT * FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [cleanEmail]);
     if (userResult.rows.length === 0) {
       return res.json({ message: 'Si el correo existe en nuestro sistema, te hemos enviado un enlace para restablecer tu contraseña.' });
     }
@@ -1760,8 +1922,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const resetTokenExpiry = Date.now() + 3600000;
 
     await pool.query(
-      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3',
-      [resetToken, resetTokenExpiry, email]
+      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE LOWER(TRIM(email)) = $3',
+      [resetToken, resetTokenExpiry, cleanEmail]
     );
 
     const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
@@ -1793,7 +1955,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     `;
 
     await sendEmail({
-      to: email,
+      to: cleanEmail,
       subject: 'Recupera tu contraseña - Kônsul Process',
       html: htmlContent
     });
@@ -1807,24 +1969,63 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
 app.post('/api/auth/reset-password', async (req, res) => {
   const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Token y nueva contraseña son obligatorios.' });
+  }
+
   try {
     const userResult = await pool.query('SELECT * FROM users WHERE reset_token = $1 AND reset_token_expiry > $2', [token, Date.now()]);
     if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: 'El enlace es inválido o ha expirado.' });
+      return res.status(400).json({ error: 'El enlace de activación o recuperación es inválido o ha expirado.' });
     }
 
     const user = userResult.rows[0];
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
 
+    let effectiveRole = user.role || 'colaborador';
+    const tmRes = await pool.query(
+      'SELECT role FROM team_members WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND organization_id = $2 LIMIT 1',
+      [user.email, user.organization_id]
+    );
+    if (tmRes.rows.length > 0 && tmRes.rows[0].role) {
+      const tmRole = tmRes.rows[0].role.toLowerCase();
+      if (tmRole.includes('admin')) effectiveRole = 'admin';
+      else if (tmRole.includes('geren')) effectiveRole = 'gerente';
+      else if (effectiveRole === 'guest') effectiveRole = 'colaborador';
+    }
+
     await pool.query(
-      'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expiry = NULL WHERE id = $2',
-      [passwordHash, user.id]
+      'UPDATE users SET password_hash = $1, role = $2, reset_token = NULL, reset_token_expiry = NULL WHERE id = $3',
+      [passwordHash, effectiveRole, user.id]
     );
 
-    res.json({ message: 'Tu contraseña ha sido restablecida exitosamente.' });
+    const jwtToken = jwt.sign(
+      {
+        id: user.id,
+        organizationId: user.organization_id,
+        role: effectiveRole,
+        email: user.email,
+        name: user.name
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Tu contraseña ha sido guardada exitosamente.',
+      token: jwtToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: effectiveRole,
+        organizationId: user.organization_id
+      }
+    });
   } catch (err) {
-    console.error(err);
+    console.error('Error in reset-password:', err);
     res.status(500).json({ error: 'Error al restablecer la contraseña' });
   }
 });
