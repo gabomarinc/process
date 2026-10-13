@@ -374,7 +374,7 @@ export const ProjectDetailsModal = ({
   };
 
   // Free attachment upload
-  const handleFreeAttachmentUpload = (file) => {
+  const handleFreeAttachmentUpload = async (file) => {
     if (!file) return;
     const fileUrl = URL.createObjectURL(file);
     const newAttachment = {
@@ -389,12 +389,108 @@ export const ProjectDetailsModal = ({
     const updated = [...instanceAttachments, newAttachment];
     if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, updated);
     if (addToast) addToast('Archivo adjuntado con éxito', 'success');
+
+    // Background upload to Google Drive
+    try {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result || '').toString().split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      if (base64Data && activeInstance?.id) {
+        const res = await fetch('/api/integrations/google-drive/upload-step-file', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            instanceId: activeInstance.id,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64Data
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.webViewLink) {
+          const driveUpdated = updated.map(a => a.id === newAttachment.id ? { ...a, url: data.webViewLink, driveFileId: data.fileId } : a);
+          if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, driveUpdated);
+          if (addToast) addToast(`"${file.name}" respaldado en Google Drive`, 'success');
+        }
+      }
+    } catch (_) {}
   };
 
   const handleDeleteAttachment = (attId) => {
     if (!window.confirm('¿Deseas eliminar este archivo adjunto?')) return;
     const updated = instanceAttachments.filter(a => a.id !== attId);
     if (onUpdateInstanceAttachments) onUpdateInstanceAttachments(activeInstance.id, updated);
+  };
+
+  const handleUploadStepChecklistWithDrive = async (step, chkId, file, chkText) => {
+    if (!file) return;
+    const localUrl = URL.createObjectURL(file);
+    const storeKey = `${step.id}_${chkId}`;
+    if (setFileStore) {
+      setFileStore(prev => ({ ...prev, [storeKey]: { url: localUrl, name: file.name, type: file.type } }));
+    }
+    if (handleToggleStepChecklist) {
+      await handleToggleStepChecklist(activeInstance.id, step.id, chkId, {
+        isCompleted: true,
+        uploadedFileName: file.name,
+        uploadedFileUrl: localUrl,
+        fileType: file.type
+      });
+    }
+    if (addToast) addToast(`Archivo "${file.name}" adjuntado a "${chkText}"`, 'success');
+
+    // Background upload to Google Drive
+    try {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result || '').toString().split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      if (base64Data && activeInstance?.id) {
+        const res = await fetch('/api/integrations/google-drive/upload-step-file', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          },
+          body: JSON.stringify({
+            instanceId: activeInstance.id,
+            stepId: step.id,
+            checklistItemId: chkId,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64Data
+          })
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data.webViewLink) {
+            if (setFileStore) {
+              setFileStore(prev => ({
+                ...prev,
+                [storeKey]: { url: data.webViewLink, name: file.name, type: file.type }
+              }));
+            }
+            if (handleToggleStepChecklist) {
+              await handleToggleStepChecklist(activeInstance.id, step.id, chkId, {
+                isCompleted: true,
+                uploadedFileName: file.name,
+                uploadedFileUrl: data.webViewLink,
+                fileType: file.type
+              });
+            }
+            if (addToast) addToast(`☁️ "${file.name}" sincronizado en Google Drive`, 'success');
+          }
+        }
+      }
+    } catch (_) {}
   };
 
   // Email Send Handler
@@ -2609,19 +2705,7 @@ export const ProjectDetailsModal = ({
                                               onChange={async e => {
                                                 const file = e.target.files?.[0];
                                                 if (!file) return;
-                                                const localUrl = URL.createObjectURL(file);
-                                                if (setFileStore) {
-                                                  setFileStore(prev => ({ ...prev, [storeKey]: { url: localUrl, name: file.name, type: file.type } }));
-                                                }
-                                                if (handleToggleStepChecklist) {
-                                                  await handleToggleStepChecklist(activeInstance.id, step.id, chkId, {
-                                                    isCompleted: true,
-                                                    uploadedFileName: file.name,
-                                                    uploadedFileUrl: localUrl,
-                                                    fileType: file.type
-                                                  });
-                                                }
-                                                if (addToast) addToast(`Archivo "${file.name}" adjuntado a "${chkText}"`, 'success');
+                                                await handleUploadStepChecklistWithDrive(step, chkId, file, chkText);
                                               }}
                                             />
                                           </label>

@@ -926,6 +926,67 @@ const ensureDriveFolderPath = async (accessToken, segments, parentId = null, opt
   return current;
 };
 
+// Ensures or creates a Google Drive folder for a registered Client
+const ensureClientDriveFolder = async (orgId, clientData) => {
+  try {
+    if (!orgId || !clientData?.name) return null;
+    const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [orgId]);
+    const config = orgRes.rows[0]?.google_drive_config || {};
+    if (!config.connected || config.autoCreateFolders === false) return null;
+
+    const accessToken = await getValidGoogleDriveAccessToken(orgId, config);
+    if (!accessToken) return null;
+
+    let rootId = config.rootFolderId || null;
+    if (!rootId) {
+      const rootFolder = await findOrCreateDriveFolder(accessToken, 'Kônsul Process');
+      if (rootFolder) {
+        rootId = rootFolder.id;
+        config.rootFolderId = rootFolder.id;
+        config.rootFolderUrl = rootFolder.webViewLink;
+        config.rootFolderName = rootFolder.name;
+        await pool.query('UPDATE organizations SET google_drive_config = $1 WHERE id = $2', [JSON.stringify(config), orgId]).catch(() => {});
+      }
+    }
+    if (!rootId) return null;
+
+    const clientNameClean = sanitizeDriveFolderName(clientData.name.trim());
+    if (!clientNameClean) return null;
+
+    let targetFolder = null;
+    if (clientData.drive_folder_id) {
+      targetFolder = {
+        id: clientData.drive_folder_id,
+        name: clientNameClean,
+        webViewLink: clientData.drive_folder_url || `https://drive.google.com/drive/folders/${clientData.drive_folder_id}`
+      };
+    } else if (config.matchExistingFolders !== false) {
+      targetFolder = await findExistingClientFolderInTree(accessToken, clientNameClean, rootId);
+    }
+
+    if (!targetFolder && !config.onlyUseExistingFolders) {
+      targetFolder = await findOrCreateDriveFolder(accessToken, clientNameClean, rootId);
+    }
+
+    if (targetFolder?.id) {
+      if (clientData.id) {
+        await pool.query(
+          'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+          [targetFolder.id, targetFolder.webViewLink, clientData.id, orgId]
+        ).catch(() => {});
+      }
+      return {
+        folderId: targetFolder.id,
+        folderUrl: targetFolder.webViewLink,
+        folderName: targetFolder.name || clientNameClean
+      };
+    }
+  } catch (err) {
+    console.warn('Error in ensureClientDriveFolder:', err.message);
+  }
+  return null;
+};
+
 const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') => {
   try {
     if (!orgId || !instanceData?.id) return null;
@@ -1679,6 +1740,111 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
+// --- DEFAULT SAAS OPERATIONAL TEMPLATES ---
+const DEFAULT_SAAS_TEMPLATES = [
+  {
+    id: "p1",
+    title: "Onboarding de Cliente Premium",
+    description: "Diseñado para brindar una bienvenida espectacular a nuestros socios estratégicos, asegurando que todos los requisitos técnicos y legales se cumplan con calidez y agilidad.",
+    duration_days: 5,
+    companion_name: "Lumi",
+    companion_avatar: "✨",
+    companion_greeting: "¡Hola! Soy Lumi, tu guía en este proceso. ¡Hagamos sentir en casa a nuestro nuevo cliente!",
+    category: "Clientes",
+    steps: [
+      { id: "p1-s1", title: "Reunión de Kickoff y Alineación", description: "Realizar la videollamada inicial de bienvenida. Define expectativas, hitos principales y presenta al equipo.", type: "manual", durationLabel: "Día 1" },
+      { id: "p1-s2", title: "Subir Contrato Firmado", description: "Sube el documento del contrato legal firmado por ambas partes para formalizar nuestra alianza.", type: "digital", acceptedFormats: [".pdf", ".docx", ".png", ".jpg"], durationLabel: "Día 1-2" },
+      { id: "p1-s3", title: "Subir Requerimientos Técnicos y de Integración", description: "Sube el documento de arquitectura o requerimientos detallados del cliente.", type: "digital", acceptedFormats: [".pdf", ".xlsx", ".docx", ".png", ".jpg"], durationLabel: "Día 3" },
+      { id: "p1-s4", title: "Configurar Entornos de Trabajo y Accesos", description: "Crear las cuentas de Slack, Jira y entornos de prueba para el equipo del cliente.", type: "manual", durationLabel: "Día 4" },
+      { id: "p1-s5", title: "Sesión de Entrega y Capacitación Inicial", description: "Reunión final de onboarding para guiar al cliente por sus nuevos accesos y primeros pasos operativos.", type: "manual", durationLabel: "Día 5" }
+    ]
+  },
+  {
+    id: "p2",
+    title: "Bienvenida de Nuevo Talento (Onboarding Interno)",
+    description: "Acompaña a tus nuevos miembros de equipo en sus primeros días. Diseñado para reducir la ansiedad del primer día y acelerar la pertenencia.",
+    duration_days: 3,
+    companion_name: "Kofi",
+    companion_avatar: "☕",
+    companion_greeting: "¡Hola, soy Kofi! Qué alegría recibir a un nuevo miembro en el equipo. Vamos a guiarlo paso a paso sin prisas ni estrés.",
+    category: "Recursos Humanos",
+    steps: [
+      { id: "p2-s1", title: "Subir Identificación y Documentos de Contratación", description: "Sube copia digitalizada de identificación oficial, RFC y comprobante de domicilio.", type: "digital", acceptedFormats: [".pdf", ".jpg", ".png"], durationLabel: "Día 1" },
+      { id: "p2-s2", title: "Firma de Código de Conducta y Cultura", description: "Leer y firmar el manual de cultura, valores corporativos y expectativas mutuas.", type: "manual", durationLabel: "Día 1-2" },
+      { id: "p2-s3", title: "Charla de Café de Bienvenida", description: "Una videollamada informal de 15 minutos con un compañero asignado de otro departamento.", type: "manual", durationLabel: "Día 3" }
+    ]
+  },
+  {
+    id: "p3",
+    title: "Flujo de Recopilación, Análisis y Entrega de Reportes",
+    description: "Proceso estándar para la recolección periódica de métricas, análisis de rendimiento y entrega ejecutiva de informes con control de calidad y validación.",
+    duration_days: 4,
+    companion_name: "Nova",
+    companion_avatar: "📊",
+    companion_greeting: "¡Hola! Soy Nova. Te acompañaré en la consolidación analítica para asegurar reportes precisos, claros y con valor estratégico.",
+    category: "Operaciones & Analítica",
+    steps: [
+      { id: "p3-s1", title: "Recopilación de Métricas y Fuentes de Datos", description: "Extracción y consolidación de datos de fuentes operativas, plataformas publicitarias o bases de datos del periodo.", type: "manual", durationLabel: "Día 1" },
+      { id: "p3-s2", title: "Análisis Comparativo y Detección de Insights", description: "Analizar desviaciones contra metas, calcular KPIs principales e identificar aprendizajes y recomendaciones.", type: "manual", durationLabel: "Día 2" },
+      { id: "p3-s3", title: "Subir Informe Consolidado / Presentación Ejecutiva", description: "Adjunta el archivo del reporte en PDF, hoja de cálculo o presentación final para respaldo y revisión.", type: "digital", acceptedFormats: [".pdf", ".xlsx", ".pptx", ".docx", ".png"], durationLabel: "Día 3" },
+      { id: "p3-s4", title: "Entrega Oficial y Feedback con el Cliente / Dirección", description: "Envío del reporte con resumen ejecutivo por correo y registro de observaciones o acuerdos de la reunión.", type: "manual", durationLabel: "Día 4" }
+    ]
+  },
+  {
+    id: "p4",
+    title: "Flujo de Planificación y Aprobación de Entregables Periódicos",
+    description: "Estructura estándar para organizar la matriz de entregables (mensual/semanal), coordinar revisiones internas y obtener aprobación del cliente.",
+    duration_days: 5,
+    companion_name: "Atlas",
+    companion_avatar: "📅",
+    companion_greeting: "¡Hola! Soy Atlas. Mantendremos el cronograma sincronizado y aseguraremos que cada entregable cumpla los plazos sin fricciones.",
+    category: "Planificación & Entregables",
+    steps: [
+      { id: "p4-s1", title: "Definición de Objetivos y Cronograma del Ciclo", description: "Alinear las metas operativas del periodo, fechas límite y prioridades de trabajo con los responsables.", type: "manual", durationLabel: "Día 1" },
+      { id: "p4-s2", title: "Elaboración de la Matriz de Entregables", description: "Detallar cada entregable planificado: responsable, formato, fecha de entrega y compuertas de validación.", type: "manual", durationLabel: "Día 2" },
+      { id: "p4-s3", title: "Subir Matriz de Planificación / Calendario Aprobado", description: "Sube la matriz de entregables, cronograma o parrilla en formato PDF, hoja de cálculo o imagen.", type: "digital", acceptedFormats: [".pdf", ".xlsx", ".csv", ".png", ".jpg"], durationLabel: "Día 3" },
+      { id: "p4-s4", title: "Revisión Interna de Calidad y Capacidad", description: "Control de calidad interno por el líder de operaciones para verificar viabilidad antes de presentar.", type: "manual", durationLabel: "Día 4" },
+      { id: "p4-s5", title: "Aprobación y Visto Bueno del Cliente", description: "Presentar la propuesta al cliente para confirmación o ajustes antes de iniciar la producción.", type: "manual", durationLabel: "Día 5" }
+    ]
+  },
+  {
+    id: "p5",
+    title: "Flujo de Creación y Validación de Activos Documentales / Creativos",
+    description: "Flujo de trabajo para redactar, diseñar o producir activos específicos (documentos técnicos, guiones, creativos) con rondas de feedback y control de versiones.",
+    duration_days: 6,
+    companion_name: "Pixel",
+    companion_avatar: "🎨",
+    companion_greeting: "¡Hola! Soy Pixel. Te ayudaré a canalizar los activos creativos y documentales desde el brief inicial hasta la entrega final aprobada.",
+    category: "Producción & Creatividad",
+    steps: [
+      { id: "p5-s1", title: "Recepción y Validación del Brief / Requerimiento", description: "Revisión del requerimiento inicial, especificaciones técnicas, tono, audiencia y formatos solicitados.", type: "manual", durationLabel: "Día 1" },
+      { id: "p5-s2", title: "Desarrollo de Borrador o Contenido Inicial", description: "Redacción del guion/documento, conceptualización visual o ensamblado del primer borrador operativo.", type: "manual", durationLabel: "Día 2-3" },
+      { id: "p5-s3", title: "Subir Borrador para Revisión y Control de Cambios", description: "Cargar el archivo preliminar (documento, video borrador o arte conceptual) para revisión interna y del cliente.", type: "digital", acceptedFormats: [".pdf", ".docx", ".mp4", ".mov", ".png", ".jpg", ".zip"], durationLabel: "Día 4" },
+      { id: "p5-s4", title: "Aplicación de Feedback y Ajustes de Versión", description: "Incorporar observaciones de los revisores o del cliente para generar la versión definitiva.", type: "manual", durationLabel: "Día 5" },
+      { id: "p5-s5", title: "Subir Activo Final y Validación de Cierre", description: "Sube el archivo final en alta resolución o documento legal/técnico listo para publicación o entrega.", type: "digital", acceptedFormats: [".pdf", ".docx", ".mp4", ".mov", ".png", ".jpg", ".zip"], durationLabel: "Día 6" }
+    ]
+  }
+];
+
+const ensureDefaultTemplatesForOrg = async (orgId) => {
+  if (!orgId) return;
+  try {
+    const existing = await pool.query('SELECT COUNT(*) as count FROM templates WHERE organization_id = $1', [orgId]);
+    if (parseInt(existing.rows[0]?.count || 0, 10) === 0) {
+      for (const t of DEFAULT_SAAS_TEMPLATES) {
+        await pool.query(
+          `INSERT INTO templates (id, organization_id, title, description, duration_days, companion_name, companion_avatar, companion_greeting, category, steps, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'approved')
+           ON CONFLICT DO NOTHING`,
+          [t.id, orgId, t.title, t.description, t.duration_days, t.companion_name, t.companion_avatar, t.companion_greeting, t.category, JSON.stringify(t.steps)]
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('Error in ensureDefaultTemplatesForOrg:', err.message);
+  }
+};
+
 // --- SECURED CRUD ROUTES ---
 
 app.get('/api/bootstrap', authenticateToken, async (req, res) => {
@@ -1687,6 +1853,9 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
     const isGuest = req.user.role === 'guest';
     const isAdmin = req.user.role === 'admin';
     const isGerente = req.user.role === 'gerente';
+
+    // Ensure standard default templates exist
+    await ensureDefaultTemplatesForOrg(orgId);
 
     // 1. Templates query
     let templatesQuery = 'SELECT * FROM templates WHERE organization_id = $1';
@@ -1909,6 +2078,7 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
 // 1. Get all templates
 app.get('/api/templates', authenticateToken, async (req, res) => {
   try {
+    await ensureDefaultTemplatesForOrg(req.user.organizationId);
     let query = 'SELECT * FROM templates WHERE organization_id = $1';
     const params = [req.user.organizationId];
     if (req.user.role !== 'admin' && req.user.role !== 'gerente') {
@@ -2058,7 +2228,7 @@ app.get('/api/clients', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/clients', authenticateToken, async (req, res) => {
-  const { name, email } = req.body;
+  const { name, email, phone, stage, notes } = req.body;
   if (!name) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
   try {
     // Ensure table exists (Safe for Vercel Serverless cold starts)
@@ -2071,13 +2241,32 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
       );
     `);
     await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR(255);`);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone VARCHAR(100);`);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS stage VARCHAR(100) DEFAULT 'Nuevo';`);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT;`);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS drive_folder_id VARCHAR(255);`);
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS drive_folder_url TEXT;`);
     
     const clientId = 'cli_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30) + '_' + Date.now();
     const result = await pool.query(
-      'INSERT INTO clients (id, organization_id, name, email) VALUES ($1, $2, $3, $4) RETURNING *',
-      [clientId, req.user.organizationId, name, email || null]
+      'INSERT INTO clients (id, organization_id, name, email, phone, stage, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [clientId, req.user.organizationId, name, email || null, phone || null, stage || 'Nuevo', notes || null]
     );
-    res.status(201).json(result.rows[0]);
+
+    const clientRow = result.rows[0];
+
+    // Auto-provision or match Google Drive folder for this newly registered Client
+    try {
+      const driveFolder = await ensureClientDriveFolder(req.user.organizationId, clientRow);
+      if (driveFolder?.folderId) {
+        clientRow.drive_folder_id = driveFolder.folderId;
+        clientRow.drive_folder_url = driveFolder.folderUrl;
+      }
+    } catch (driveErr) {
+      console.warn('Could not auto-create Drive folder on client create:', driveErr.message);
+    }
+
+    res.status(201).json(clientRow);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear el cliente' });
@@ -4689,15 +4878,16 @@ app.post('/api/integrations/google-drive/set-instance-folder', authenticateToken
   }
 });
 
-// Upload a step deliverable directly to the execution's Google Drive folder
+// Upload a step deliverable or client document directly to Google Drive
 app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, async (req, res) => {
-  const { instanceId, stepId, checklistItemId, fileName, mimeType, base64Data } = req.body;
+  const { instanceId, clientId, stepId, checklistItemId, fileName, mimeType, base64Data } = req.body;
   if (!fileName || !base64Data) {
     return res.status(400).json({ error: 'fileName y base64Data son requeridos' });
   }
   try {
     let parentFolderId = null;
     let stepData = null;
+
     if (instanceId) {
       const instRes = await pool.query('SELECT id, title, instance_name, drive_folder_id, steps FROM instances WHERE id = $1 AND organization_id = $2', [instanceId, req.user.organizationId]);
       if (instRes.rows.length > 0) {
@@ -4713,6 +4903,16 @@ app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, a
             title: inst.title,
             instanceName: inst.instance_name
           }, '');
+          if (ensured?.folderId) parentFolderId = ensured.folderId;
+        }
+      }
+    } else if (clientId) {
+      const clRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND organization_id = $2', [clientId, req.user.organizationId]);
+      if (clRes.rows.length > 0) {
+        const cl = clRes.rows[0];
+        parentFolderId = cl.drive_folder_id;
+        if (!parentFolderId) {
+          const ensured = await ensureClientDriveFolder(req.user.organizationId, cl);
           if (ensured?.folderId) parentFolderId = ensured.folderId;
         }
       }
@@ -4775,6 +4975,37 @@ app.post('/api/integrations/google-drive/upload-step-file', authenticateToken, a
           return s;
         });
         await pool.query('UPDATE instances SET steps = $1 WHERE id = $2 AND organization_id = $3', [JSON.stringify(updatedSteps), instanceId, req.user.organizationId]);
+      }
+    }
+
+    // If uploaded to Drive and clientId + checklistItemId were provided, persist webViewLink on client checklist item
+    if (result.uploadedToDrive && clientId) {
+      const clRes = await pool.query('SELECT checklist FROM clients WHERE id = $1 AND organization_id = $2', [clientId, req.user.organizationId]);
+      if (clRes.rows.length > 0) {
+        const rawChecklist = clRes.rows[0].checklist;
+        let items = Array.isArray(rawChecklist) ? rawChecklist : (rawChecklist?.items || []);
+        let modified = false;
+        const updatedItems = items.map((item, idx) => {
+          const isTarget = (item.id && String(item.id) === String(checklistItemId)) || String(idx) === String(checklistItemId);
+          if (!isTarget) return item;
+          modified = true;
+          return {
+            ...item,
+            checked: true,
+            completed: true,
+            uploadedFileName: result.fileName || fileName,
+            uploadedFileUrl: result.webViewLink,
+            driveFileId: result.fileId,
+            fileType: mimeType,
+            uploadedAt: new Date().toISOString()
+          };
+        });
+        if (modified) {
+          await pool.query(
+            'UPDATE clients SET checklist = $1 WHERE id = $2 AND organization_id = $3',
+            [JSON.stringify(updatedItems), clientId, req.user.organizationId]
+          ).catch(() => {});
+        }
       }
     }
 

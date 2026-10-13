@@ -1,9 +1,9 @@
 export const DEFAULT_CHECKLIST_ITEMS = [
-  { id: 'item_carrusel', name: 'Carrusel', type: 'counter', checked: false, current: 0, target: 4 },
-  { id: 'item_post', name: 'Post', type: 'counter', checked: false, current: 0, target: 12 },
-  { id: 'item_video', name: 'Video', type: 'counter', checked: false, current: 0, target: 6 },
-  { id: 'item_factura', name: 'Factura Paga', type: 'boolean', checked: false },
-  { id: 'item_ads', name: 'Ads Según Cliente', type: 'rating', rating: 'Excelente' }
+  { id: 'item_contrato', name: 'Contrato o Carta de Compromiso', type: 'document_gate', isGate: true, gateType: 'blocks_execution', checked: false, requireAttachment: true },
+  { id: 'item_doc_legal', name: 'Documento Legal / Identificación Fiscal', type: 'document_gate', isGate: true, gateType: 'blocks_execution', checked: false, requireAttachment: true },
+  { id: 'item_factura', name: 'Factura Paga / Anticipo', type: 'boolean', checked: false },
+  { id: 'item_entregable', name: 'Entregables Periódicos', type: 'counter', checked: false, current: 0, target: 4 },
+  { id: 'item_calidad', name: 'Control de Calidad / Rendimiento', type: 'rating', rating: 'Excelente' }
 ];
 
 export function normalizeChecklistItems(checklist) {
@@ -71,6 +71,9 @@ export function normalizeChecklistItems(checklist) {
 
 export function isChecklistItemDone(item) {
   if (!item) return false;
+  if (item.type === 'document_gate' || item.type === 'file' || item.requireAttachment) {
+    return !!(item.checked || item.uploadedFileUrl || item.uploadedFileName);
+  }
   if (item.type === 'counter') {
     const target = Number(item.target) || 1;
     const current = Number(item.current) || 0;

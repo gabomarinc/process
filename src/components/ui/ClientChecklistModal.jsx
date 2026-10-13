@@ -34,7 +34,8 @@ import {
   Folder,
   Send,
   User,
-  Info
+  Info,
+  Upload
 } from 'lucide-react';
 import { 
   normalizeChecklistItems, 
@@ -82,10 +83,11 @@ export default function ClientChecklistModal({
   const [isSaving, setIsSaving] = useState(false);
   const [editingItem, setEditingItem] = useState(null); // Item being edited in modal/drawer
   const [showAddModal, setShowAddModal] = useState(false);
+  const [uploadingItemId, setUploadingItemId] = useState(null);
 
   // New Item Creator State
   const [newItemName, setNewItemName] = useState('');
-  const [newItemType, setNewItemType] = useState('counter'); // 'counter' | 'boolean' | 'rating'
+  const [newItemType, setNewItemType] = useState('counter'); // 'counter' | 'boolean' | 'rating' | 'document_gate'
   const [newItemTarget, setNewItemTarget] = useState(4);
   const [newItemAssociatedInstanceId, setNewItemAssociatedInstanceId] = useState('');
   const [newItemIsGate, setNewItemIsGate] = useState(false);
@@ -225,6 +227,85 @@ export default function ClientChecklistModal({
     }
   };
 
+  // Upload file for document gate to Google Drive
+  const handleUploadDocumentGate = async (itemId, file) => {
+    if (!file || !client?.id) return;
+    setUploadingItemId(itemId);
+    const localUrl = URL.createObjectURL(file);
+
+    // Optimistic local update
+    const optimisticUpdated = items.map(it => it.id === itemId ? {
+      ...it,
+      checked: true,
+      uploadedFileName: file.name,
+      uploadedFileUrl: localUrl,
+      fileType: file.type
+    } : it);
+    setItems(optimisticUpdated);
+
+    try {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result || '').toString().split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      if (base64Data) {
+        const res = await fetch('/api/integrations/google-drive/upload-step-file', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          },
+          body: JSON.stringify({
+            clientId: client.id,
+            checklistItemId: itemId,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64Data
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const finalUrl = data.webViewLink || localUrl;
+          const driveUpdated = items.map(it => it.id === itemId ? {
+            ...it,
+            checked: true,
+            uploadedFileName: file.name,
+            uploadedFileUrl: finalUrl,
+            fileType: file.type,
+            driveFileId: data.fileId
+          } : it);
+          setItems(driveUpdated);
+
+          if (data.clientFolderUrl && !clientDriveUrl) {
+            setClientDriveUrl(data.clientFolderUrl);
+          }
+
+          if (onSaveChecklist) {
+            await onSaveChecklist(
+              client.id,
+              { items: driveUpdated },
+              clientEmail,
+              {
+                phone: clientPhone,
+                stage: clientStage,
+                notes: clientNotes,
+                driveFolderUrl: data.clientFolderUrl || clientDriveUrl
+              }
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error uploading document gate to Drive:', err);
+    } finally {
+      setUploadingItemId(null);
+    }
+  };
+
   // Add a new dynamic item
   const handleAddItemSubmit = (e) => {
     if (e) e.preventDefault();
@@ -247,6 +328,10 @@ export default function ClientChecklistModal({
       newItem.target = Math.max(1, parseInt(newItemTarget, 10) || 1);
     } else if (newItemType === 'rating') {
       newItem.rating = 'Excelente';
+    } else if (newItemType === 'document_gate') {
+      newItem.checked = false;
+      newItem.uploadedFileName = '';
+      newItem.uploadedFileUrl = '';
     }
 
     setItems(prev => [...prev, newItem]);
@@ -294,6 +379,7 @@ export default function ClientChecklistModal({
 
   const getItemIcon = (item) => {
     const nameLower = (item.name || '').toLowerCase();
+    if (item.type === 'document_gate' || nameLower.includes('document') || nameLower.includes('archivo') || nameLower.includes('aviso')) return <FileText size={16} />;
     if (nameLower.includes('video') || nameLower.includes('reel')) return <Video size={16} />;
     if (nameLower.includes('post')) return <FileText size={16} />;
     if (nameLower.includes('carrusel')) return <LayoutGrid size={16} />;
@@ -642,7 +728,7 @@ export default function ClientChecklistModal({
                               <span className="crm-item-name">{item.name}</span>
                               <div className="crm-item-badges-row">
                                 <span className={`crm-type-badge ${item.type}`}>
-                                  {item.type === 'counter' ? 'Contador' : item.type === 'rating' ? 'Calificación / Ads' : 'Checkbox'}
+                                  {item.type === 'counter' ? 'Contador' : item.type === 'rating' ? 'Calificación / Ads' : item.type === 'document_gate' ? 'Compuerta Documental (Drive)' : 'Checkbox'}
                                 </span>
                                 {linkedInstance && (
                                   <span className="crm-tag-linked" title={`Vinculado a: ${linkedInstance.instanceName}`}>
@@ -780,6 +866,68 @@ export default function ClientChecklistModal({
                                 );
                               })}
                             </div>
+                          </div>
+                        )}
+
+                        {item.type === 'document_gate' && (
+                          <div className="crm-item-document-body">
+                            {item.uploadedFileUrl ? (
+                              <div className="crm-doc-preview-box">
+                                <div className="crm-doc-info">
+                                  <div className="crm-doc-icon-badge">
+                                    <FileText size={16} />
+                                  </div>
+                                  <div className="crm-doc-meta">
+                                    <span className="crm-doc-filename" title={item.uploadedFileName || 'Documento adjunto'}>
+                                      {item.uploadedFileName || 'Documento cargado'}
+                                    </span>
+                                    <span className="crm-doc-subtext">
+                                      <CheckCircle2 size={12} color="#16A34A" /> Validado en Google Drive
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="crm-doc-actions">
+                                  {item.uploadedFileUrl && (
+                                    <a
+                                      href={item.uploadedFileUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="crm-doc-btn-drive"
+                                      title="Abrir en Google Drive"
+                                    >
+                                      <span>Ver</span>
+                                      <ExternalLink size={11} />
+                                    </a>
+                                  )}
+                                  <label className="crm-doc-btn-drive" style={{ cursor: 'pointer' }}>
+                                    <Upload size={11} />
+                                    <span>Cambiar</span>
+                                    <input
+                                      type="file"
+                                      style={{ display: 'none' }}
+                                      onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleUploadDocumentGate(item.id, file);
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ) : (
+                              <label className={`crm-doc-upload-trigger ${uploadingItemId === item.id ? 'uploading' : ''}`}>
+                                <Upload size={16} />
+                                <span>{uploadingItemId === item.id ? 'Subiendo y vinculando en Google Drive...' : 'Subir documento requerido a Drive'}</span>
+                                <input
+                                  type="file"
+                                  style={{ display: 'none' }}
+                                  disabled={uploadingItemId === item.id}
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleUploadDocumentGate(item.id, file);
+                                  }}
+                                />
+                              </label>
+                            )}
                           </div>
                         )}
 
@@ -1111,6 +1259,15 @@ export default function ClientChecklistModal({
                     <Star size={20} />
                     <strong>Calificación / Ads</strong>
                     <span>Excelente, Bueno, Regular o Malo (afecta semáforo)</span>
+                  </div>
+
+                  <div 
+                    className={`crm-type-opt ${newItemType === 'document_gate' ? 'selected' : ''}`}
+                    onClick={() => setNewItemType('document_gate')}
+                  >
+                    <FileText size={20} />
+                    <strong>Compuerta Documental</strong>
+                    <span>Requiere subir documento/archivo a Google Drive</span>
                   </div>
                 </div>
               </div>
