@@ -1593,6 +1593,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           onlyUseExistingFolders: !!googleDriveConfig.onlyUseExistingFolders,
           autoCreateFolders: googleDriveConfig.autoCreateClientFolders,
           autoCreateClientFolders: googleDriveConfig.autoCreateClientFolders,
+          defaultClientSubfolders: googleDriveConfig.defaultClientSubfolders || '',
           autoUploadStepFiles: googleDriveConfig.autoUploadStepFiles,
           ...(googleDriveConfig.clientId !== undefined ? { clientId: googleDriveConfig.clientId } : {}),
           ...(googleDriveConfig.clientSecret ? { clientSecret: googleDriveConfig.clientSecret } : {}),

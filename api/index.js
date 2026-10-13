@@ -822,6 +822,20 @@ const findExistingClientFolderInTree = async (accessToken, clientName, rootFolde
   return null;
 };
 
+const isDriveFolderAlive = async (accessToken, folderId) => {
+  if (!accessToken || !folderId) return false;
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name,trashed&supportsAllDrives=true`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!(data?.id && !data.trashed);
+  } catch (_) {
+    return false;
+  }
+};
+
 const findOrCreateDriveFolder = async (accessToken, folderName, parentFolderId = null, options = {}) => {
   if (!accessToken || !folderName) return null;
   const { allowCreate = true } = options;
@@ -955,13 +969,26 @@ const ensureClientDriveFolder = async (orgId, clientData) => {
 
     let targetFolder = null;
     if (clientData.drive_folder_id) {
-      targetFolder = {
-        id: clientData.drive_folder_id,
-        name: clientNameClean,
-        webViewLink: clientData.drive_folder_url || `https://drive.google.com/drive/folders/${clientData.drive_folder_id}`
-      };
-    } else if (config.matchExistingFolders !== false) {
+      const isAlive = await isDriveFolderAlive(accessToken, clientData.drive_folder_id);
+      if (isAlive) {
+        targetFolder = {
+          id: clientData.drive_folder_id,
+          name: clientNameClean,
+          webViewLink: clientData.drive_folder_url || `https://drive.google.com/drive/folders/${clientData.drive_folder_id}`
+        };
+      } else {
+        if (clientData.id) {
+          await pool.query('UPDATE clients SET drive_folder_id = NULL, drive_folder_url = NULL WHERE id = $1 AND organization_id = $2', [clientData.id, orgId]).catch(() => {});
+        }
+      }
+    }
+    
+    if (!targetFolder && config.matchExistingFolders !== false) {
       targetFolder = await findExistingClientFolderInTree(accessToken, clientNameClean, rootId);
+      if (targetFolder?.id) {
+        const isAlive = await isDriveFolderAlive(accessToken, targetFolder.id);
+        if (!isAlive) targetFolder = null;
+      }
     }
 
     if (!targetFolder && !config.onlyUseExistingFolders) {
@@ -1027,8 +1054,8 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
     } catch (_) {}
     if (!effectiveClientName) effectiveClientName = instanceName;
 
-    // The target folder name is the execution/client name directly
-    const primaryFolderName = sanitizeDriveFolderName(instanceName || effectiveClientName);
+    // The target folder name prioritizes the client's name
+    const primaryFolderName = sanitizeDriveFolderName(effectiveClientName || instanceName);
 
     if (accessToken) {
       let rootId = config.rootFolderId || null;
@@ -1046,21 +1073,37 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
       // 1. Check if the Client or Execution ALREADY has an existing folder inside the Root Folder tree
       let matchedClientFolder = null;
       if (instRow?.client_drive_folder_id) {
-        matchedClientFolder = {
-          id: instRow.client_drive_folder_id,
-          name: effectiveClientName,
-          webViewLink: instRow.client_drive_folder_url || `https://drive.google.com/drive/folders/${instRow.client_drive_folder_id}`
-        };
-      } else if (config.matchExistingFolders !== false && rootId) {
+        const isAlive = await isDriveFolderAlive(accessToken, instRow.client_drive_folder_id);
+        if (isAlive) {
+          matchedClientFolder = {
+            id: instRow.client_drive_folder_id,
+            name: effectiveClientName,
+            webViewLink: instRow.client_drive_folder_url || `https://drive.google.com/drive/folders/${instRow.client_drive_folder_id}`
+          };
+        } else {
+          // Folder was deleted or trashed in Drive; clear stale id
+          if (instRow.client_id) {
+            await pool.query('UPDATE clients SET drive_folder_id = NULL, drive_folder_url = NULL WHERE id = $1 AND organization_id = $2', [instRow.client_id, orgId]).catch(() => {});
+          }
+          await pool.query('UPDATE instances SET drive_folder_id = NULL, drive_folder_url = NULL WHERE id = $1 AND organization_id = $2', [instanceData.id, orgId]).catch(() => {});
+        }
+      }
+      
+      if (!matchedClientFolder && config.matchExistingFolders !== false && rootId) {
         matchedClientFolder = await findExistingClientFolderInTree(accessToken, primaryFolderName, rootId);
         if (!matchedClientFolder && effectiveClientName && normalizeDriveName(effectiveClientName) !== normalizeDriveName(primaryFolderName)) {
           matchedClientFolder = await findExistingClientFolderInTree(accessToken, effectiveClientName, rootId);
         }
         if (matchedClientFolder?.id) {
-          await pool.query(
-            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5))',
-            [matchedClientFolder.id, matchedClientFolder.webViewLink, orgId, effectiveClientName, primaryFolderName]
-          ).catch(() => {});
+          const isAlive = await isDriveFolderAlive(accessToken, matchedClientFolder.id);
+          if (!isAlive) {
+            matchedClientFolder = null;
+          } else {
+            await pool.query(
+              'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5))',
+              [matchedClientFolder.id, matchedClientFolder.webViewLink, orgId, effectiveClientName, primaryFolderName]
+            ).catch(() => {});
+          }
         }
       }
 
@@ -1069,7 +1112,7 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
       const vars = {
         cliente: primaryFolderName,
         proceso: templateTitle,
-        ejecucion: primaryFolderName,
+        ejecucion: sanitizeDriveFolderName(instanceName || primaryFolderName),
         ano: String(startedAt.getFullYear()),
         año: String(startedAt.getFullYear()),
         mes: DRIVE_MONTHS_ES[startedAt.getMonth()],
@@ -1134,8 +1177,14 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
         );
         // Also link client row if it matches the top-level created folder
         if (segments.length === 1) {
+          if (instRow?.client_id) {
+            await pool.query(
+              'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
+              [execFolder.id, execFolder.webViewLink, instRow.client_id, orgId]
+            ).catch(() => {});
+          }
           await pool.query(
-            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5)) AND (drive_folder_id IS NULL OR drive_folder_id = \'\')',
+            'UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2 WHERE organization_id = $3 AND (LOWER(name) = LOWER($4) OR LOWER(name) = LOWER($5))',
             [execFolder.id, execFolder.webViewLink, orgId, effectiveClientName, primaryFolderName]
           ).catch(() => {});
         }
@@ -2463,11 +2512,11 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
 
     const driveInfo = await ensureExecutionDriveFolder(req.user.organizationId, { id, title, instanceName }, targetClientName || instanceName);
 
-    // If a drive folder was created or found, also link it directly to the client if the client doesn't have one yet
+    // If a drive folder was created or found, also link it directly to the client
     if (driveInfo?.folderId && resolvedClientId) {
       await pool.query(
         `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
-         WHERE id = $3 AND organization_id = $4 AND (drive_folder_id IS NULL OR drive_folder_id = '')`,
+         WHERE id = $3 AND organization_id = $4`,
         [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
       ).catch(() => {});
     }
@@ -4360,6 +4409,7 @@ app.get('/api/organization/google-drive', authenticateToken, async (req, res) =>
         autoCreateFolders: cfg.autoCreateFolders !== false,
         autoCreateClientFolders: cfg.autoCreateFolders !== false,
         autoUploadStepFiles: cfg.autoUploadStepFiles !== false,
+        defaultClientSubfolders: cfg.defaultClientSubfolders || '',
         hasOAuthToken: !!(cfg.accessToken || cfg.refreshToken),
         connectedEmail: cfg.connectedEmail || '',
         email: cfg.connectedEmail || '',
@@ -4383,6 +4433,7 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
     rootFolderName,
     folderPathTemplate,
     stepSubfolders,
+    defaultClientSubfolders,
     matchExistingFolders,
     onlyUseExistingFolders,
     autoCreateFolders,
@@ -4436,6 +4487,7 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
       rootFolderName: rootFolderName !== undefined ? rootFolderName : (prev.rootFolderName || 'Carpeta Raíz Kônsul Process'),
       folderPathTemplate: folderPathTemplate !== undefined ? normalizeFolderPathTemplate(folderPathTemplate) : normalizeFolderPathTemplate(prev.folderPathTemplate),
       stepSubfolders: stepSubfolders !== undefined ? !!stepSubfolders : !!prev.stepSubfolders,
+      defaultClientSubfolders: defaultClientSubfolders !== undefined ? defaultClientSubfolders : (prev.defaultClientSubfolders || ''),
       matchExistingFolders: matchExistingFolders !== undefined ? !!matchExistingFolders : (prev.matchExistingFolders !== false),
       onlyUseExistingFolders: onlyUseExistingFolders !== undefined ? !!onlyUseExistingFolders : !!prev.onlyUseExistingFolders,
       autoCreateFolders: resolvedAutoCreate,
@@ -4461,6 +4513,7 @@ app.put('/api/organization/google-drive', authenticateToken, async (req, res) =>
         rootFolderName: updated.rootFolderName,
         folderPathTemplate: updated.folderPathTemplate,
         stepSubfolders: updated.stepSubfolders,
+        defaultClientSubfolders: updated.defaultClientSubfolders,
         matchExistingFolders: updated.matchExistingFolders,
         onlyUseExistingFolders: updated.onlyUseExistingFolders,
         autoCreateFolders: updated.autoCreateFolders,
@@ -5687,7 +5740,7 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     if (driveInfo?.folderId && resolvedClientId) {
       await pool.query(
         `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
-         WHERE id = $3 AND organization_id = $4 AND (drive_folder_id IS NULL OR drive_folder_id = '')`,
+         WHERE id = $3 AND organization_id = $4`,
         [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
       ).catch(() => {});
     }
