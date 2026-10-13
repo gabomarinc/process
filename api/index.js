@@ -6680,6 +6680,27 @@ const AGENT_TOOLS_DECLARATIONS = [
     }
   },
   {
+    name: 'get_client_details',
+    description: 'Obtiene el expediente, estado general, etapa de CRM, carpeta de Google Drive, procesos activos y checklists de un cliente registrado. Úsalo SIEMPRE que el usuario pida un análisis o información de un cliente (ej. "Dame un análisis de Ortho smile").',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        clientNameOrId: { type: 'STRING', description: 'Nombre o ID del cliente a consultar' }
+      },
+      required: ['clientNameOrId']
+    }
+  },
+  {
+    name: 'list_clients',
+    description: 'Lista los clientes registrados en la organización con sus etapas en el CRM.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'Término de búsqueda opcional' }
+      }
+    }
+  },
+  {
     name: 'create_process_template',
     description: 'Crea una nueva plantilla de procesos de negocio (Arquitectura de metadatos) con sus pasos detallados, motivaciones y plazos.',
     parameters: {
@@ -6899,9 +6920,20 @@ async function executeAgentTool(toolName, args, user) {
 
       let instRes;
       if (typeof instanceNameOrId === 'string' && instanceNameOrId.startsWith('inst_')) {
-        instRes = await pool.query('SELECT * FROM instances WHERE id = $1 AND organization_id = $2', [instanceNameOrId, orgId]);
+        instRes = await pool.query(`
+          SELECT i.*, c.name AS client_name 
+          FROM instances i 
+          LEFT JOIN clients c ON c.id = i.client_id 
+          WHERE i.id = $1 AND i.organization_id = $2
+        `, [instanceNameOrId, orgId]);
       } else {
-        instRes = await pool.query('SELECT * FROM instances WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1', [orgId, `%${instanceNameOrId}%`]);
+        instRes = await pool.query(`
+          SELECT i.*, c.name AS client_name 
+          FROM instances i 
+          LEFT JOIN clients c ON c.id = i.client_id 
+          WHERE i.organization_id = $1 AND (i.instance_name ILIKE $2 OR i.title ILIKE $2 OR c.name ILIKE $2) 
+          ORDER BY i.started_at DESC LIMIT 1
+        `, [orgId, `%${instanceNameOrId}%`]);
       }
 
       if (instRes.rows.length === 0) {
@@ -6913,10 +6945,10 @@ async function executeAgentTool(toolName, args, user) {
       return {
         success: true,
         instanceId: inst.id,
-        name: inst.name,
+        instanceName: inst.instance_name || inst.title,
         status: inst.status,
         priority: inst.priority,
-        clientName: inst.client_name,
+        clientName: inst.client_name || null,
         driveFolderUrl: inst.drive_folder_url || null,
         totalSteps: rawSteps.length,
         completedSteps: rawSteps.filter(s => s.isCompleted).length,
@@ -6928,6 +6960,112 @@ async function executeAgentTool(toolName, args, user) {
           uploadedFileName: s.uploadedFileName || null,
           uploadedFileUrl: s.uploadedFileUrl || null
         }))
+      };
+    }
+
+    case 'get_client_details': {
+      const { clientNameOrId } = args;
+      if (!clientNameOrId) return { success: false, error: 'Especifica el nombre o ID del cliente.' };
+
+      let clientRes;
+      if (typeof clientNameOrId === 'string' && clientNameOrId.startsWith('cli_')) {
+        clientRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND organization_id = $2', [clientNameOrId, orgId]);
+      } else {
+        clientRes = await pool.query('SELECT * FROM clients WHERE organization_id = $1 AND name ILIKE $2 LIMIT 1', [orgId, `%${clientNameOrId}%`]);
+      }
+
+      const client = clientRes.rows[0] || null;
+
+      // Find all executions associated with this client or having this name
+      let instRes;
+      if (client) {
+        instRes = await pool.query(
+          `SELECT i.*, c.name AS client_name 
+           FROM instances i 
+           LEFT JOIN clients c ON c.id = i.client_id 
+           WHERE i.organization_id = $1 AND (i.client_id = $2 OR i.instance_name ILIKE $3)
+           ORDER BY i.started_at DESC`,
+          [orgId, client.id, `%${client.name}%`]
+        );
+      } else {
+        instRes = await pool.query(
+          `SELECT i.*, c.name AS client_name 
+           FROM instances i 
+           LEFT JOIN clients c ON c.id = i.client_id 
+           WHERE i.organization_id = $1 AND (i.instance_name ILIKE $2 OR i.title ILIKE $2)
+           ORDER BY i.started_at DESC`,
+          [orgId, `%${clientNameOrId}%`]
+        );
+      }
+
+      const instances = instRes.rows;
+      const processesSummary = instances.map(inst => {
+        const rawSteps = typeof inst.steps === 'string' ? JSON.parse(inst.steps) : (inst.steps || []);
+        const total = rawSteps.length;
+        const completed = rawSteps.filter(s => s.isCompleted).length;
+        const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+        const currentStep = rawSteps.find(s => !s.isCompleted) || null;
+
+        let totalChecklists = 0;
+        let completedChecklists = 0;
+        rawSteps.forEach(s => {
+          if (Array.isArray(s.checklist)) {
+            totalChecklists += s.checklist.length;
+            completedChecklists += s.checklist.filter(c => c.isCompleted).length;
+          }
+        });
+
+        return {
+          id: inst.id,
+          title: inst.title,
+          instanceName: inst.instance_name,
+          status: inst.status,
+          priority: inst.priority,
+          startedAt: inst.started_at,
+          progressPercent: `${percent}%`,
+          totalSteps: total,
+          completedSteps: completed,
+          currentStepTitle: currentStep ? currentStep.title : 'Todos completados',
+          totalChecklistItems: totalChecklists,
+          completedChecklistItems: completedChecklists,
+          driveFolderUrl: inst.drive_folder_url || null
+        };
+      });
+
+      const rawChecklist = client?.checklist 
+        ? (typeof client.checklist === 'string' ? JSON.parse(client.checklist) : client.checklist) 
+        : [];
+
+      return {
+        success: true,
+        clientFound: !!client,
+        clientId: client?.id || null,
+        clientName: client?.name || clientNameOrId,
+        stage: client?.stage || 'Sin etapa',
+        email: client?.email || null,
+        phone: client?.phone || null,
+        notes: client?.notes || null,
+        driveFolderUrl: client?.drive_folder_url || (instances[0]?.drive_folder_url || null),
+        driveFolderId: client?.drive_folder_id || null,
+        clientChecklist: Array.isArray(rawChecklist) ? rawChecklist : [],
+        totalProcesses: instances.length,
+        processes: processesSummary
+      };
+    }
+
+    case 'list_clients': {
+      let query = 'SELECT id, name, email, phone, stage, drive_folder_url FROM clients WHERE organization_id = $1';
+      const params = [orgId];
+      if (args.query) {
+        query += ' AND name ILIKE $2';
+        params.push(`%${args.query}%`);
+      }
+      query += ' ORDER BY name ASC LIMIT 30';
+      const res = await pool.query(query, params);
+      return {
+        success: true,
+        count: res.rows.length,
+        clients: res.rows
       };
     }
 
@@ -7383,33 +7521,35 @@ app.post('/api/agent/chat', authenticateToken, async (req, res) => {
       });
     }
 
-    const systemPrompt = `Eres el Asistente Experto y Copiloto Agéntico de Kônsul Process para la empresa "${orgName}".
+    const systemPrompt = `Eres el Copiloto Inteligente y Consultor de Procesos de Kônsul Process para la empresa "${orgName}".
 Usuario interactuando: "${req.user?.name || req.user?.email || 'Colega'}" (Rol: ${req.user?.role || 'colaborador'}).
-Filosofía de Kônsul: "La app trabaja para el usuario, no el usuario para la app".
+Filosofía de Kônsul: "Potente, funcional, directo y sin complicaciones".
 
-TUS FUNCIONES PRINCIPALES:
-1. GUÍA Y CONSULTOR DE PROCESOS (Asistente Kônsul):
-   - Responde cualquier duda sobre los procesos de la empresa, qué se hace en cada paso, los entregables, objetivos y mejores prácticas.
-   - Si el usuario pregunta dudas sobre un proceso (ej. "¿Cómo hago el paso 2 de Onboarding?", "¿Qué pasos tiene Ventas?"), invoca "get_template_details" o "list_templates" para consultar los pasos reales en la base de datos y guiarlo paso a paso de forma directa, concisa y profesional.
-   
-2. COPILOTO AGÉNTICO Y ACCIONES OPERATIVAS (Tool Calling):
-   - Si el usuario te pide crear una plantilla, lanzar un proceso, agregar columnas al Kanban, mover tarjetas o registrar clientes/miembros, DEBES invocar la herramienta correspondiente del catálogo.
-   - NUNCA inventes que creaste o modificaste algo sin haber ejecutado la herramienta.
+MODOS DE OPERACIÓN:
+
+1. MODO CONSULTA Y ANÁLISIS (DUDAS, PREGUNTAS Y ANÁLISIS DEL USUARIO):
+   - Si el usuario te hace una pregunta, consulta o pide un análisis (ej. "Dame un análisis de Ortho smile", "¿Cómo va el proceso de X?", "¿Cuáles son los pasos de Onboarding?", "¿Qué tareas tengo hoy?"):
+     - Consulta la información con las herramientas de lectura ("get_client_details", "get_instance_details", "get_template_details", "list_templates", "list_clients", "get_workspace_summary", "list_google_drive_files", "read_google_drive_document").
+     - NUNCA ejecutes herramientas de modificación o creación (como "launch_process_execution" o "create_process_template") cuando el usuario solo te está preguntando o pidiendo un análisis.
+     - Responde directamente con un análisis ejecutivo, estructurado y claro en Markdown:
+       * Estado general del cliente / proceso.
+       * Procesos en curso, % de avance y tareas completadas vs pendientes.
+       * Bloqueos o checklist pendientes (alertas).
+       * Carpeta o archivos en Google Drive vinculados (si los hay).
+       * Recomendación práctica o siguientes pasos sugeridos.
+
+2. MODO ACCIÓN OPERATIVA (SOLICITUDES EXPLÍCITAS):
+   - Solo invoca herramientas de creación o cambio ("create_process_template", "launch_process_execution", "move_execution_status", "create_client", "add_team_member", "update_kanban_columns") cuando el usuario te PIDA EXPLÍCITAMENTE realizar una acción operativa (ej. "crea una plantilla...", "lanza un proceso...", "mueve la tarjeta a Terminado", "registra al cliente...").
+   - Si una solicitud de creación está incompleta o deseas definir qué checklist requiere un paso, pregunta amablemente antes de crearla.
+   - NUNCA inventes que creaste o modificaste algo sin haber ejecutado la herramienta correspondiente.
 
 3. ANÁLISIS DE ARCHIVOS ADJUNTOS Y AUDIOS:
-   - Si el usuario adjunta documentos (PDF, DOCX, TXT, CSV), audios de voz o imágenes con flujos de trabajo, ANALÍZALOS a fondo.
-   - Si el usuario o el audio pide estructurar una plantilla a partir del archivo o nota de voz, extrae los pasos lógicos, títulos claros, descripciones y duraciones recomendadas, e invoca "create_process_template".
-   - Si falta información o deseas corroborar qué checklist requiere algún paso del documento, pregúntaselo amablemente al usuario.
-
-4. ANÁLISIS Y CREACIÓN DE CHECKLISTS EN LOS PASOS DE LAS PLANTILLAS:
-   - Al diseñar o crear plantillas con "create_process_template", analiza cada paso detenidamente.
-   - Si un paso involucra varias sub-tareas, requisitos o puntos de control que ameritan un checklist, genera el array de sub-tareas en el campo "checklist" de ese paso.
-   - Si no sabes o tienes dudas de qué cosas colocar en el checklist para un paso particular al interactuar en el chat con el usuario, PREGÚNTALE primero antes de invocar la herramienta.
-   - En cambio, si la petición es una automatización o proceso desatendido, infiere y genera el checklist automáticamente sin preguntar para no pausar el flujo.
+   - Si el usuario adjunta documentos (PDF, DOCX, TXT, CSV), audios de voz o imágenes, analízalos a fondo y responde directamente a lo solicitado.
 
 REGLAS DE COMUNICACIÓN:
-- Responde en español con formato Markdown limpio y profesional.
-- Sé claro, conciso y ve directo al grano.
+- Sé directo, conciso, inteligente y profesional. Ve al grano sin rodeos.
+- Responde siempre en español con formato Markdown limpio y profesional.
+- NUNCA digas frases genéricas vacías como "He procesado tu solicitud y ejecutado X acciones". Da la respuesta concreta y útil que el usuario necesita.
 - Columnas actuales del Kanban: ${JSON.stringify(kanbanCols)}.`;
 
     // Strictly format chat history for Gemini:
@@ -7576,20 +7716,24 @@ REGLAS DE COMUNICACIÓN:
       }
     }
 
-    // Step 3: Ask Gemini for a natural explanation of the results
+    // Step 3: Ask Gemini for a natural, rich and helpful response incorporating the tool results
     let finalReply = '';
     try {
+      const synthesisPrompt = `[DATOS DE CONSULTA / ACCIONES EN KÔNSUL PROCESS]:\n${toolResultsSummary.join('\n\n')}\n\n[INSTRUCCIÓN CRÍTICA]:
+Responde de forma directa, inteligente, ejecutiva y humana a la solicitud original del usuario: "${effectiveMessage}".
+- Si el usuario pidió un análisis o información de un cliente o proceso (ej. "Dame un análisis de Ortho smile"): explica de forma clara su estado en el CRM, sus procesos activos, porcentajes de avance, entregables completados, checklist o documentos pendientes, y si tiene carpeta o archivos en Google Drive vinculados.
+- NO muestres formato JSON crudo, no menciones nombres de funciones técnicas de backend ni digas "he ejecutado X acciones".
+- Usa Markdown limpio con títulos breves (###), viñetas y negritas para una lectura ágil y atractiva.`;
+
       const explanationContents = [
         ...contents,
         {
           role: 'model',
-          parts: [{ text: parts.map(p => p.text || '').join('\n') || 'Ejecutando herramientas solicitadas...' }]
+          parts: [{ text: 'He consultado la base de datos y herramientas de Kônsul Process para recopilar la información requerida.' }]
         },
         {
           role: 'user',
-          parts: [{
-            text: `Resultados de las herramientas ejecutadas en el sistema:\n${toolResultsSummary.join('\n\n')}\n\nPor favor, responde al usuario explicando de forma clara, amigable y concisa lo que hiciste o la información obtenida.`
-          }]
+          parts: [{ text: synthesisPrompt }]
         }
       ];
 
@@ -7606,13 +7750,39 @@ REGLAS DE COMUNICACIÓN:
         const followUpData = await followUpRes.json();
         const followUpParts = followUpData.candidates?.[0]?.content?.parts || [];
         finalReply = followUpParts.map(p => p.text || '').join('\n').trim();
+      } else {
+        const errTxt = await followUpRes.text();
+        console.warn('Gemini follow up synthesis error (' + followUpRes.status + '):', errTxt.substring(0, 150));
       }
     } catch (fErr) {
-      console.warn('Follow up explanation failed, fallback to summary:', fErr.message);
+      console.warn('Follow up explanation failed:', fErr.message);
     }
 
     if (!finalReply) {
-      finalReply = `He procesado tu solicitud y ejecutado ${actionsTaken.length} acción(es) en el sistema.`;
+      // Build an informative human summary from actionsTaken instead of robotic text
+      const clientAction = actionsTaken.find(a => a.tool === 'get_client_details' && a.success);
+      const instanceAction = actionsTaken.find(a => a.tool === 'get_instance_details' && a.success);
+
+      if (clientAction) {
+        const cl = clientAction.result;
+        const procs = cl.processes || [];
+        finalReply = `### 👤 Análisis de Cliente: ${cl.clientName}\n\n` +
+          `- **Etapa CRM:** ${cl.stage}\n` +
+          `- **Procesos Vinculados:** ${cl.totalProcesses}\n` +
+          (cl.driveFolderUrl ? `- **Carpeta Google Drive:** [Abrir en Drive](${cl.driveFolderUrl})\n` : '') +
+          `\n**Estado de las Ejecuciones:**\n` +
+          (procs.length > 0
+            ? procs.map(p => `• **${p.instanceName || p.title}**: ${p.status} (${p.progressPercent} completado - Paso actual: *${p.currentStepTitle}*)`).join('\n')
+            : '• No cuenta con procesos activos en este momento.');
+      } else if (instanceAction) {
+        const inst = instanceAction.result;
+        finalReply = `### ⚡ Estado del Proceso: ${inst.instanceName}\n\n` +
+          `- **Estado:** ${inst.status} (Prioridad: ${inst.priority})\n` +
+          `- **Avance:** ${inst.completedSteps} de ${inst.totalSteps} pasos completados\n` +
+          (inst.driveFolderUrl ? `- **Carpeta Drive:** [Abrir en Drive](${inst.driveFolderUrl})\n` : '');
+      } else {
+        finalReply = `He procesado tu consulta. No encontré registros adicionales para esa búsqueda o los datos ya están al día.`;
+      }
     }
 
     return res.json({

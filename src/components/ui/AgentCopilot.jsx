@@ -573,6 +573,21 @@ export default function AgentCopilot({
     const isSuccess = act.success !== false;
     const { tool, result, args } = act;
 
+    // Informational/query tools are synthesized directly into the Copilot's text response.
+    // Do NOT render technical JSON boxes for queries.
+    const INFORMATIONAL_TOOLS = [
+      'get_workspace_summary',
+      'get_client_details',
+      'list_clients',
+      'get_instance_details',
+      'list_templates',
+      'get_template_details',
+      'list_google_drive_files'
+    ];
+    if (INFORMATIONAL_TOOLS.includes(tool)) {
+      return null;
+    }
+
     switch (tool) {
       case 'create_process_template':
         return (
@@ -628,36 +643,16 @@ export default function AgentCopilot({
         );
 
       case 'read_google_drive_document':
+        if (!isSuccess) return null;
         return (
-          <div key={idx} className={`agent-action-card ${isSuccess ? 'success' : 'error'}`}>
+          <div key={idx} className="agent-action-card success">
             <div className="agent-action-header">
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <FolderOpen size={14} /> Google Drive
               </span>
-              <span>{isSuccess ? '📄 Documento Leído' : '❌ Error'}</span>
+              <span>📄 Documento Analizado</span>
             </div>
-            <div className="agent-action-title">{result?.name || 'Documento de Google Drive'}</div>
-            <div className="agent-action-details">
-              {isSuccess ? 'Contenido extraído y analizado por Copilot' : (act.error || 'No se pudo leer el archivo')}
-            </div>
-          </div>
-        );
-
-      case 'list_google_drive_files':
-        return (
-          <div key={idx} className={`agent-action-card ${isSuccess ? 'success' : 'error'}`}>
-            <div className="agent-action-header">
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <FolderOpen size={14} /> Google Drive
-              </span>
-              <span>{isSuccess ? `📁 ${(result?.files || []).length} Archivos` : '❌ Error'}</span>
-            </div>
-            <div className="agent-action-title">Explorador de Carpeta Drive</div>
-            <div className="agent-action-details">
-              {isSuccess
-                ? (result?.files || []).slice(0, 4).map(f => f.name).join(', ') || 'Carpeta vacía'
-                : (act.error || 'Error al listar archivos')}
-            </div>
+            <div className="agent-action-title">{result?.name || result?.fileName || 'Documento de Google Drive'}</div>
           </div>
         );
 
@@ -743,17 +738,7 @@ export default function AgentCopilot({
         );
 
       default:
-        return (
-          <div key={idx} className={`agent-action-card ${isSuccess ? 'success' : 'error'}`}>
-            <div className="agent-action-header">
-              <span>Acción: {tool}</span>
-              <span>{isSuccess ? 'Completada' : 'Falló'}</span>
-            </div>
-            <div className="agent-action-details">
-              {JSON.stringify(result || args)}
-            </div>
-          </div>
-        );
+        return null;
     }
   };
 
@@ -897,11 +882,15 @@ export default function AgentCopilot({
                   })}
 
                   {/* Render Generative UI Action Cards if present */}
-                  {Array.isArray(msg.actions) && msg.actions.length > 0 && (
-                    <div className="agent-action-cards">
-                      {msg.actions.map((act, actIdx) => renderActionCard(act, actIdx))}
-                    </div>
-                  )}
+                  {Array.isArray(msg.actions) && msg.actions.length > 0 && (() => {
+                    const cards = msg.actions.map((act, actIdx) => renderActionCard(act, actIdx)).filter(Boolean);
+                    if (cards.length === 0) return null;
+                    return (
+                      <div className="agent-action-cards">
+                        {cards}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
