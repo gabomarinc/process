@@ -167,7 +167,8 @@ const pool = new Pool({
 })();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(cookieSession({
   name: 'kinde_session',
@@ -1071,36 +1072,49 @@ const uploadBase64FileToDrive = async (orgId, { fileName, mimeType, base64Data, 
   }
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const fileBuffer = Buffer.from(cleanBase64, 'base64');
   const metadata = {
     name: fileName || `Entregable_${Date.now()}`,
     ...(targetFolderId ? { parents: [targetFolderId] } : {})
   };
 
   const boundary = '-------KonsulDriveBoundary' + Date.now();
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
+  const delimiter = Buffer.from(`\r\n--${boundary}\r\n`, 'utf8');
+  const closeDelimiter = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
 
-  const multipartBody =
-    delimiter +
+  const partHeader1 = Buffer.from(
+    `--${boundary}\r\n` +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    JSON.stringify(metadata) +
-    delimiter +
-    `Content-Type: ${mimeType || 'application/octet-stream'}\r\n` +
-    'Content-Transfer-Encoding: base64\r\n\r\n' +
-    cleanBase64 +
-    closeDelimiter;
+    JSON.stringify(metadata) + '\r\n',
+    'utf8'
+  );
+
+  const partHeader2 = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`,
+    'utf8'
+  );
+
+  const multipartBuffer = Buffer.concat([
+    partHeader1,
+    partHeader2,
+    fileBuffer,
+    closeDelimiter
+  ]);
 
   const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,mimeType&supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': String(multipartBuffer.length)
     },
-    body: multipartBody
+    body: multipartBuffer
   });
 
   if (!uploadRes.ok) {
     const errText = await uploadRes.text();
+    console.error('Google Drive Upload API error:', uploadRes.status, errText);
     throw new Error(`Error subiendo a Google Drive (${uploadRes.status}): ${errText.substring(0, 150)}`);
   }
 
@@ -2130,15 +2144,56 @@ app.put('/api/clients/:id/checklist', authenticateToken, async (req, res) => {
 
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
-  const { id, templateId, title, instanceName, clientId, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
+  const { id, templateId, title, instanceName, clientId, clientName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
   try {
+    let resolvedClientId = clientId || null;
+    const targetClientName = (clientName || instanceName || '').trim();
+
+    // Auto-create client if not existing in the database for this organization
+    if (targetClientName) {
+      if (!resolvedClientId) {
+        const clientSearch = await pool.query(
+          'SELECT id FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
+          [req.user.organizationId, targetClientName]
+        );
+        if (clientSearch.rows.length > 0) {
+          resolvedClientId = clientSearch.rows[0].id;
+        } else {
+          const newClientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+          const defaultChecklist = [
+            { id: 'chk_1', text: 'Onboarding y Bienvenida completado', isCompleted: false },
+            { id: 'chk_2', text: 'Documentación y accesos recibidos', isCompleted: false },
+            { id: 'chk_3', text: 'Carpeta de Google Drive vinculada', isCompleted: false },
+            { id: 'chk_4', text: 'Reunión inicial realizada', isCompleted: false }
+          ];
+          const newClientRes = await pool.query(
+            `INSERT INTO clients (id, organization_id, name, checklist)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id`,
+            [newClientId, req.user.organizationId, targetClientName, JSON.stringify(defaultChecklist)]
+          );
+          resolvedClientId = newClientRes.rows[0]?.id || newClientId;
+        }
+      }
+    }
+
     await pool.query(
       `INSERT INTO instances (id, organization_id, template_id, title, instance_name, client_id, started_at, companion_name, companion_avatar, companion_greeting, category, steps, status, priority)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [id, req.user.organizationId, templateId, title, instanceName, clientId || null, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
+      [id, req.user.organizationId, templateId, title, instanceName, resolvedClientId, startedAt, companionName, companionAvatar, companionGreeting, category, JSON.stringify(steps), status || 'Por hacer', priority || 'Media']
     );
 
-    const driveInfo = await ensureExecutionDriveFolder(req.user.organizationId, { id, title, instanceName }, instanceName);
+    const driveInfo = await ensureExecutionDriveFolder(req.user.organizationId, { id, title, instanceName }, targetClientName || instanceName);
+
+    // If a drive folder was created or found, also link it directly to the client if the client doesn't have one yet
+    if (driveInfo?.folderId && resolvedClientId) {
+      await pool.query(
+        `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
+         WHERE id = $3 AND organization_id = $4 AND (drive_folder_id IS NULL OR drive_folder_id = '')`,
+        [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
+      ).catch(() => {});
+    }
 
     const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
     await notifyTeamOnExecutionLaunch(req.user.organizationId, { id, title, instanceName, steps }, origin);
@@ -2148,11 +2203,13 @@ app.post('/api/instances', authenticateToken, async (req, res) => {
       'Descripción': `Iniciada en categoría ${category || 'General'}`,
       'Miembro Asignado': req.user?.email || 'Admin',
       'ID de Ejecución': id,
-      'Cliente': instanceName
+      'Cliente': targetClientName || instanceName
     });
 
     res.status(201).json({
       message: 'Ejecución iniciada con éxito',
+      clientId: resolvedClientId,
+      clientName: targetClientName,
       driveFolderId: driveInfo?.folderId || null,
       driveFolderUrl: driveInfo?.folderUrl || null
     });

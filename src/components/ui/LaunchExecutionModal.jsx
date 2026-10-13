@@ -30,6 +30,8 @@ export const LaunchExecutionModal = ({
   const [launchInstanceName, setLaunchInstanceName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId || "");
   const [clientMode, setClientMode] = useState("existing");
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientNameInput, setClientNameInput] = useState("");
   const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [showClientDropdown, setShowClientDropdown] = useState(false);
 
@@ -73,15 +75,23 @@ export const LaunchExecutionModal = ({
       alert("Por favor selecciona una plantilla.");
       return;
     }
-    if (!launchInstanceName.trim()) {
+    const finalClient = (clientNameInput || clientSearchQuery || launchInstanceName).trim();
+    if (!finalClient) {
+      alert("Por favor indica el cliente de la ejecución.");
+      return;
+    }
+    const finalInstanceName = (launchInstanceName || finalClient).trim();
+    if (!finalInstanceName) {
       alert("Por favor introduce el nombre de la ejecución.");
       return;
     }
     onSchedule({
       templateId: selectedTemplateId,
-      instanceName: launchInstanceName,
+      instanceName: finalInstanceName,
+      clientName: finalClient,
+      clientId: selectedClientId || null,
       startDate: startDate,
-      isNewClient: clientMode === 'new'
+      isNewClient: clientMode === 'new' || !selectedClientId
     });
   };
 
@@ -180,67 +190,81 @@ export const LaunchExecutionModal = ({
               </select>
             </div>
 
+            {/* Dedicated Client Field */}
             <div className="form-group">
-              <label className="custom-wizard-label">Cliente / Nombre de la Ejecución *</label>
+              <label className="custom-wizard-label">Cliente Asociado *</label>
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                 <div 
-                  onClick={() => { setClientMode('existing'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  onClick={() => { setClientMode('existing'); setSelectedClientId(''); setClientNameInput(''); setClientSearchQuery(''); }}
                   style={{
-                    padding: '10px',
+                    padding: '8px 10px',
                     border: '1px solid',
                     borderColor: clientMode === 'existing' ? 'var(--color-primary)' : '#d1d5db',
                     backgroundColor: clientMode === 'existing' ? 'rgba(39, 190, 167, 0.05)' : 'white',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     cursor: 'pointer',
                     textAlign: 'center',
                     transition: 'all 0.2s'
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: clientMode === 'existing' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Existente</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Seleccionar del registro</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', color: clientMode === 'existing' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Existente</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '1px' }}>Seleccionar del registro</div>
                 </div>
                 
                 <div 
-                  onClick={() => { setClientMode('new'); setLaunchInstanceName(''); setClientSearchQuery(''); }}
+                  onClick={() => { setClientMode('new'); setSelectedClientId(''); setClientNameInput(''); setClientSearchQuery(''); }}
                   style={{
-                    padding: '10px',
+                    padding: '8px 10px',
                     border: '1px solid',
                     borderColor: clientMode === 'new' ? 'var(--color-primary)' : '#d1d5db',
                     backgroundColor: clientMode === 'new' ? 'rgba(39, 190, 167, 0.05)' : 'white',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     cursor: 'pointer',
                     textAlign: 'center',
                     transition: 'all 0.2s'
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: clientMode === 'new' ? 'var(--color-primary)' : 'var(--text-main)' }}>Cliente Nuevo</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Registrar uno nuevo</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', color: clientMode === 'new' ? 'var(--color-primary)' : 'var(--text-main)' }}>+ Cliente Nuevo</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '1px' }}>Se creará automáticamente</div>
                 </div>
               </div>
 
               {clientMode === 'new' ? (
                 <input
                   type="text"
-                  placeholder="Ej. Empresa ABC"
-                  value={launchInstanceName}
-                  onChange={(e) => setLaunchInstanceName(e.target.value)}
+                  placeholder="Nombre de la empresa o cliente (ej. Acme Corp)"
+                  value={clientNameInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setClientNameInput(val);
+                    if (!launchInstanceName || launchInstanceName === clientNameInput) {
+                      setLaunchInstanceName(val);
+                    }
+                  }}
                   className="custom-wizard-input"
+                  required
                 />
               ) : (
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
-                    placeholder="Buscar cliente..."
+                    placeholder="Buscar o escribir nombre de cliente..."
                     value={clientSearchQuery}
                     onChange={(e) => {
-                      setClientSearchQuery(e.target.value);
-                      setLaunchInstanceName('');
+                      const val = e.target.value;
+                      setClientSearchQuery(val);
+                      setClientNameInput(val);
+                      setSelectedClientId('');
+                      if (!launchInstanceName || launchInstanceName === clientSearchQuery) {
+                        setLaunchInstanceName(val);
+                      }
                       setShowClientDropdown(true);
                     }}
                     onFocus={() => setShowClientDropdown(true)}
                     onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
                     className="custom-wizard-input"
+                    required
                   />
                   {showClientDropdown && (
                     <div style={{
@@ -270,21 +294,44 @@ export const LaunchExecutionModal = ({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               setClientSearchQuery(c.name);
-                              setLaunchInstanceName(c.name);
+                              setClientNameInput(c.name);
+                              setSelectedClientId(c.id);
+                              if (!launchInstanceName || launchInstanceName === clientSearchQuery) {
+                                setLaunchInstanceName(c.name);
+                              }
                               setShowClientDropdown(false);
                             }}
                             className="hover-bg-accent"
                           >
-                            {c.name}
+                            <span style={{ fontWeight: 600 }}>{c.name}</span>
+                            {c.email && <span style={{ fontSize: '0.75rem', color: '#64748B', marginLeft: '6px' }}>({c.email})</span>}
                           </div>
                         ))
                       ) : (
-                        <div style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>No se encontraron clientes</div>
+                        <div style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                          No existe aún. Si continúas, se creará automáticamente como cliente nuevo.
+                        </div>
                       )}
                     </div>
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Dedicated Execution Name Field */}
+            <div className="form-group">
+              <label className="custom-wizard-label">Nombre de la Ejecución / Proceso *</label>
+              <input
+                type="text"
+                placeholder="Ej. Acme Corp - Onboarding Abril"
+                value={launchInstanceName}
+                onChange={(e) => setLaunchInstanceName(e.target.value)}
+                className="custom-wizard-input"
+                required
+              />
+              <span style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '3px', display: 'block' }}>
+                Identificador de la tarjeta en el Kanban (por defecto el nombre del cliente).
+              </span>
             </div>
 
             <div className="form-group">

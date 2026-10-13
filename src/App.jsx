@@ -2030,8 +2030,7 @@ const handleDeleteMember = async (id) => {
   // Launch a new instance from selected template
   const handleLaunchInstance = async (data) => {
     let templateToUse;
-    let startDateTime;
-    let instanceName;
+    let clientName;
 
     // Support both old event-based call and new data object call
     if (data && data.preventDefault) {
@@ -2040,22 +2039,27 @@ const handleDeleteMember = async (id) => {
       if (!templateToUse || !launchInstanceName.trim()) return;
       startDateTime = new Date(launchStartDate).getTime();
       instanceName = launchInstanceName;
+      clientName = launchInstanceName;
     } else {
       templateToUse = templates.find(t => t.id === data.templateId);
       if (!templateToUse || !data.instanceName.trim()) return;
       startDateTime = data.startDate.getTime();
       instanceName = data.instanceName;
+      clientName = data.clientName || data.instanceName;
       
-      if (data.isNewClient) {
+      if (data.isNewClient && clientName) {
         try {
           const clientRes = await fetch('/api/clients', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-            body: JSON.stringify({ name: instanceName })
+            body: JSON.stringify({ name: clientName })
           });
           if (clientRes.ok) {
             const newClient = await clientRes.json();
-            setClients(prev => [...prev, newClient]);
+            setClients(prev => {
+              const exists = prev.some(c => c.id === newClient.id || c.name.toLowerCase() === newClient.name.toLowerCase());
+              return exists ? prev : [...prev, newClient];
+            });
           }
         } catch (err) {
           console.error("Error creating new client before launch", err);
@@ -2064,8 +2068,9 @@ const handleDeleteMember = async (id) => {
     }
 
     let resolvedClientId = (data && data.clientId) || null;
-    if (!resolvedClientId && clients && instanceName) {
-      const match = clients.find(c => c.name && c.name.toLowerCase() === instanceName.toLowerCase().trim());
+    const effectiveClient = clientName || instanceName;
+    if (!resolvedClientId && clients && effectiveClient) {
+      const match = clients.find(c => c.name && c.name.toLowerCase().trim() === effectiveClient.toLowerCase().trim());
       if (match) resolvedClientId = match.id;
     }
 
@@ -2074,6 +2079,7 @@ const handleDeleteMember = async (id) => {
       templateId: templateToUse.id,
       title: templateToUse.title,
       instanceName: instanceName,
+      clientName: effectiveClient,
       clientId: resolvedClientId,
       startedAt: new Date(startDateTime).toISOString(),
       companionName: templateToUse.companionName,
@@ -2134,12 +2140,18 @@ const handleDeleteMember = async (id) => {
       });
       if (postRes.ok) {
         const postData = await postRes.json().catch(() => ({}));
-        if (postData.driveFolderUrl || postData.driveFolderId) {
-          setInstances(prev => prev.map(inst => inst.id === newInstance.id ? {
-            ...inst,
-            driveFolderId: postData.driveFolderId || inst.driveFolderId,
-            driveFolderUrl: postData.driveFolderUrl || inst.driveFolderUrl
-          } : inst));
+        setInstances(prev => prev.map(inst => inst.id === newInstance.id ? {
+          ...inst,
+          clientId: postData.clientId || inst.clientId,
+          driveFolderId: postData.driveFolderId || inst.driveFolderId,
+          driveFolderUrl: postData.driveFolderUrl || inst.driveFolderUrl
+        } : inst));
+        if (postData.clientId && postData.clientName) {
+          setClients(prev => {
+            const exists = prev.some(c => c.id === postData.clientId || c.name.toLowerCase() === postData.clientName.toLowerCase());
+            if (exists) return prev;
+            return [...prev, { id: postData.clientId, name: postData.clientName, drive_folder_id: postData.driveFolderId, drive_folder_url: postData.driveFolderUrl }];
+          });
         }
       }
 

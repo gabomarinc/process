@@ -229,7 +229,18 @@ export const ActiveExecutionModal = ({
             } else {
               onCompleteStepLocal(step.id, true, file.name, data.webViewLink);
             }
-            if (addToast) addToast(`☁️ Archivo "${file.name}" sincronizado en Google Drive`, 'success');
+            if (addToast) addToast(`☁️ Archivo "${file.name}" subido y sincronizado en Google Drive`, 'success');
+          } else if (data.uploadedToDrive === false) {
+            console.warn('Drive upload status:', data.reason);
+            if (addToast && data.reason) {
+              addToast(`ℹ️ Archivo adjuntado localmente. (${data.reason})`, 'info');
+            }
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn('Drive upload error:', errData.error);
+          if (addToast) {
+            addToast(`⚠️ Archivo guardado localmente, pero no se pudo subir a Drive: ${errData.error || 'Verifica la conexión con Google Drive'}`, 'warning');
           }
         }
       }
