@@ -2141,6 +2141,7 @@ app.get('/api/bootstrap', authenticateToken, async (req, res) => {
         rootFolderName: rawDriveConfig.rootFolderName || '',
         folderPathTemplate: rawDriveConfig.folderPathTemplate || DEFAULT_DRIVE_FOLDER_PATH,
         stepSubfolders: !!rawDriveConfig.stepSubfolders,
+        defaultClientSubfolders: rawDriveConfig.defaultClientSubfolders || '',
         matchExistingFolders: rawDriveConfig.matchExistingFolders !== false,
         onlyUseExistingFolders: !!rawDriveConfig.onlyUseExistingFolders,
         autoCreateFolders: rawDriveConfig.autoCreateFolders !== false,

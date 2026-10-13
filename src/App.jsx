@@ -793,6 +793,7 @@ function App() {
           setGoogleDriveConfig(prev => ({
             ...prev,
             ...data.googleDrive,
+            defaultClientSubfolders: data.googleDrive.defaultClientSubfolders !== undefined ? data.googleDrive.defaultClientSubfolders : (prev.defaultClientSubfolders || ''),
             clientId: data.googleDrive.clientId || prev.clientId || '',
             clientSecret: ''
           }));
@@ -1547,6 +1548,27 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
   const [driveTreeData, setDriveTreeData] = useState(null);
   const [isSyncingDriveTree, setIsSyncingDriveTree] = useState(false);
 
+  useEffect(() => {
+    if (showGoogleDriveModal && localStorage.getItem('token')) {
+      fetch('/api/organization/google-drive', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data?.googleDrive) {
+            setGoogleDriveConfig(prev => ({
+              ...prev,
+              ...data.googleDrive,
+              defaultClientSubfolders: data.googleDrive.defaultClientSubfolders !== undefined ? data.googleDrive.defaultClientSubfolders : (prev.defaultClientSubfolders || ''),
+              clientId: data.googleDrive.clientId || prev.clientId || '',
+              clientSecret: ''
+            }));
+          }
+        })
+        .catch(err => console.warn('Error loading google drive config on modal open:', err));
+    }
+  }, [showGoogleDriveModal]);
+
   const handleSyncDriveTree = async (importMissingClients = false) => {
     setIsSyncingDriveTree(true);
     try {
@@ -1606,6 +1628,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         setGoogleDriveConfig(prev => ({
           ...prev,
           ...data.googleDrive,
+          defaultClientSubfolders: data.googleDrive.defaultClientSubfolders !== undefined ? data.googleDrive.defaultClientSubfolders : (prev.defaultClientSubfolders || ''),
           clientId: data.googleDrive.clientId || prev.clientId || '',
           clientSecret: '',
           accessToken: ''
