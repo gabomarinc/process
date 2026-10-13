@@ -5183,8 +5183,55 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     const startedAt = customStartDate ? new Date(customStartDate).toISOString() : new Date().toISOString();
 
     // Resolve custom instance name from variables
-    const customInstanceName = variables?.['Cliente / Nombre de la Ejecución'] || variables?.['Nombre de la Ejecución'] || variables?.['cliente'];
-    const instanceName = customInstanceName || replaceVariables(template.title, variables) || template.title;
+    const customInstanceName = variables?.['Nombre de la Ejecución / Proceso'] 
+      || variables?.['Nombre de la Ejecución'] 
+      || variables?.['execution_name']
+      || variables?.['process_name']
+      || variables?.['Cliente / Nombre de la Ejecución'] 
+      || variables?.['cliente'];
+    
+    // Resolve client name
+    const rawClientName = req.body.client_name 
+      || req.body.client 
+      || req.body.customer_name 
+      || variables?.['Cliente Asociado'] 
+      || variables?.['client_name'] 
+      || variables?.['client'] 
+      || variables?.['customer_name'] 
+      || variables?.['Nombre del Cliente'] 
+      || variables?.['Nombre de Empresa'] 
+      || '';
+    const targetClientName = String(rawClientName || '').trim();
+
+    const instanceName = customInstanceName || (targetClientName ? targetClientName : (replaceVariables(template.title, variables) || template.title));
+
+    // Auto-create or link client in organization
+    let resolvedClientId = req.body.clientId || req.body.client_id || variables?.['clientId'] || null;
+    if (targetClientName && !resolvedClientId) {
+      const clientSearch = await pool.query(
+        'SELECT id FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
+        [req.user.organizationId, targetClientName]
+      );
+      if (clientSearch.rows.length > 0) {
+        resolvedClientId = clientSearch.rows[0].id;
+      } else {
+        const newClientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+        const defaultChecklist = [
+          { id: 'chk_1', text: 'Onboarding y Bienvenida completado', isCompleted: false },
+          { id: 'chk_2', text: 'Documentación y accesos recibidos', isCompleted: false },
+          { id: 'chk_3', text: 'Carpeta de Google Drive vinculada', isCompleted: false },
+          { id: 'chk_4', text: 'Reunión inicial realizada', isCompleted: false }
+        ];
+        const newClientRes = await pool.query(
+          `INSERT INTO clients (id, organization_id, name, checklist)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (id) DO NOTHING
+           RETURNING id`,
+          [newClientId, req.user.organizationId, targetClientName, JSON.stringify(defaultChecklist)]
+        );
+        resolvedClientId = newClientRes.rows[0]?.id || newClientId;
+      }
+    }
 
     // Resolve target member email from variables
     let targetEmail = variables?.['Miembro Involucrado (Email)'] || variables?.['miembro_email'] || variables?.['email_miembro'];
@@ -5235,14 +5282,15 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     });
 
     await pool.query(
-      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO instances (id, organization_id, template_id, title, instance_name, client_id, started_at, companion_name, companion_avatar, companion_greeting, category, steps)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         instId,
         req.user.organizationId,
         template_id,
         template.title,
         instanceName,
+        resolvedClientId || null,
         startedAt,
         template.companion_name,
         template.companion_avatar,
@@ -5251,6 +5299,20 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
         JSON.stringify(stepsWithDates)
       ]
     );
+
+    const driveInfo = await ensureExecutionDriveFolder(
+      req.user.organizationId, 
+      { id: instId, title: template.title, instanceName }, 
+      targetClientName || instanceName
+    ).catch(() => null);
+
+    if (driveInfo?.folderId && resolvedClientId) {
+      await pool.query(
+        `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
+         WHERE id = $3 AND organization_id = $4 AND (drive_folder_id IS NULL OR drive_folder_id = '')`,
+        [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
+      ).catch(() => {});
+    }
 
     const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
     await notifyTeamOnExecutionLaunch(req.user.organizationId, {
@@ -5262,6 +5324,7 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
 
     triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
       'Título de Tarea': instanceName,
+      'Cliente Asociado': targetClientName || instanceName,
       'Descripción': `Plantilla ${template.title} ejecutada vía API`,
       'Miembro Asignado': targetEmail || 'Admin'
     });
