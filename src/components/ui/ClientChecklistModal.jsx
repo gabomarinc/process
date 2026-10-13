@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
+  Check,
   CheckCircle2, 
   ChevronDown, 
   ChevronUp, 
@@ -23,7 +24,17 @@ import {
   Unlock,
   Link2,
   ShieldAlert,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Phone,
+  Mail,
+  MessageCircle,
+  ExternalLink,
+  Edit2,
+  AlertTriangle,
+  Folder,
+  Send,
+  User,
+  Info
 } from 'lucide-react';
 import { 
   normalizeChecklistItems, 
@@ -32,6 +43,16 @@ import {
   isChecklistItemBlockedByExecution
 } from '../../utils/clientSemaforo';
 import './ClientChecklistModal.css';
+
+const CLIENT_STAGES = ['Nuevo', 'Contactado', 'Onboarding', 'En Proceso', 'Activo'];
+
+const SUGGESTED_TEMPLATE_ITEMS = [
+  { id: 'item_video_sug', name: 'Video', type: 'counter', checked: false, current: 0, target: 6 },
+  { id: 'item_post_sug', name: 'Post', type: 'counter', checked: false, current: 0, target: 12 },
+  { id: 'item_carrusel_sug', name: 'Carrusel', type: 'counter', checked: false, current: 0, target: 4 },
+  { id: 'item_factura_sug', name: 'Factura Paga', type: 'boolean', checked: false },
+  { id: 'item_ads_sug', name: 'Ads Según Cliente', type: 'rating', rating: 'Excelente' }
+];
 
 export default function ClientChecklistModal({
   isOpen,
@@ -44,17 +65,23 @@ export default function ClientChecklistModal({
 }) {
   if (!isOpen || !client) return null;
 
-  const [activeTab, setActiveTab] = useState('checklist'); // 'checklist' | 'active' | 'completed'
+  const [activeTab, setActiveTab] = useState('checklist'); // 'detalles' | 'checklist' | 'active' | 'completed'
   const [items, setItems] = useState(() => normalizeChecklistItems(client.checklist));
   const [clientEmail, setClientEmail] = useState(client.email || '');
-  const [expandedSection, setExpandedSection] = useState(null);
-  const [editSettingsItemId, setEditSettingsItemId] = useState(null);
+  const [clientPhone, setClientPhone] = useState(client.phone || '');
+  const [clientStage, setClientStage] = useState(client.stage || 'Nuevo');
+  const [clientNotes, setClientNotes] = useState(client.notes || '');
+  const [clientDriveUrl, setClientDriveUrl] = useState(
+    client.drive_folder_url || (client.drive_folder_id ? `https://drive.google.com/drive/folders/${client.drive_folder_id}` : '')
+  );
+
   const [isSaving, setIsSaving] = useState(false);
+  const [editingItem, setEditingItem] = useState(null); // Item being edited in modal/drawer
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // New Item Creator State
-  const [showAddForm, setShowAddForm] = useState(false);
   const [newItemName, setNewItemName] = useState('');
-  const [newItemType, setNewItemType] = useState('boolean'); // 'boolean' | 'counter' | 'rating'
+  const [newItemType, setNewItemType] = useState('counter'); // 'counter' | 'boolean' | 'rating'
   const [newItemTarget, setNewItemTarget] = useState(4);
   const [newItemAssociatedInstanceId, setNewItemAssociatedInstanceId] = useState('');
   const [newItemIsGate, setNewItemIsGate] = useState(false);
@@ -64,6 +91,12 @@ export default function ClientChecklistModal({
     if (client) {
       setItems(normalizeChecklistItems(client.checklist));
       setClientEmail(client.email || '');
+      setClientPhone(client.phone || '');
+      setClientStage(client.stage || 'Nuevo');
+      setClientNotes(client.notes || '');
+      setClientDriveUrl(
+        client.drive_folder_url || (client.drive_folder_id ? `https://drive.google.com/drive/folders/${client.drive_folder_id}` : '')
+      );
     }
   }, [client]);
 
@@ -75,7 +108,10 @@ export default function ClientChecklistModal({
     if (!inst) return false;
     const nameLower = (inst.instanceName || '').toLowerCase();
     const clientField = (inst.client_name || '').toLowerCase();
-    return nameLower.includes(clientNameLower) || clientField.includes(clientNameLower);
+    const clientIdField = inst.clientId || inst.client_id;
+    return (clientIdField && String(clientIdField) === String(client.id)) ||
+           nameLower.includes(clientNameLower) || 
+           clientField.includes(clientNameLower);
   });
 
   const activeInstances = clientInstances.filter(inst => {
@@ -87,6 +123,21 @@ export default function ClientChecklistModal({
     const steps = inst.steps || [];
     return steps.length > 0 && steps.every(s => s.isCompleted);
   });
+
+  // Initials generator
+  const getInitials = (name = '') => {
+    if (!name) return 'CL';
+    const parts = name.trim().split(' ').filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Formatted date
+  const registeredDateFormatted = client.created_at 
+    ? new Date(client.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'Fecha no registrada';
 
   // Check if an item is locked by an unfinished execution
   const checkExecutionBlock = (item) => {
@@ -109,12 +160,12 @@ export default function ClientChecklistModal({
       if (item.id !== itemId) return item;
       const nextChecked = !item.checked;
       let nextCurrent = item.current || 0;
-      const target = item.target || 1;
+      const targetCount = item.target || 1;
 
       if (item.type === 'counter') {
-        if (nextChecked && nextCurrent < target) {
-          nextCurrent = target;
-        } else if (!nextChecked && nextCurrent === target) {
+        if (nextChecked && nextCurrent < targetCount) {
+          nextCurrent = targetCount;
+        } else if (!nextChecked && nextCurrent === targetCount) {
           nextCurrent = 0;
         }
         return { ...item, checked: nextChecked, current: nextCurrent };
@@ -135,12 +186,12 @@ export default function ClientChecklistModal({
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       const updated = { ...item, [key]: num };
-      const target = key === 'target' ? num : (item.target || 1);
-      const current = key === 'current' ? num : (item.current || 0);
+      const targetCount = key === 'target' ? num : (item.target || 1);
+      const currentCount = key === 'current' ? num : (item.current || 0);
 
-      if (target > 0 && current >= target) {
+      if (targetCount > 0 && currentCount >= targetCount) {
         updated.checked = true;
-      } else if (key === 'current' && current < target) {
+      } else if (key === 'current' && currentCount < targetCount) {
         updated.checked = false;
       }
 
@@ -161,22 +212,16 @@ export default function ClientChecklistModal({
     }));
   };
 
-  // Update item config (association, gate)
-  const handleUpdateItemConfig = (itemId, updates) => {
-    setItems(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
-      return { ...item, ...updates };
-    }));
-  };
-
   // Delete an item
   const handleDeleteItem = (itemId) => {
-    setItems(prev => prev.filter(item => item.id !== itemId));
+    if (window.confirm("¿Estás seguro de eliminar este requerimiento del cliente?")) {
+      setItems(prev => prev.filter(item => item.id !== itemId));
+    }
   };
 
   // Add a new dynamic item
-  const handleAddItem = (e) => {
-    e.preventDefault();
+  const handleAddItemSubmit = (e) => {
+    if (e) e.preventDefault();
     if (!newItemName.trim()) return;
 
     const newItem = {
@@ -204,13 +249,35 @@ export default function ClientChecklistModal({
     setNewItemAssociatedInstanceId('');
     setNewItemIsGate(false);
     setNewItemGateType('blocks_execution');
-    setShowAddForm(false);
+    setShowAddModal(false);
   };
 
+  // Load Suggested Template
+  const handleLoadSuggestedTemplate = () => {
+    const newItems = SUGGESTED_TEMPLATE_ITEMS.map((item, idx) => ({
+      ...item,
+      id: `item_tpl_${Date.now()}_${idx}`
+    }));
+    setItems(prev => [...prev, ...newItems]);
+  };
+
+  // Save changes to backend
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSaveChecklist(client.id, { items }, clientEmail);
+      if (onSaveChecklist) {
+        await onSaveChecklist(
+          client.id, 
+          { items }, 
+          clientEmail,
+          {
+            phone: clientPhone,
+            stage: clientStage,
+            notes: clientNotes,
+            driveFolderUrl: clientDriveUrl
+          }
+        );
+      }
       onClose();
     } catch (err) {
       console.error('Error saving checklist', err);
@@ -221,679 +288,1025 @@ export default function ClientChecklistModal({
 
   const getItemIcon = (item) => {
     const nameLower = (item.name || '').toLowerCase();
-    if (nameLower.includes('video') || nameLower.includes('reel')) return <Video size={16} className="checklist-icon" />;
-    if (nameLower.includes('post')) return <FileText size={16} className="checklist-icon" />;
-    if (nameLower.includes('carrusel')) return <LayoutGrid size={16} className="checklist-icon" />;
-    if (nameLower.includes('factura') || nameLower.includes('pago')) return <DollarSign size={16} className="checklist-icon" />;
-    if (item.type === 'counter') return <Hash size={16} className="checklist-icon" />;
-    if (item.type === 'rating') return <Star size={16} className="checklist-icon" />;
-    return <CheckSquare size={16} className="checklist-icon" />;
+    if (nameLower.includes('video') || nameLower.includes('reel')) return <Video size={16} />;
+    if (nameLower.includes('post')) return <FileText size={16} />;
+    if (nameLower.includes('carrusel')) return <LayoutGrid size={16} />;
+    if (nameLower.includes('factura') || nameLower.includes('pago')) return <DollarSign size={16} />;
+    if (item.type === 'counter') return <Hash size={16} />;
+    if (item.type === 'rating') return <Star size={16} />;
+    return <CheckSquare size={16} />;
   };
 
+  const currentStageIdx = CLIENT_STAGES.findIndex(s => s.toLowerCase() === (clientStage || 'nuevo').toLowerCase());
+  const activeStageIdx = currentStageIdx >= 0 ? currentStageIdx : 0;
+
   return (
-    <div className="checklist-modal-overlay" onClick={onClose}>
-      <div className="checklist-modal-container" onClick={e => e.stopPropagation()}>
+    <div className="crm-modal-overlay" onClick={onClose}>
+      <div className="crm-modal-card" onClick={e => e.stopPropagation()}>
         
-        {/* Header */}
-        <div className="checklist-modal-header">
-          <div className="checklist-client-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <h2>{client.name}</h2>
-              <div 
-                style={{ 
-                  background: semaforo.bg, 
-                  color: semaforo.color, 
-                  border: `1px solid ${semaforo.badgeBorder}`,
-                  padding: '0.2rem 0.6rem', 
-                  borderRadius: '16px', 
-                  fontSize: '0.72rem', 
-                  fontWeight: 800, 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: '4px' 
-                }}
-              >
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: semaforo.color }} />
-                {semaforo.statusLabel} ({semaforo.percentage}%)
+        {/* ═══════════════════════════════════════════════════════════════
+            HEADER: Dark Emerald Gradient ("Omar Ortoz" Design)
+        ═══════════════════════════════════════════════════════════════ */}
+        <div className="crm-modal-header">
+          {/* Top Meta Bar */}
+          <div className="crm-header-topbar">
+            <div className="crm-header-meta">
+              <span className="crm-meta-text">
+                Cliente Kônsul Process • Registrado el {registeredDateFormatted}
+              </span>
+              {clientDriveUrl && (
+                <a
+                  href={clientDriveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="crm-drive-badge"
+                  title="Abrir carpeta vinculada de Google Drive"
+                >
+                  <Folder size={12} color="#27BEA5" />
+                  <span>Google Drive</span>
+                  <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
+
+            <div className="crm-header-actions">
+              <button className="crm-close-btn" onClick={onClose} title="Cerrar modal">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Profile Identity Banner */}
+          <div className="crm-identity-banner">
+            <div className="crm-identity-main">
+              {/* Vibrant Squircle Avatar */}
+              <div className="crm-avatar-squircle">
+                {getInitials(client.name)}
+              </div>
+
+              {/* Title & Metadata */}
+              <div className="crm-identity-info">
+                <h1 className="crm-client-name" title={client.name}>
+                  {client.name}
+                </h1>
+                <div className="crm-client-tags">
+                  <span className="crm-tag-highlight">{clientStage}</span>
+                  <span>•</span>
+                  <span>{activeInstances.length} Procesos Activos</span>
+                  <span>•</span>
+                  <span>{completedInstances.length} Completados</span>
+                  {clientEmail && (
+                    <>
+                      <span>•</span>
+                      <span className="crm-tag-email">{clientEmail}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', flexWrap: 'wrap' }}>
-              <span className="checklist-client-subtitle">
-                {activeInstances.length} Activas • {completedInstances.length} Completadas
-              </span>
-              <span style={{ color: '#CBD5E1' }}>•</span>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>✉ Correo:</span>
-                <input
-                  type="email"
-                  placeholder="cliente@empresa.com"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  style={{
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '6px',
-                    padding: '2px 8px',
-                    fontSize: '0.75rem',
-                    color: '#0F172A',
-                    background: '#FFFFFF',
-                    width: '180px'
-                  }}
-                  title="Correo para envíos automáticos de hitos"
-                />
+
+            {/* Semáforo Score Card */}
+            <div className="crm-score-card">
+              <div className="crm-score-number" style={{ color: semaforo.color }}>
+                {semaforo.percentage}%
+              </div>
+              <div className="crm-score-label">SEMÁFORO</div>
+              <div 
+                className="crm-score-badge"
+                style={{
+                  background: semaforo.bg,
+                  color: semaforo.color,
+                  border: `1px solid ${semaforo.badgeBorder}`
+                }}
+              >
+                {semaforo.statusLabel}
               </div>
             </div>
           </div>
 
-          <button className="checklist-close-btn" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="client-modal-tabs">
-          <button 
-            type="button"
-            className={`client-tab-btn ${activeTab === 'checklist' ? 'active' : ''}`}
-            onClick={() => setActiveTab('checklist')}
-          >
-            <CheckSquare size={15} /> Checklist & Semáforo
-          </button>
-          <button 
-            type="button"
-            className={`client-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
-            onClick={() => setActiveTab('active')}
-          >
-            <Rocket size={15} /> Activas ({activeInstances.length})
-          </button>
-          <button 
-            type="button"
-            className={`client-tab-btn ${activeTab === 'completed' ? 'active' : ''}`}
-            onClick={() => setActiveTab('completed')}
-          >
-            <CheckCircle2 size={15} /> Completadas ({completedInstances.length})
-          </button>
-        </div>
-
-        {/* TAB 1: CHECKLIST & SEMÁFORO */}
-        {activeTab === 'checklist' && (
-          <>
-            {/* Status Banner */}
-            <div className="checklist-status-banner" style={{ background: semaforo.bg, borderColor: semaforo.badgeBorder }}>
-              <div className="checklist-status-info">
-                <div className="checklist-badge" style={{ background: semaforo.color, color: '#FFFFFF' }}>
-                  {semaforo.statusLabel}
-                </div>
-                <div className="checklist-status-text" style={{ color: semaforo.color }}>
-                  <strong>{semaforo.percentage}% Completado</strong> • ({semaforo.completedCount} de {semaforo.totalCount} cumplidos)
-                </div>
-              </div>
-
-              <div className="checklist-progress-outer">
-                <div 
-                  className="checklist-progress-inner" 
-                  style={{ width: `${semaforo.percentage}%`, background: semaforo.color }} 
-                />
-              </div>
+          {/* Stepper / Pipeline Progress Trail */}
+          <div className="crm-pipeline-container">
+            <div className="crm-pipeline-header">
+              <span className="crm-pipeline-title">ETAPA DEL CLIENTE</span>
+              <span className="crm-pipeline-hint">Haz clic en una etapa para actualizar</span>
             </div>
 
-            {/* Checklist Content */}
-            <div className="checklist-modal-body">
-              <div className="checklist-section-header">
-                <span className="checklist-section-title">Requerimientos del Cliente</span>
-                <button 
-                  type="button" 
-                  className="checklist-add-trigger-btn"
-                  onClick={() => setShowAddForm(!showAddForm)}
-                >
-                  <Plus size={14} /> {showAddForm ? 'Cerrar' : 'Agregar Elemento'}
-                </button>
+            <div className="crm-pipeline-trail">
+              {CLIENT_STAGES.map((st, idx) => {
+                const isPassed = idx < activeStageIdx;
+                const isCurrent = idx === activeStageIdx;
+
+                return (
+                  <React.Fragment key={st}>
+                    <div 
+                      className={`crm-pipeline-node ${isCurrent ? 'current' : isPassed ? 'passed' : 'upcoming'}`}
+                      onClick={() => setClientStage(st)}
+                      title={`Cambiar etapa a: ${st}`}
+                    >
+                      <div className="crm-pipeline-circle">
+                        {isPassed || isCurrent ? <Check size={14} strokeWidth={3} /> : <div className="crm-pipeline-dot" />}
+                      </div>
+                      <span className="crm-pipeline-node-label">{st}</span>
+                    </div>
+
+                    {idx < CLIENT_STAGES.length - 1 && (
+                      <div className={`crm-pipeline-line ${idx < activeStageIdx ? 'active' : ''}`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Action Pills Bar */}
+          <div className="crm-actions-bar">
+            <button 
+              className="crm-action-pill primary"
+              onClick={() => setShowAddModal(true)}
+            >
+              <Plus size={15} /> Agregar Requerimiento
+            </button>
+
+            {clientPhone ? (
+              <a 
+                href={`https://wa.me/${clientPhone.replace(/[^0-9]/g, '')}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="crm-action-pill"
+              >
+                <MessageCircle size={14} color="#25D366" /> WhatsApp
+              </a>
+            ) : (
+              <button 
+                className="crm-action-pill disabled-pill"
+                onClick={() => setActiveTab('detalles')}
+                title="Configura el teléfono en la pestaña Detalles"
+              >
+                <MessageCircle size={14} /> WhatsApp
+              </button>
+            )}
+
+            {clientPhone ? (
+              <a href={`tel:${clientPhone}`} className="crm-action-pill">
+                <Phone size={14} /> Llamar
+              </a>
+            ) : (
+              <button 
+                className="crm-action-pill disabled-pill"
+                onClick={() => setActiveTab('detalles')}
+                title="Configura el teléfono en la pestaña Detalles"
+              >
+                <Phone size={14} /> Llamar
+              </button>
+            )}
+
+            {clientEmail ? (
+              <a href={`mailto:${clientEmail}`} className="crm-action-pill">
+                <Mail size={14} /> Enviar Correo
+              </a>
+            ) : (
+              <button 
+                className="crm-action-pill disabled-pill"
+                onClick={() => setActiveTab('detalles')}
+                title="Configura el correo en la pestaña Detalles"
+              >
+                <Mail size={14} /> Correo
+              </button>
+            )}
+
+            {onLaunchForClient && (
+              <button 
+                className="crm-action-pill"
+                onClick={() => onLaunchForClient(client)}
+              >
+                <Rocket size={14} color="#27BEA5" /> Lanzar Proceso
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            TABS NAVIGATION
+        ═══════════════════════════════════════════════════════════════ */}
+        <div className="crm-tabs-bar">
+          <button 
+            type="button"
+            className={`crm-tab-button ${activeTab === 'checklist' ? 'active' : ''}`}
+            onClick={() => setActiveTab('checklist')}
+          >
+            <CheckSquare size={15} /> Checklist & Semáforo ({items.length})
+          </button>
+          <button 
+            type="button"
+            className={`crm-tab-button ${activeTab === 'detalles' ? 'active' : ''}`}
+            onClick={() => setActiveTab('detalles')}
+          >
+            <FileText size={15} /> Detalles & Contacto
+          </button>
+          <button 
+            type="button"
+            className={`crm-tab-button ${activeTab === 'active' ? 'active' : ''}`}
+            onClick={() => setActiveTab('active')}
+          >
+            <Rocket size={15} /> Procesos Activos ({activeInstances.length})
+          </button>
+          <button 
+            type="button"
+            className={`crm-tab-button ${activeTab === 'completed' ? 'active' : ''}`}
+            onClick={() => setActiveTab('completed')}
+          >
+            <CheckCircle2 size={15} /> Historial Completado ({completedInstances.length})
+          </button>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            MODAL BODY CONTENT
+        ═══════════════════════════════════════════════════════════════ */}
+        <div className="crm-modal-body">
+
+          {/* TAB 1: CHECKLIST & REQUERIMIENTOS */}
+          {activeTab === 'checklist' && (
+            <div className="crm-checklist-view">
+              
+              {/* Semáforo Status Summary Header */}
+              <div 
+                className="crm-semaforo-banner"
+                style={{
+                  background: semaforo.bg,
+                  borderColor: semaforo.badgeBorder
+                }}
+              >
+                <div className="crm-semaforo-left">
+                  <span 
+                    className="crm-semaforo-status-pill"
+                    style={{ background: semaforo.color }}
+                  >
+                    {semaforo.statusLabel}
+                  </span>
+                  <span className="crm-semaforo-stats" style={{ color: semaforo.color }}>
+                    <strong>{semaforo.percentage}% Cumplido</strong> • {semaforo.completedCount} de {semaforo.totalCount} requerimientos completados
+                  </span>
+                </div>
+
+                <div className="crm-semaforo-actions">
+                  {items.length === 0 && (
+                    <button 
+                      type="button" 
+                      className="crm-btn-suggested"
+                      onClick={handleLoadSuggestedTemplate}
+                      title="Cargar Video, Post, Carrusel, Factura Paga y Ads según cliente"
+                    >
+                      <Sparkles size={14} /> Cargar Plantilla Sugerida
+                    </button>
+                  )}
+                  <button 
+                    type="button" 
+                    className="crm-btn-add-item"
+                    onClick={() => setShowAddModal(true)}
+                  >
+                    <Plus size={14} /> Agregar Requerimiento
+                  </button>
+                </div>
               </div>
 
-              {/* New Item Form Panel */}
-              {showAddForm && (
-                <form onSubmit={handleAddItem} className="checklist-new-item-panel">
-                  <div className="checklist-new-item-row">
-                    <input
-                      type="text"
-                      placeholder="Nombre (ej. Reels, Historias, Brief Aprobado...)"
-                      value={newItemName}
-                      onChange={e => setNewItemName(e.target.value)}
-                      className="checklist-input-text"
-                      autoFocus
-                    />
+              {/* EMPTY STATE */}
+              {items.length === 0 ? (
+                <div className="crm-empty-state-card">
+                  <div className="crm-empty-icon-wrap">
+                    <Sparkles size={36} color="#27BEA5" />
                   </div>
+                  <h3 className="crm-empty-title">Este cliente aún no tiene requerimientos</h3>
+                  <p className="crm-empty-desc">
+                    Los clientes nuevos inician sin items predeterminados. Puedes crear requerimientos personalizados o cargar la plantilla sugerida con un solo clic.
+                  </p>
+                  <div className="crm-empty-actions">
+                    <button 
+                      type="button" 
+                      className="crm-empty-btn-primary"
+                      onClick={handleLoadSuggestedTemplate}
+                    >
+                      <Sparkles size={16} /> Cargar Plantilla Sugerida (Videos, Posts, Factura, Ads)
+                    </button>
+                    <button 
+                      type="button" 
+                      className="crm-empty-btn-secondary"
+                      onClick={() => setShowAddModal(true)}
+                    >
+                      <Plus size={16} /> Crear Requerimiento Personalizado
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* ITEMS LIST */
+                <div className="crm-items-grid">
+                  {items.map((item) => {
+                    const isDone = isChecklistItemDone(item);
+                    const execBlockInfo = isChecklistItemBlockedByExecution(item, instances);
+                    const linkedInstance = clientInstances.find(i => String(i.id) === String(item.associatedInstanceId));
 
-                  <div className="checklist-new-item-row type-select-row">
-                    <div className="checklist-type-selector">
-                      <label className={`type-chip ${newItemType === 'boolean' ? 'active' : ''}`}>
-                        <input 
-                          type="radio" 
-                          name="itemType" 
-                          value="boolean" 
-                          checked={newItemType === 'boolean'} 
-                          onChange={() => setNewItemType('boolean')} 
-                        />
-                        ☑️ Checkbox Simple
-                      </label>
-                      <label className={`type-chip ${newItemType === 'counter' ? 'active' : ''}`}>
-                        <input 
-                          type="radio" 
-                          name="itemType" 
-                          value="counter" 
-                          checked={newItemType === 'counter'} 
-                          onChange={() => setNewItemType('counter')} 
-                        />
-                        🔢 Contador con Meta
-                      </label>
-                      <label className={`type-chip ${newItemType === 'rating' ? 'active' : ''}`}>
-                        <input 
-                          type="radio" 
-                          name="itemType" 
-                          value="rating" 
-                          checked={newItemType === 'rating'} 
-                          onChange={() => setNewItemType('rating')} 
-                        />
-                        ⭐️ Calificación
-                      </label>
+                    return (
+                      <div 
+                        key={item.id} 
+                        className={`crm-item-card ${isDone ? 'completed' : ''} ${item.type} ${execBlockInfo.isBlocked ? 'locked' : ''}`}
+                      >
+                        {/* ITEM TOP BAR: ICON, NAME, ACTIONS */}
+                        <div className="crm-item-topbar">
+                          <div className="crm-item-header-left">
+                            <div className="crm-item-icon-box">
+                              {getItemIcon(item)}
+                            </div>
+                            <div>
+                              <span className="crm-item-name">{item.name}</span>
+                              <div className="crm-item-badges-row">
+                                <span className={`crm-type-badge ${item.type}`}>
+                                  {item.type === 'counter' ? 'Contador' : item.type === 'rating' ? 'Calificación / Ads' : 'Checkbox'}
+                                </span>
+                                {linkedInstance && (
+                                  <span className="crm-tag-linked" title={`Vinculado a: ${linkedInstance.instanceName}`}>
+                                    <Link2 size={11} /> {linkedInstance.instanceName}
+                                  </span>
+                                )}
+                                {item.isGate && (
+                                  <span className="crm-tag-gate" title="Punto de Bloqueo activo">
+                                    <Lock size={11} /> Gate Activo
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="crm-item-header-actions">
+                            <button
+                              type="button"
+                              className="crm-item-action-icon edit"
+                              onClick={() => setEditingItem(item)}
+                              title="Editar configuración o nombre"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="crm-item-action-icon delete"
+                              onClick={() => handleDeleteItem(item.id)}
+                              title="Eliminar requerimiento"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* ITEM CONTROLS BY TYPE */}
+                        {item.type === 'counter' && (
+                          <div className="crm-item-counter-body">
+                            <div className="crm-counter-controls">
+                              <button
+                                type="button"
+                                className="crm-counter-btn"
+                                onClick={() => handleUpdateCount(item.id, 'current', (item.current || 0) - 1)}
+                                disabled={(item.current || 0) <= 0}
+                              >
+                                -
+                              </button>
+                              <input 
+                                type="number" 
+                                className="crm-counter-input"
+                                value={item.current || 0}
+                                min="0"
+                                onChange={e => handleUpdateCount(item.id, 'current', e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                className="crm-counter-btn"
+                                onClick={() => handleUpdateCount(item.id, 'current', (item.current || 0) + 1)}
+                              >
+                                +
+                              </button>
+                              <span className="crm-counter-divider">/</span>
+                              <div className="crm-counter-target-box">
+                                <span className="crm-counter-target-label">Meta:</span>
+                                <input 
+                                  type="number"
+                                  className="crm-counter-target-input"
+                                  value={item.target || 1}
+                                  min="1"
+                                  onChange={e => handleUpdateCount(item.id, 'target', e.target.value)}
+                                  title="Meta a alcanzar"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="crm-item-prog-bar-bg">
+                              <div 
+                                className="crm-item-prog-bar-fill"
+                                style={{
+                                  width: `${Math.min(100, Math.round(((item.current || 0) / (item.target || 1)) * 100))}%`
+                                }}
+                              />
+                            </div>
+
+                            <div className="crm-counter-footer">
+                              <span className="crm-counter-status-text">
+                                {isDone ? '🎉 Meta completada' : `${Math.max(0, (item.target || 1) - (item.current || 0))} restantes`}
+                              </span>
+                              <label className="crm-fast-toggle-check">
+                                <input 
+                                  type="checkbox"
+                                  checked={!!item.checked}
+                                  onChange={() => handleToggleCheck(item.id)}
+                                />
+                                <span>Marcar Cumplido</span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        {item.type === 'boolean' && (
+                          <div className="crm-item-boolean-body">
+                            <label className="crm-boolean-toggle-label">
+                              <input 
+                                type="checkbox"
+                                className="crm-boolean-input"
+                                checked={!!item.checked}
+                                onChange={() => handleToggleCheck(item.id)}
+                              />
+                              <span className="crm-boolean-custom-box">
+                                {item.checked && <Check size={16} strokeWidth={3} />}
+                              </span>
+                              <span className="crm-boolean-text">
+                                {item.checked ? 'Completado y Verificado' : 'Pendiente de realizar'}
+                              </span>
+                            </label>
+                          </div>
+                        )}
+
+                        {item.type === 'rating' && (
+                          <div className="crm-item-rating-body">
+                            <div className="crm-rating-options">
+                              {['Excelente', 'Bueno', 'Regular', 'Malo', 'No incluido'].map((r) => {
+                                const isSelected = (item.rating || 'Excelente') === r;
+                                return (
+                                  <button
+                                    key={r}
+                                    type="button"
+                                    className={`crm-rating-chip ${r.toLowerCase().replace(/\s+/g, '-')} ${isSelected ? 'active' : ''}`}
+                                    onClick={() => handleRatingChange(item.id, r)}
+                                  >
+                                    {r}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Gate lock alert if blocked by an execution */}
+                        {execBlockInfo.isBlocked && (
+                          <div className="crm-locked-alert">
+                            <Lock size={12} /> Bloqueado: Esperando finalización de "{execBlockInfo.instance?.instanceName}" ({execBlockInfo.remainingSteps} pasos pendientes)
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: DETALLES & CONTACTO */}
+          {activeTab === 'detalles' && (
+            <div className="crm-details-view">
+              <div className="crm-details-grid">
+                
+                {/* Contact Information Card */}
+                <div className="crm-card">
+                  <div className="crm-card-header">
+                    <User size={18} color="#27BEA5" />
+                    <h3>Información de Contacto</h3>
+                  </div>
+                  <div className="crm-card-body">
+                    <div className="crm-field-group">
+                      <label>Nombre del Cliente</label>
+                      <input 
+                        type="text" 
+                        className="crm-input" 
+                        value={client.name} 
+                        readOnly 
+                        style={{ background: '#F8FAFC', color: '#64748B' }}
+                      />
                     </div>
 
-                    {newItemType === 'counter' && (
-                      <div className="checklist-target-input">
-                        <label>Meta:</label>
+                    <div className="crm-field-group">
+                      <label>Correo Electrónico</label>
+                      <div className="crm-input-icon-wrap">
+                        <Mail size={16} className="crm-input-icon" />
                         <input 
-                          type="number" 
-                          min="1" 
-                          value={newItemTarget} 
-                          onChange={e => setNewItemTarget(e.target.value)} 
+                          type="email" 
+                          className="crm-input has-icon" 
+                          placeholder="contacto@cliente.com"
+                          value={clientEmail}
+                          onChange={e => setClientEmail(e.target.value)}
                         />
                       </div>
-                    )}
-                  </div>
-
-                  <div className="checklist-gate-config-box">
-                    <div className="checklist-gate-box-title">
-                      <Link2 size={13} /> Vinculación con Ejecuciones y Bloqueos (Opcional)
                     </div>
 
-                    <div className="checklist-gate-field">
-                      <label>Vincular a Ejecución:</label>
+                    <div className="crm-field-group">
+                      <label>Teléfono / WhatsApp</label>
+                      <div className="crm-input-icon-wrap">
+                        <Phone size={16} className="crm-input-icon" />
+                        <input 
+                          type="tel" 
+                          className="crm-input has-icon" 
+                          placeholder="+34 600 000 000"
+                          value={clientPhone}
+                          onChange={e => setClientPhone(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="crm-field-group">
+                      <label>Carpeta de Google Drive (URL o ID)</label>
+                      <div className="crm-input-icon-wrap">
+                        <Folder size={16} className="crm-input-icon" />
+                        <input 
+                          type="text" 
+                          className="crm-input has-icon" 
+                          placeholder="https://drive.google.com/drive/folders/..."
+                          value={clientDriveUrl}
+                          onChange={e => setClientDriveUrl(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* State & Summary Card */}
+                <div className="crm-card">
+                  <div className="crm-card-header">
+                    <ShieldAlert size={18} color="#27BEA5" />
+                    <h3>Estado & Resumen Semáforo</h3>
+                  </div>
+                  <div className="crm-card-body">
+                    <div className="crm-field-group">
+                      <label>Etapa del Pipeline</label>
                       <select 
-                        className="checklist-gate-select"
-                        value={newItemAssociatedInstanceId}
-                        onChange={e => setNewItemAssociatedInstanceId(e.target.value)}
+                        className="crm-select"
+                        value={clientStage}
+                        onChange={e => setClientStage(e.target.value)}
                       >
-                        <option value="">Ninguna (Requerimiento general del cliente)</option>
-                        {clientInstances.map(inst => {
-                          const steps = inst.steps || [];
-                          const done = steps.filter(s => s.isCompleted).length;
-                          return (
-                            <option key={inst.id} value={inst.id}>
-                              {inst.instanceName} ({done}/{steps.length} pasos)
-                            </option>
-                          );
-                        })}
+                        {CLIENT_STAGES.map(st => (
+                          <option key={st} value={st}>{st}</option>
+                        ))}
                       </select>
                     </div>
 
-                    <label className="checklist-gate-checkbox-label">
-                      <input 
-                        type="checkbox" 
-                        checked={newItemIsGate} 
-                        onChange={e => setNewItemIsGate(e.target.checked)} 
+                    <div className="crm-summary-box" style={{ background: semaforo.bg, borderColor: semaforo.badgeBorder }}>
+                      <div className="crm-summary-pct" style={{ color: semaforo.color }}>
+                        {semaforo.percentage}%
+                      </div>
+                      <div className="crm-summary-text">
+                        <strong style={{ color: semaforo.color }}>Semáforo: {semaforo.statusLabel}</strong>
+                        <p>{semaforo.completedCount} de {semaforo.totalCount} requerimientos cumplidos.</p>
+                      </div>
+                    </div>
+
+                    <div className="crm-field-group" style={{ marginTop: '1.25rem' }}>
+                      <label>Notas del Cliente</label>
+                      <textarea
+                        className="crm-textarea"
+                        rows={4}
+                        placeholder="Escribe notas sobre especificaciones del cliente, acuerdos o detalles operativos..."
+                        value={clientNotes}
+                        onChange={e => setClientNotes(e.target.value)}
                       />
-                      <span>🔒 Activar como Punto de Bloqueo (Gate)</span>
-                    </label>
-
-                    {newItemIsGate && (
-                      <div className="checklist-gate-type-options">
-                        <label className={`gate-type-option ${newItemGateType === 'blocks_execution' ? 'selected' : ''}`}>
-                          <input 
-                            type="radio" 
-                            name="newGateType" 
-                            value="blocks_execution" 
-                            checked={newItemGateType === 'blocks_execution'} 
-                            onChange={() => setNewItemGateType('blocks_execution')} 
-                          />
-                          <div>
-                            <strong>⛔ Bloquear avance del proceso</strong>
-                            <span>El proceso no podrá avanzar ni completar pasos hasta que este ítem esté marcado como cumplido.</span>
-                          </div>
-                        </label>
-
-                        <label className={`gate-type-option ${newItemGateType === 'blocked_by_execution' ? 'selected' : ''}`}>
-                          <input 
-                            type="radio" 
-                            name="newGateType" 
-                            value="blocked_by_execution" 
-                            checked={newItemGateType === 'blocked_by_execution'} 
-                            onChange={() => setNewItemGateType('blocked_by_execution')} 
-                          />
-                          <div>
-                            <strong>🔒 Bloquear este requerimiento</strong>
-                            <span>Este requerimiento no podrá marcarse como completado hasta que la ejecución finalice al 100%.</span>
-                          </div>
-                        </label>
-                      </div>
-                    )}
+                    </div>
                   </div>
+                </div>
 
-                  <div className="checklist-new-item-actions">
-                    <button type="submit" className="btn btn-primary btn-sm" disabled={!newItemName.trim()}>
-                      Guardar Elemento
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: PROCESOS ACTIVOS */}
+          {activeTab === 'active' && (
+            <div className="crm-executions-view">
+              {activeInstances.length === 0 ? (
+                <div className="crm-empty-state-card">
+                  <Rocket size={32} color="#94A3B8" />
+                  <h3 className="crm-empty-title">No hay procesos activos</h3>
+                  <p className="crm-empty-desc">
+                    Actualmente no hay ninguna ejecución en curso asociada a este cliente.
+                  </p>
+                  {onLaunchForClient && (
+                    <button 
+                      type="button" 
+                      className="crm-empty-btn-primary"
+                      onClick={() => onLaunchForClient(client)}
+                    >
+                      <Rocket size={16} /> Lanzar Nuevo Proceso
                     </button>
-                  </div>
-                </form>
-              )}
+                  )}
+                </div>
+              ) : (
+                <div className="crm-executions-list">
+                  {activeInstances.map(inst => {
+                    const steps = inst.steps || [];
+                    const completed = steps.filter(s => s.isCompleted).length;
+                    const pct = steps.length > 0 ? Math.round((completed / steps.length) * 100) : 0;
 
-              {/* Dynamic Items List */}
-              {items.map((item) => {
-                const isDone = isChecklistItemDone(item);
-                const execBlockInfo = isChecklistItemBlockedByExecution(item, instances);
-                const linkedInstance = clientInstances.find(i => String(i.id) === String(item.associatedInstanceId));
-
-                return (
-                  <div 
-                    key={item.id} 
-                    className={`checklist-item-card ${isDone ? 'completed' : ''} ${item.type} ${execBlockInfo.isBlocked ? 'is-locked-by-exec' : ''}`}
-                  >
-                    {item.type !== 'rating' ? (
-                      <>
-                        <div className="checklist-item-main">
-                          <label className="checklist-checkbox-wrapper">
-                            <input 
-                              type="checkbox" 
-                              checked={isDone} 
-                              onChange={() => handleToggleCheck(item.id)} 
-                            />
-                            <span className={`checklist-custom-box ${execBlockInfo.isBlocked ? 'locked' : ''}`}>
-                              {execBlockInfo.isBlocked ? (
-                                <Lock size={13} color="#D97706" />
-                              ) : (
-                                isDone && <CheckCircle2 size={16} color="#FFFFFF" />
-                              )}
-                            </span>
-                            <span className="checklist-item-name">
-                              {getItemIcon(item)} {item.name}
-                            </span>
-                          </label>
-
-                          <div className="checklist-item-actions-right">
-                            {item.type === 'counter' && (
-                              <div className="checklist-item-counter">
-                                <span>{item.current || 0} / {item.target || 1}</span>
-                                <button 
-                                  type="button"
-                                  className="checklist-expand-btn" 
-                                  onClick={() => setExpandedSection(expandedSection === item.id ? null : item.id)}
-                                >
-                                  {expandedSection === item.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                </button>
-                              </div>
-                            )}
-
-                            <button 
-                              type="button" 
-                              className={`checklist-settings-item-btn ${editSettingsItemId === item.id ? 'active' : ''}`}
-                              onClick={() => setEditSettingsItemId(editSettingsItemId === item.id ? null : item.id)}
-                              title="Configurar vinculación y punto de bloqueo"
-                            >
-                              <SlidersHorizontal size={14} />
-                            </button>
-
-                            <button 
-                              type="button" 
-                              className="checklist-delete-item-btn" 
-                              onClick={() => handleDeleteItem(item.id)}
-                              title="Eliminar elemento"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                    return (
+                      <div key={inst.id} className="crm-execution-card">
+                        <div className="crm-execution-main">
+                          <h4 className="crm-execution-title">{inst.instanceName}</h4>
+                          <span className="crm-execution-template">Plantilla: {inst.title}</span>
+                          <div className="crm-execution-prog-bar-wrap">
+                            <div className="crm-execution-prog-bar" style={{ width: `${pct}%` }} />
                           </div>
+                          <span className="crm-execution-prog-label">{completed} de {steps.length} pasos ({pct}%)</span>
                         </div>
-
-                        {/* Metadata Tags for Linked Executions and Gates */}
-                        {(item.associatedInstanceId || item.isGate) && (
-                          <div className="checklist-item-meta-tags">
-                            {item.associatedInstanceId && (
-                              <span className="checklist-tag-linked" title={`Asociado a: ${linkedInstance ? linkedInstance.instanceName : 'Ejecución'}`}>
-                                <Link2 size={11} /> {linkedInstance ? linkedInstance.instanceName : 'Ejecución'}
-                              </span>
-                            )}
-                            {item.isGate && (!item.gateType || item.gateType === 'blocks_execution') && (
-                              <span className="checklist-tag-gate-block" title="Bloquea el avance del proceso hasta completar este requerimiento">
-                                <ShieldAlert size={11} /> Bloquea Proceso
-                              </span>
-                            )}
-                            {item.isGate && item.gateType === 'blocked_by_execution' && (
-                              <span 
-                                className={`checklist-tag-gate-req ${execBlockInfo.isBlocked ? 'blocked' : 'unlocked'}`}
-                                title={execBlockInfo.isBlocked ? `Bloqueado hasta finalizar ${execBlockInfo.instance?.instanceName}` : 'Desbloqueado (Proceso finalizado)'}
-                              >
-                                {execBlockInfo.isBlocked ? <Lock size={11} /> : <Unlock size={11} />}
-                                {execBlockInfo.isBlocked ? `Bloqueado (${execBlockInfo.remainingSteps} pasos rest.)` : 'Desbloqueado'}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {item.type === 'counter' && expandedSection === item.id && (
-                          <div className="checklist-expand-panel">
-                            <div className="checklist-input-group">
-                              <label>Completados:</label>
-                              <input 
-                                type="number" 
-                                min="0"
-                                value={item.current ?? 0} 
-                                onChange={e => handleUpdateCount(item.id, 'current', e.target.value)}
-                              />
-                            </div>
-                            <div className="checklist-input-group">
-                              <label>Meta total:</label>
-                              <input 
-                                type="number" 
-                                min="1"
-                                value={item.target ?? 1} 
-                                onChange={e => handleUpdateCount(item.id, 'target', e.target.value)}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="checklist-rating-container">
-                        <div className="checklist-rating-header">
-                          <span className="checklist-item-name">
-                            {getItemIcon(item)} {item.name}
-                          </span>
-                          <div className="checklist-item-actions-right">
-                            <span className="checklist-rating-selected-badge">
-                              {item.rating || 'Excelente'}
-                            </span>
-                            <button 
-                              type="button" 
-                              className={`checklist-settings-item-btn ${editSettingsItemId === item.id ? 'active' : ''}`}
-                              onClick={() => setEditSettingsItemId(editSettingsItemId === item.id ? null : item.id)}
-                              title="Configurar vinculación y punto de bloqueo"
-                            >
-                              <SlidersHorizontal size={14} />
-                            </button>
-                            <button 
-                              type="button" 
-                              className="checklist-delete-item-btn" 
-                              onClick={() => handleDeleteItem(item.id)}
-                              title="Eliminar elemento"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Metadata Tags for Linked Executions and Gates */}
-                        {(item.associatedInstanceId || item.isGate) && (
-                          <div className="checklist-item-meta-tags">
-                            {item.associatedInstanceId && (
-                              <span className="checklist-tag-linked" title={`Asociado a: ${linkedInstance ? linkedInstance.instanceName : 'Ejecución'}`}>
-                                <Link2 size={11} /> {linkedInstance ? linkedInstance.instanceName : 'Ejecución'}
-                              </span>
-                            )}
-                            {item.isGate && (!item.gateType || item.gateType === 'blocks_execution') && (
-                              <span className="checklist-tag-gate-block" title="Bloquea el avance del proceso hasta completar este requerimiento">
-                                <ShieldAlert size={11} /> Bloquea Proceso
-                              </span>
-                            )}
-                            {item.isGate && item.gateType === 'blocked_by_execution' && (
-                              <span 
-                                className={`checklist-tag-gate-req ${execBlockInfo.isBlocked ? 'blocked' : 'unlocked'}`}
-                                title={execBlockInfo.isBlocked ? `Bloqueado hasta finalizar ${execBlockInfo.instance?.instanceName}` : 'Desbloqueado (Proceso finalizado)'}
-                              >
-                                {execBlockInfo.isBlocked ? <Lock size={11} /> : <Unlock size={11} />}
-                                {execBlockInfo.isBlocked ? `Bloqueado (${execBlockInfo.remainingSteps} pasos rest.)` : 'Desbloqueado'}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="checklist-ads-options">
-                          {['Excelente', 'Bueno', 'Normal', 'Malo', 'No incluido'].map((opt) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              className={`checklist-ads-btn ${item.rating === opt ? 'active' : ''} ${opt.toLowerCase().replace(' ', '-')}`}
-                              onClick={() => handleRatingChange(item.id, opt)}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Inline Settings Configuration Drawer */}
-                    {editSettingsItemId === item.id && (
-                      <div className="checklist-item-inline-settings">
-                        <div className="checklist-gate-box-title">
-                          <SlidersHorizontal size={13} /> Configuración de Ejecución & Bloqueo
-                        </div>
-
-                        <div className="checklist-gate-field">
-                          <label>Vincular a Ejecución:</label>
-                          <select 
-                            className="checklist-gate-select"
-                            value={item.associatedInstanceId || ''}
-                            onChange={e => handleUpdateItemConfig(item.id, { associatedInstanceId: e.target.value || null })}
+                        <div className="crm-execution-action">
+                          <button 
+                            type="button" 
+                            className="crm-btn-open-exec"
+                            onClick={() => {
+                              onClose();
+                              if (onOpenInstance) onOpenInstance(inst.id);
+                            }}
                           >
-                            <option value="">Ninguna (Requerimiento general del cliente)</option>
-                            {clientInstances.map(inst => {
-                              const steps = inst.steps || [];
-                              const done = steps.filter(s => s.isCompleted).length;
-                              return (
-                                <option key={inst.id} value={inst.id}>
-                                  {inst.instanceName} ({done}/{steps.length} pasos)
-                                </option>
-                              );
-                            })}
-                          </select>
+                            Abrir Proceso <ArrowRight size={14} />
+                          </button>
                         </div>
-
-                        <label className="checklist-gate-checkbox-label">
-                          <input 
-                            type="checkbox" 
-                            checked={!!item.isGate} 
-                            onChange={e => handleUpdateItemConfig(item.id, { isGate: e.target.checked, gateType: item.gateType || 'blocks_execution' })} 
-                          />
-                          <span>🔒 Activar como Punto de Bloqueo (Gate)</span>
-                        </label>
-
-                        {item.isGate && (
-                          <div className="checklist-gate-type-options">
-                            <label className={`gate-type-option ${(!item.gateType || item.gateType === 'blocks_execution') ? 'selected' : ''}`}>
-                              <input 
-                                type="radio" 
-                                name={`gateType_${item.id}`} 
-                                value="blocks_execution" 
-                                checked={!item.gateType || item.gateType === 'blocks_execution'} 
-                                onChange={() => handleUpdateItemConfig(item.id, { gateType: 'blocks_execution' })} 
-                              />
-                              <div>
-                                <strong>⛔ Bloquear avance del proceso</strong>
-                                <span>No se podrán completar pasos de la ejecución hasta que este ítem esté completado.</span>
-                              </div>
-                            </label>
-
-                            <label className={`gate-type-option ${item.gateType === 'blocked_by_execution' ? 'selected' : ''}`}>
-                              <input 
-                                type="radio" 
-                                name={`gateType_${item.id}`} 
-                                value="blocked_by_execution" 
-                                checked={item.gateType === 'blocked_by_execution'} 
-                                onChange={() => handleUpdateItemConfig(item.id, { gateType: 'blocked_by_execution' })} 
-                              />
-                              <div>
-                                <strong>🔒 Bloquear este requerimiento</strong>
-                                <span>Este requerimiento no podrá marcarse como completado hasta que la ejecución finalice al 100%.</span>
-                              </div>
-                            </label>
-                          </div>
-                        )}
                       </div>
-                    )}
-
-                  </div>
-                );
-              })}
-
-              {items.length === 0 && (
-                <div className="checklist-empty-state">
-                  <p>No hay elementos en el checklist de este cliente.</p>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setItems(normalizeChecklistItems(null))}
-                  >
-                    Cargar plantilla predeterminada
-                  </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
+          )}
 
-            {/* Modal Footer Actions */}
-            <div className="checklist-modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSaving}>
-                Cancelar
-              </button>
-              <button type="button" className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
-              </button>
+          {/* TAB 4: HISTORIAL COMPLETADO */}
+          {activeTab === 'completed' && (
+            <div className="crm-executions-view">
+              {completedInstances.length === 0 ? (
+                <div className="crm-empty-state-card">
+                  <CheckCircle2 size={32} color="#94A3B8" />
+                  <h3 className="crm-empty-title">Sin historial de procesos completados</h3>
+                  <p className="crm-empty-desc">
+                    Las ejecuciones que finalicen todos sus pasos aparecerán listadas aquí.
+                  </p>
+                </div>
+              ) : (
+                <div className="crm-executions-list">
+                  {completedInstances.map(inst => {
+                    return (
+                      <div key={inst.id} className="crm-execution-card completed">
+                        <div className="crm-execution-main">
+                          <h4 className="crm-execution-title">{inst.instanceName}</h4>
+                          <span className="crm-execution-template">Plantilla: {inst.title}</span>
+                          <span className="crm-execution-badge-done">✅ Finalizado al 100%</span>
+                        </div>
+                        <div className="crm-execution-action">
+                          <button 
+                            type="button" 
+                            className="crm-btn-open-exec"
+                            onClick={() => {
+                              onClose();
+                              if (onOpenInstance) onOpenInstance(inst.id);
+                            }}
+                          >
+                            Ver Detalles <ArrowRight size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </>
-        )}
+          )}
 
-        {/* TAB 2: EJECUCIONES ACTIVAS */}
-        {activeTab === 'active' && (
-          <div className="checklist-modal-body">
-            {activeInstances.length === 0 ? (
-              <div className="checklist-empty-state">
-                <Rocket size={40} color="var(--color-primary)" />
-                <h4>No hay ejecuciones activas para este cliente</h4>
-                <p>Todas las tareas se encuentran al día o no se ha iniciado un proceso reciente.</p>
-                {onLaunchForClient && (
-                  <button 
-                    type="button" 
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      onClose();
-                      onLaunchForClient(client);
-                    }}
-                  >
-                    <Plus size={14} /> Iniciar Nuevo Proceso
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="client-instances-list">
-                {activeInstances.map((inst) => {
-                  const steps = inst.steps || [];
-                  const doneCount = steps.filter(s => s.isCompleted).length;
-                  const total = steps.length;
-                  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
-                  const currentStep = steps.find(s => !s.isCompleted);
+        </div>
 
-                  return (
-                    <div key={inst.id} className="client-instance-card">
-                      <div className="client-instance-header">
-                        <div>
-                          <h4 className="client-instance-title">{inst.instanceName}</h4>
-                          <span className="client-instance-template">{inst.title}</span>
-                        </div>
-                        <div className="client-instance-badges">
-                          <span className="client-kanban-status-badge">{inst.status || 'Por hacer'}</span>
-                          <span className={`client-priority-badge ${(inst.priority || 'media').toLowerCase()}`}>
-                            {inst.priority || 'Media'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="client-instance-progress">
-                        <div className="client-progress-header">
-                          <span>{doneCount} de {total} pasos ({pct}%)</span>
-                          {currentStep && (
-                            <span className="client-next-step-hint">
-                              Paso actual: <strong>{currentStep.title}</strong>
-                            </span>
-                          )}
-                        </div>
-                        <div className="client-progress-track">
-                          <div className="client-progress-fill" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-
-                      <div className="client-instance-footer">
-                        <button 
-                          type="button" 
-                          className="client-open-exec-btn"
-                          onClick={() => {
-                            onClose();
-                            if (onOpenInstance) onOpenInstance(inst.id);
-                          }}
-                        >
-                          Ver Detalle del Proceso <ArrowRight size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        {/* ═══════════════════════════════════════════════════════════════
+            FOOTER: Save & Cancel
+        ═══════════════════════════════════════════════════════════════ */}
+        <div className="crm-modal-footer">
+          <div className="crm-footer-status">
+            <Info size={14} />
+            <span>Guarda tus cambios para actualizar el semáforo y los datos del cliente.</span>
           </div>
-        )}
-
-        {/* TAB 3: EJECUCIONES COMPLETADAS */}
-        {activeTab === 'completed' && (
-          <div className="checklist-modal-body">
-            {completedInstances.length === 0 ? (
-              <div className="checklist-empty-state">
-                <CheckCircle2 size={40} color="#10B981" />
-                <h4>No hay ejecuciones completadas aún</h4>
-                <p>Las ejecuciones finalizadas al 100% se archivarán aquí como historial de entrega.</p>
-              </div>
-            ) : (
-              <div className="client-instances-list">
-                {completedInstances.map((inst) => {
-                  const steps = inst.steps || [];
-
-                  return (
-                    <div key={inst.id} className="client-instance-card completed">
-                      <div className="client-instance-header">
-                        <div>
-                          <h4 className="client-instance-title">{inst.instanceName}</h4>
-                          <span className="client-instance-template">{inst.title}</span>
-                        </div>
-                        <span className="client-completed-badge">
-                          <CheckCircle2 size={13} /> {steps.length} pasos completados
-                        </span>
-                      </div>
-
-                      <div className="client-instance-footer">
-                        <button 
-                          type="button" 
-                          className="client-open-exec-btn"
-                          onClick={() => {
-                            onClose();
-                            if (onOpenInstance) onOpenInstance(inst.id);
-                          }}
-                        >
-                          Consultar Historial <ArrowRight size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <div className="crm-footer-actions">
+            <button type="button" className="crm-btn-cancel" onClick={onClose}>
+              Cerrar
+            </button>
+            <button 
+              type="button" 
+              className="crm-btn-save" 
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+            </button>
           </div>
-        )}
+        </div>
 
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          SUB-MODAL: AGREGAR REQUERIMIENTO
+      ═══════════════════════════════════════════════════════════════ */}
+      {showAddModal && (
+        <div className="crm-submodal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="crm-submodal-card" onClick={e => e.stopPropagation()}>
+            <div className="crm-submodal-header">
+              <h3>Agregar Nuevo Requerimiento</h3>
+              <button className="crm-submodal-close" onClick={() => setShowAddModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddItemSubmit} className="crm-submodal-body">
+              <div className="crm-field-group">
+                <label>Nombre del Requerimiento *</label>
+                <input 
+                  type="text" 
+                  className="crm-input" 
+                  placeholder="ej. Reels de Instagram, Factura de Anticipo, Campaña de Ads..."
+                  value={newItemName}
+                  onChange={e => setNewItemName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="crm-field-group">
+                <label>Tipo de Requerimiento</label>
+                <div className="crm-type-selector-grid">
+                  <div 
+                    className={`crm-type-opt ${newItemType === 'counter' ? 'selected' : ''}`}
+                    onClick={() => setNewItemType('counter')}
+                  >
+                    <Hash size={20} />
+                    <strong>Contador con Meta</strong>
+                    <span>Para contar entregables (ej. 6 Videos, 12 Posts)</span>
+                  </div>
+
+                  <div 
+                    className={`crm-type-opt ${newItemType === 'boolean' ? 'selected' : ''}`}
+                    onClick={() => setNewItemType('boolean')}
+                  >
+                    <CheckSquare size={20} />
+                    <strong>Checkbox Simple</strong>
+                    <span>Para verificar tareas (ej. Factura Paga, Brief Aprobado)</span>
+                  </div>
+
+                  <div 
+                    className={`crm-type-opt ${newItemType === 'rating' ? 'selected' : ''}`}
+                    onClick={() => setNewItemType('rating')}
+                  >
+                    <Star size={20} />
+                    <strong>Calificación / Ads</strong>
+                    <span>Excelente, Bueno, Regular o Malo (afecta semáforo)</span>
+                  </div>
+                </div>
+              </div>
+
+              {newItemType === 'counter' && (
+                <div className="crm-field-group">
+                  <label>Meta Numérica a Alcanzar *</label>
+                  <input 
+                    type="number" 
+                    className="crm-input" 
+                    min="1"
+                    value={newItemTarget}
+                    onChange={e => setNewItemTarget(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Gate / Execution Link */}
+              <div className="crm-gate-section">
+                <div className="crm-gate-section-title">
+                  <Link2 size={14} /> Vinculación con Procesos y Bloqueos (Opcional)
+                </div>
+
+                <div className="crm-field-group" style={{ marginBottom: '0.75rem' }}>
+                  <label>Vincular a un Proceso:</label>
+                  <select 
+                    className="crm-select"
+                    value={newItemAssociatedInstanceId}
+                    onChange={e => setNewItemAssociatedInstanceId(e.target.value)}
+                  >
+                    <option value="">Ninguno (Requerimiento general del cliente)</option>
+                    {clientInstances.map(inst => (
+                      <option key={inst.id} value={inst.id}>
+                        {inst.instanceName} ({inst.steps?.filter(s => s.isCompleted).length || 0}/{inst.steps?.length || 0} pasos)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <label className="crm-gate-toggle-row">
+                  <input 
+                    type="checkbox"
+                    checked={newItemIsGate}
+                    onChange={e => setNewItemIsGate(e.target.checked)}
+                  />
+                  <span>Activar como Punto de Bloqueo (Gate)</span>
+                </label>
+
+                {newItemIsGate && (
+                  <div className="crm-gate-options-row">
+                    <label className={`crm-gate-radio ${newItemGateType === 'blocks_execution' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="addGateType" 
+                        value="blocks_execution"
+                        checked={newItemGateType === 'blocks_execution'}
+                        onChange={() => setNewItemGateType('blocks_execution')}
+                      />
+                      <div>
+                        <strong>⛔ Bloquear Proceso</strong>
+                        <span>El proceso no podrá avanzar hasta cumplir este requerimiento.</span>
+                      </div>
+                    </label>
+
+                    <label className={`crm-gate-radio ${newItemGateType === 'blocked_by_execution' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="addGateType" 
+                        value="blocked_by_execution"
+                        checked={newItemGateType === 'blocked_by_execution'}
+                        onChange={() => setNewItemGateType('blocked_by_execution')}
+                      />
+                      <div>
+                        <strong>🔒 Bloquear Requerimiento</strong>
+                        <span>Este ítem no podrá marcarse hasta que el proceso finalice al 100%.</span>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="crm-submodal-actions">
+                <button type="button" className="crm-btn-cancel" onClick={() => setShowAddModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="crm-btn-save" disabled={!newItemName.trim()}>
+                  Guardar Requerimiento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════
+          SUB-MODAL: EDITAR REQUERIMIENTO EXISTENTE
+      ═══════════════════════════════════════════════════════════════ */}
+      {editingItem && (
+        <div className="crm-submodal-overlay" onClick={() => setEditingItem(null)}>
+          <div className="crm-submodal-card" onClick={e => e.stopPropagation()}>
+            <div className="crm-submodal-header">
+              <h3>Editar Requerimiento</h3>
+              <button className="crm-submodal-close" onClick={() => setEditingItem(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                setEditingItem(null);
+              }} 
+              className="crm-submodal-body"
+            >
+              <div className="crm-field-group">
+                <label>Nombre del Requerimiento</label>
+                <input 
+                  type="text" 
+                  className="crm-input" 
+                  value={editingItem.name || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditingItem(prev => ({ ...prev, name: val }));
+                    setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, name: val } : it));
+                  }}
+                />
+              </div>
+
+              {editingItem.type === 'counter' && (
+                <div className="crm-field-group">
+                  <label>Meta Numérica</label>
+                  <input 
+                    type="number" 
+                    className="crm-input" 
+                    min="1"
+                    value={editingItem.target || 1}
+                    onChange={e => {
+                      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                      setEditingItem(prev => ({ ...prev, target: val }));
+                      setItems(prev => prev.map(it => it.id === editingItem.id ? { 
+                        ...it, 
+                        target: val,
+                        checked: (it.current || 0) >= val
+                      } : it));
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Gate / Execution Link */}
+              <div className="crm-gate-section">
+                <div className="crm-gate-section-title">
+                  <Link2 size={14} /> Vinculación con Procesos y Bloqueos
+                </div>
+
+                <div className="crm-field-group" style={{ marginBottom: '0.75rem' }}>
+                  <label>Vincular a un Proceso:</label>
+                  <select 
+                    className="crm-select"
+                    value={editingItem.associatedInstanceId || ''}
+                    onChange={e => {
+                      const val = e.target.value || null;
+                      setEditingItem(prev => ({ ...prev, associatedInstanceId: val }));
+                      setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, associatedInstanceId: val } : it));
+                    }}
+                  >
+                    <option value="">Ninguno (General)</option>
+                    {clientInstances.map(inst => (
+                      <option key={inst.id} value={inst.id}>
+                        {inst.instanceName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <label className="crm-gate-toggle-row">
+                  <input 
+                    type="checkbox"
+                    checked={!!editingItem.isGate}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setEditingItem(prev => ({ ...prev, isGate: val }));
+                      setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, isGate: val } : it));
+                    }}
+                  />
+                  <span>Activar como Punto de Bloqueo (Gate)</span>
+                </label>
+
+                {editingItem.isGate && (
+                  <div className="crm-gate-options-row">
+                    <label className={`crm-gate-radio ${editingItem.gateType !== 'blocked_by_execution' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="editGateType" 
+                        value="blocks_execution"
+                        checked={editingItem.gateType !== 'blocked_by_execution'}
+                        onChange={() => {
+                          setEditingItem(prev => ({ ...prev, gateType: 'blocks_execution' }));
+                          setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, gateType: 'blocks_execution' } : it));
+                        }}
+                      />
+                      <div>
+                        <strong>⛔ Bloquear Proceso</strong>
+                        <span>El proceso no podrá avanzar hasta cumplir este requerimiento.</span>
+                      </div>
+                    </label>
+
+                    <label className={`crm-gate-radio ${editingItem.gateType === 'blocked_by_execution' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="editGateType" 
+                        value="blocked_by_execution"
+                        checked={editingItem.gateType === 'blocked_by_execution'}
+                        onChange={() => {
+                          setEditingItem(prev => ({ ...prev, gateType: 'blocked_by_execution' }));
+                          setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, gateType: 'blocked_by_execution' } : it));
+                        }}
+                      />
+                      <div>
+                        <strong>🔒 Bloquear Requerimiento</strong>
+                        <span>Este ítem no podrá marcarse hasta que el proceso finalice al 100%.</span>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="crm-submodal-actions">
+                <button type="button" className="crm-btn-cancel" onClick={() => setEditingItem(null)}>
+                  Cerrar
+                </button>
+                <button type="submit" className="crm-btn-save">
+                  Listo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

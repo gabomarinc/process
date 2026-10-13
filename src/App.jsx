@@ -512,9 +512,9 @@ function App() {
   // Client Checklist Modal State
   const [checklistModalClient, setChecklistModalClient] = useState(null);
 
-  const handleSaveClientChecklist = async (clientId, newChecklist, newEmail = undefined) => {
+  const handleSaveClientChecklist = async (clientId, newChecklist, newEmail = undefined, extraData = {}) => {
     try {
-      const payload = { checklist: newChecklist };
+      const payload = { checklist: newChecklist, ...extraData };
       if (newEmail !== undefined) payload.email = newEmail;
 
       const response = await fetch(`/api/clients/${clientId}`, {
@@ -538,11 +538,21 @@ function App() {
         });
       }
 
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist, email: newEmail !== undefined ? newEmail : c.email } : c));
-      addToast('Datos y semáforo del cliente actualizados', 'success');
+      setClients(prev => prev.map(c => c.id === clientId ? { 
+        ...c, 
+        checklist: newChecklist, 
+        email: newEmail !== undefined ? newEmail : c.email,
+        ...extraData
+      } : c));
+      addToast('Datos y perfil del cliente actualizados', 'success');
     } catch (err) {
       console.error('Error updating client:', err);
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, checklist: newChecklist, email: newEmail !== undefined ? newEmail : c.email } : c));
+      setClients(prev => prev.map(c => c.id === clientId ? { 
+        ...c, 
+        checklist: newChecklist, 
+        email: newEmail !== undefined ? newEmail : c.email,
+        ...extraData
+      } : c));
       addToast('Datos actualizados localmente', 'info');
     }
   };

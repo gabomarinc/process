@@ -7,7 +7,7 @@ export const DEFAULT_CHECKLIST_ITEMS = [
 ];
 
 export function normalizeChecklistItems(checklist) {
-  if (!checklist) return DEFAULT_CHECKLIST_ITEMS;
+  if (!checklist) return [];
   
   if (Array.isArray(checklist.items)) {
     return checklist.items;
@@ -66,7 +66,7 @@ export function normalizeChecklistItems(checklist) {
     });
   }
 
-  return items.length > 0 ? items : DEFAULT_CHECKLIST_ITEMS;
+  return items;
 }
 
 export function isChecklistItemDone(item) {

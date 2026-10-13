@@ -60,7 +60,11 @@ const pool = new Pool({
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )`,
     `ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR(255)`,
-    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{"carrusel":{"checked":false,"current":0,"target":4},"post":{"checked":false,"current":0,"target":12},"video":{"checked":false,"current":0,"target":6},"facturaPaga":{"checked":false},"adsRating":"Excelente"}'::jsonb`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone VARCHAR(100)`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS stage VARCHAR(100) DEFAULT 'Nuevo'`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '[]'::jsonb`,
 
     `CREATE TABLE IF NOT EXISTS clickup_rules (
       id SERIAL PRIMARY KEY,
@@ -2096,6 +2100,18 @@ app.put('/api/clients/:id', authenticateToken, async (req, res) => {
       updates.push(`email = $${pIdx++}`);
       params.push(email || null);
     }
+    if (req.body.phone !== undefined) {
+      updates.push(`phone = $${pIdx++}`);
+      params.push(req.body.phone || null);
+    }
+    if (req.body.stage !== undefined) {
+      updates.push(`stage = $${pIdx++}`);
+      params.push(req.body.stage || 'Nuevo');
+    }
+    if (req.body.notes !== undefined) {
+      updates.push(`notes = $${pIdx++}`);
+      params.push(req.body.notes || null);
+    }
     if (checklist !== undefined) {
       updates.push(`checklist = $${pIdx++}`);
       params.push(JSON.stringify(checklist));
@@ -2144,34 +2160,35 @@ app.put('/api/clients/:id/checklist', authenticateToken, async (req, res) => {
 
 // 4. Create a new instance
 app.post('/api/instances', authenticateToken, async (req, res) => {
-  const { id, templateId, title, instanceName, clientId, clientName, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
+    const { id, templateId, title, instanceName, clientId, clientName, clientEmail, startedAt, companionName, companionAvatar, companionGreeting, category, steps, status, priority } = req.body;
   try {
     let resolvedClientId = clientId || null;
     const targetClientName = (clientName || instanceName || '').trim();
+    const targetClientEmail = (clientEmail || '').trim();
 
     // Auto-create client if not existing in the database for this organization
     if (targetClientName) {
       if (!resolvedClientId) {
         const clientSearch = await pool.query(
-          'SELECT id FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
+          'SELECT id, email FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
           [req.user.organizationId, targetClientName]
         );
         if (clientSearch.rows.length > 0) {
           resolvedClientId = clientSearch.rows[0].id;
+          if (targetClientEmail && (!clientSearch.rows[0].email || clientSearch.rows[0].email.trim() === '')) {
+            await pool.query(
+              'UPDATE clients SET email = $1 WHERE id = $2 AND organization_id = $3',
+              [targetClientEmail, resolvedClientId, req.user.organizationId]
+            ).catch(() => {});
+          }
         } else {
           const newClientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-          const defaultChecklist = [
-            { id: 'chk_1', text: 'Onboarding y Bienvenida completado', isCompleted: false },
-            { id: 'chk_2', text: 'Documentación y accesos recibidos', isCompleted: false },
-            { id: 'chk_3', text: 'Carpeta de Google Drive vinculada', isCompleted: false },
-            { id: 'chk_4', text: 'Reunión inicial realizada', isCompleted: false }
-          ];
           const newClientRes = await pool.query(
-            `INSERT INTO clients (id, organization_id, name, checklist)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO clients (id, organization_id, name, email, checklist)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (id) DO NOTHING
              RETURNING id`,
-            [newClientId, req.user.organizationId, targetClientName, JSON.stringify(defaultChecklist)]
+            [newClientId, req.user.organizationId, targetClientName, targetClientEmail || null, JSON.stringify([])]
           );
           resolvedClientId = newClientRes.rows[0]?.id || newClientId;
         }
@@ -5205,15 +5222,36 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
 
     const instanceName = customInstanceName || (targetClientName ? targetClientName : (replaceVariables(template.title, variables) || template.title));
 
+    // Resolve client email
+    const rawClientEmail = req.body.customer_email
+      || req.body.client_email
+      || req.body.email
+      || variables?.['Email del Cliente / Lead']
+      || variables?.['Email del Cliente']
+      || variables?.['Email del Lead']
+      || variables?.['customer_email']
+      || variables?.['client_email']
+      || variables?.['contact_email']
+      || variables?.['email']
+      || '';
+    const targetClientEmail = String(rawClientEmail || '').trim();
+
     // Auto-create or link client in organization
     let resolvedClientId = req.body.clientId || req.body.client_id || variables?.['clientId'] || null;
     if (targetClientName && !resolvedClientId) {
       const clientSearch = await pool.query(
-        'SELECT id FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
+        'SELECT id, email FROM clients WHERE organization_id = $1 AND LOWER(TRIM(name)) = LOWER($2) LIMIT 1',
         [req.user.organizationId, targetClientName]
       );
       if (clientSearch.rows.length > 0) {
         resolvedClientId = clientSearch.rows[0].id;
+        // Si el cliente ya existía pero no tenía email registrado y ahora sí viene, actualizar su email
+        if (targetClientEmail && (!clientSearch.rows[0].email || clientSearch.rows[0].email.trim() === '')) {
+          await pool.query(
+            'UPDATE clients SET email = $1 WHERE id = $2 AND organization_id = $3',
+            [targetClientEmail, resolvedClientId, req.user.organizationId]
+          ).catch(() => {});
+        }
       } else {
         const newClientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
         const defaultChecklist = [
@@ -5223,11 +5261,11 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
           { id: 'chk_4', text: 'Reunión inicial realizada', isCompleted: false }
         ];
         const newClientRes = await pool.query(
-          `INSERT INTO clients (id, organization_id, name, checklist)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO clients (id, organization_id, name, email, checklist)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (id) DO NOTHING
            RETURNING id`,
-          [newClientId, req.user.organizationId, targetClientName, JSON.stringify(defaultChecklist)]
+          [newClientId, req.user.organizationId, targetClientName, targetClientEmail || null, JSON.stringify(defaultChecklist)]
         );
         resolvedClientId = newClientRes.rows[0]?.id || newClientId;
       }
