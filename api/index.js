@@ -1089,6 +1089,19 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
             if (subCreated?.id) targetFolder = subCreated;
           }
         }
+        // Auto-create configured subfolders inside this execution/client folder
+        const rawSubfolders = config.defaultClientSubfolders || [];
+        const subfolderList = Array.isArray(rawSubfolders)
+          ? rawSubfolders
+          : String(rawSubfolders).split(',').map(s => s.trim()).filter(Boolean);
+
+        for (const subName of subfolderList) {
+          if (subName) {
+            const cleanSub = sanitizeDriveFolderName(subName);
+            await findOrCreateDriveFolder(accessToken, cleanSub, targetFolder.id).catch(() => {});
+          }
+        }
+
         await pool.query(
           'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
           [targetFolder.id, targetFolder.webViewLink, instanceData.id, orgId]
@@ -1102,6 +1115,19 @@ const ensureExecutionDriveFolder = async (orgId, instanceData, clientName = '') 
 
       const execFolder = await ensureDriveFolderPath(accessToken, segments, rootId, { allowCreate: allowCreateNewFolders });
       if (execFolder?.id && execFolder.id !== rootId) {
+        // Auto-create configured subfolders inside this execution folder
+        const rawSubfolders = config.defaultClientSubfolders || [];
+        const subfolderList = Array.isArray(rawSubfolders)
+          ? rawSubfolders
+          : String(rawSubfolders).split(',').map(s => s.trim()).filter(Boolean);
+
+        for (const subName of subfolderList) {
+          if (subName) {
+            const cleanSub = sanitizeDriveFolderName(subName);
+            await findOrCreateDriveFolder(accessToken, cleanSub, execFolder.id).catch(() => {});
+          }
+        }
+
         await pool.query(
           'UPDATE instances SET drive_folder_id = $1, drive_folder_url = $2 WHERE id = $3 AND organization_id = $4',
           [execFolder.id, execFolder.webViewLink, instanceData.id, orgId]
@@ -4874,6 +4900,18 @@ app.post('/api/integrations/google-drive/set-instance-folder', authenticateToken
       finalFolderId = created.id;
       finalFolderUrl = created.webViewLink || `https://drive.google.com/drive/folders/${created.id}`;
       finalFolderName = created.name || segments[segments.length - 1];
+
+      // Also ensure configured subfolders exist inside this created folder
+      const rawSubfolders = cfg.defaultClientSubfolders || [];
+      const subfolderList = Array.isArray(rawSubfolders)
+        ? rawSubfolders
+        : String(rawSubfolders).split(',').map(s => s.trim()).filter(Boolean);
+      for (const subName of subfolderList) {
+        if (subName) {
+          const cleanSub = sanitizeDriveFolderName(subName);
+          await findOrCreateDriveFolder(accessToken, cleanSub, created.id).catch(() => {});
+        }
+      }
     } else if (folderInput && String(folderInput).trim()) {
       finalFolderId = extractDriveIdFromInput(folderInput);
       if (!finalFolderId) {

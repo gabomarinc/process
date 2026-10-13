@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ChevronUp, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
 import GoogleDrivePickerModal from './GoogleDrivePickerModal';
 
@@ -82,6 +82,7 @@ export const ActiveExecutionModal = ({
     checklistItemId: null,
     title: 'Seleccionar archivo de Google Drive'
   });
+  const [collapsedChecklists, setCollapsedChecklists] = useState({});
 
   const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null, uploadedUrl = null) => {
     handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName, uploadedUrl);
@@ -1254,50 +1255,251 @@ export const ActiveExecutionModal = ({
                       <h4 className="trio-card-title">{step.title}</h4>
                       
                       {isCenter && (
-                        <div style={{ display: 'flex', gap: '2rem', width: '100%', flexWrap: 'wrap', marginTop: '1.25rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
-                          {/* Col 1: Detalles del Paso */}
-                          <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
-                            <div>
-                              <h4 className="trio-card-title" style={{ margin: '0 0 0.5rem 0', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: '1.3' }}>{step.title}</h4>
-                              <span className="trio-card-date" style={{ display: 'inline-block', fontSize: '0.85rem', color: 'var(--color-primary-hover)', fontWeight: 600 }}>Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', marginTop: '1.25rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
+                          
+                          {/* Barra Superior Rápida de Acción y Responsables (Siempre visible arriba) */}
+                          <div style={{
+                            background: '#F8FAFC',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '14px',
+                            padding: '12px 16px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                👑 Encargado Principal:
+                              </span>
+                              <select
+                                value={step.leadId ? String(step.leadId) : ''}
+                                onChange={(e) => {
+                                  const newLead = e.target.value;
+                                  const currentAssigned = Array.isArray(step.assignedTo)
+                                    ? step.assignedTo.map(String)
+                                    : (step.assignedTo && step.assignedTo !== 'Unassigned' ? [String(step.assignedTo)] : []);
+                                  const updatedList = newLead && !currentAssigned.includes(String(newLead))
+                                    ? [String(newLead), ...currentAssigned]
+                                    : currentAssigned;
+                                  handleAssignStepMember(activeInstance.id, step.id, updatedList, newLead);
+                                }}
+                                style={{
+                                  fontSize: '0.78rem',
+                                  padding: '5px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #CBD5E1',
+                                  background: '#FFFFFF',
+                                  fontWeight: 700,
+                                  color: '#0F172A',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="">-- Sin encargado marcado --</option>
+                                {teamMembers.map(m => (
+                                  <option key={m.id} value={String(m.id)}>{m.name} ({m.role})</option>
+                                ))}
+                              </select>
                             </div>
-                            
-                            <p className="trio-card-desc" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>{step.description}</p>
-                            
-                            {isOverdue && (
-                              <div className="overdue-banner" style={{ margin: '0.5rem 0 0 0', display: 'flex', alignItems: 'center', gap: '6px', background: '#FFF0F0', color: '#D32F2F', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600 }}>
-                                <AlertCircle size={14} />
-                                <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
-                              </div>
-                            )}
 
-                            {(step.motivation && showMotivationStepId === step.id) && (
-                              <div className="step-motivation" style={{ marginTop: 'auto', fontSize: '0.85rem', fontStyle: 'italic', background: 'var(--bg-companion)', padding: '12px', borderRadius: '10px', borderLeft: '3px solid var(--color-primary)', color: 'var(--text-main)', display: 'flex', gap: '8px', alignItems: 'flex-start', boxShadow: '0 4px 12px rgba(39, 190, 167, 0.08)' }}>
-                                <Lightbulb size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--color-primary)' }}/>
-                                <span>{step.motivation}</span>
-                              </div>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              {step.isCompleted ? (
+                                <div style={{ color: '#059669', fontWeight: 700, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '6px 14px', borderRadius: '8px' }}>
+                                  <Check size={16} /> Paso Completado
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    disabled={step.helpRequested}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '5px',
+                                      fontSize: '0.76rem',
+                                      padding: '6px 12px',
+                                      borderRadius: '8px',
+                                      border: step.helpRequested ? '1px solid #E2E8F0' : '1px dashed #CBD5E1',
+                                      background: step.helpRequested ? '#F1F5F9' : '#FFFFFF',
+                                      color: step.helpRequested ? '#94A3B8' : 'var(--color-primary)',
+                                      fontWeight: 700,
+                                      cursor: step.helpRequested ? 'not-allowed' : 'pointer'
+                                    }}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const helpMsg = `${currentUser?.name || 'Un compañero'} solicita una mano en el paso "${step.title}" de "${activeInstance.instanceName}".`;
+                                      try {
+                                        await fetch('/api/notifications', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                          body: JSON.stringify({
+                                            id: `help-${step.id}-${Date.now()}`,
+                                            instanceId: activeInstance.id,
+                                            stepId: step.id,
+                                            instanceName: activeInstance.instanceName,
+                                            stepTitle: step.title,
+                                            message: helpMsg,
+                                            type: 'help'
+                                          })
+                                        });
+                                        window.dispatchEvent(new Event('notifications-updated'));
+                                        await handleRequestHelp(activeInstance.id, step.id);
+                                        if (addToast) addToast("¡Pedido de ayuda enviado al equipo!", "success");
+                                      } catch (err) {
+                                        console.error("Error al pedir ayuda:", err);
+                                      }
+                                    }}
+                                  >
+                                    {step.helpRequested ? (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <HelpCircle size={13} /> Ayuda Solicitada
+                                      </span>
+                                    ) : (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <AlertCircle size={13} /> Solicitar Apoyo
+                                      </span>
+                                    )}
+                                  </button>
 
-                            {/* Step Checklist in Focus Mode */}
-                            {step.checklist && step.checklist.length > 0 && (
-                              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.85rem', marginTop: '0.5rem' }}>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <ListChecks size={15} color="#27BEA5" /> Checklist y Entregables del Paso
-                                  </div>
-                                  <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
-                                    {step.checklist.filter(c => c.isCompleted).length} de {step.checklist.length} completados
-                                  </span>
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  {step.checklist.map((chk, cIdx) => renderChecklistItemRow(step, chk, cIdx))}
-                                </div>
-                              </div>
-                            )}
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      fontSize: '0.82rem',
+                                      padding: '7px 16px',
+                                      borderRadius: '8px',
+                                      fontWeight: 700
+                                    }}
+                                    onClick={() => onCompleteStepLocal(step.id, true)}
+                                  >
+                                    {(() => {
+                                      const nextStep = activeInstance.steps[item.index + 1];
+                                      const nextAssignee = nextStep && nextStep.assignedTo ? teamMembers.find(m => String(m.id) === String(nextStep.assignedTo)) : null;
+                                      return nextAssignee ? (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                          Pasar a {nextAssignee.name} <ArrowRight size={14} />
+                                        </span>
+                                      ) : (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                          Completar Paso <Check size={14} />
+                                        </span>
+                                      );
+                                    })()}
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Col 2: Acciones, Colaboradores y Notas */}
-                          <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '260px' }}>
+                          <div style={{ display: 'flex', gap: '1.5rem', width: '100%', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                            {/* Col 1: Detalles del Paso */}
+                            <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
+                              <div>
+                                <h4 className="trio-card-title" style={{ margin: '0 0 0.5rem 0', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: '1.3' }}>{step.title}</h4>
+                                <span className="trio-card-date" style={{ display: 'inline-block', fontSize: '0.85rem', color: 'var(--color-primary-hover)', fontWeight: 600 }}>Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
+                              </div>
+                              
+                              <p className="trio-card-desc" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>{step.description}</p>
+                              
+                              {isOverdue && (
+                                <div className="overdue-banner" style={{ margin: '0.5rem 0 0 0', display: 'flex', alignItems: 'center', gap: '6px', background: '#FFF0F0', color: '#D32F2F', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                  <AlertCircle size={14} />
+                                  <span>Límite vencido el {new Date(step.dueDate).toLocaleDateString()}</span>
+                                </div>
+                              )}
+
+                              {(step.motivation && showMotivationStepId === step.id) && (
+                                <div className="step-motivation" style={{ marginTop: 'auto', fontSize: '0.85rem', fontStyle: 'italic', background: 'var(--bg-companion)', padding: '12px', borderRadius: '10px', borderLeft: '3px solid var(--color-primary)', color: 'var(--text-main)', display: 'flex', gap: '8px', alignItems: 'flex-start', boxShadow: '0 4px 12px rgba(39, 190, 167, 0.08)' }}>
+                                  <Lightbulb size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--color-primary)' }}/>
+                                  <span>{step.motivation}</span>
+                                </div>
+                              )}
+
+                              {/* Step Checklist in Focus Mode (Desplegable / Colapsable) */}
+                              {step.checklist && step.checklist.length > 0 && (() => {
+                                const isCollapsed = !!collapsedChecklists[step.id];
+                                const completedCount = step.checklist.filter(c => c.isCompleted).length;
+                                const totalCount = step.checklist.length;
+                                return (
+                                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0.85rem', marginTop: '0.5rem' }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <ListChecks size={15} color="#27BEA5" /> Checklist y Entregables del Paso
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+                                          {completedCount} de {totalCount} completados
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setCollapsedChecklists(prev => ({ ...prev, [step.id]: !prev[step.id] }))}
+                                          style={{
+                                            background: '#F1F5F9',
+                                            border: '1px solid #CBD5E1',
+                                            borderRadius: '6px',
+                                            padding: '2px 8px',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 700,
+                                            color: '#334155',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: 'pointer'
+                                          }}
+                                          title={isCollapsed ? 'Desplegar checklist' : 'Colapsar checklist'}
+                                        >
+                                          <span>{isCollapsed ? 'Desplegar' : 'Colapsar'}</span>
+                                          {isCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {isCollapsed ? (
+                                      <div 
+                                        onClick={() => setCollapsedChecklists(prev => ({ ...prev, [step.id]: false }))}
+                                        style={{
+                                          background: '#F8FAFC',
+                                          border: '1px dashed #CBD5E1',
+                                          borderRadius: '8px',
+                                          padding: '10px 14px',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          gap: '10px'
+                                        }}
+                                      >
+                                        <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                                          📦 <strong>{totalCount} entregables en este paso</strong> ({completedCount} completados). Clic para desplegar.
+                                        </div>
+                                        <div style={{ width: '80px', height: '6px', background: '#E2E8F0', borderRadius: '99px', overflow: 'hidden' }}>
+                                          <div 
+                                            style={{ 
+                                              height: '100%', 
+                                              background: '#27BEA5', 
+                                              width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` 
+                                            }} 
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '520px', overflowY: 'auto', paddingRight: '4px' }}>
+                                        {step.checklist.map((chk, cIdx) => renderChecklistItemRow(step, chk, cIdx))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Col 2: Acciones, Colaboradores y Notas (Sticky) */}
+                            <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '260px', position: 'sticky', top: '1rem', alignSelf: 'flex-start' }}>
                             
                             {/* Bloque de Acción Principal (Completar Paso) */}
                             <div className="trio-card-action" style={{ background: '#FAF9F6', padding: '12px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.04)' }}>
@@ -1568,7 +1770,8 @@ export const ActiveExecutionModal = ({
 
                           </div>
                         </div>
-                      )}
+                      </div>
+                    )}
 
                       {!isCenter && (
                         <p className="trio-card-desc-compact">{step.description}</p>
