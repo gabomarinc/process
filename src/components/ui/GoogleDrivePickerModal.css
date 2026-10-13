@@ -1,0 +1,500 @@
+.gdrive-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: gdriveFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes gdriveFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes gdriveSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.gdrive-modal-window {
+  width: 100%;
+  max-width: 960px;
+  height: 82vh;
+  max-height: 720px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: gdriveSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Header */
+.gdrive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.4rem;
+  border-bottom: 1px solid #E2E8F0;
+  background: #FFFFFF;
+}
+
+.gdrive-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gdrive-logo-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gdrive-title-wrap h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1E293B;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gdrive-title-wrap p {
+  margin: 2px 0 0;
+  font-size: 0.76rem;
+  color: #64748B;
+}
+
+.gdrive-close-btn {
+  background: transparent;
+  border: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gdrive-close-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+/* Toolbar & Breadcrumbs */
+.gdrive-toolbar {
+  padding: 0.75rem 1.4rem;
+  border-bottom: 1px solid #F1F5F9;
+  background: #F8FAFC;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.gdrive-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.gdrive-crumb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gdrive-crumb-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.gdrive-crumb-btn.active {
+  font-weight: 700;
+  color: #1E293B;
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.gdrive-crumb-separator {
+  color: #94A3B8;
+}
+
+.gdrive-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gdrive-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 260px;
+}
+
+.gdrive-search-box input {
+  width: 100%;
+  padding: 6px 30px 6px 32px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  color: #1E293B;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.gdrive-search-box input:focus {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.gdrive-search-icon {
+  position: absolute;
+  left: 10px;
+  color: #94A3B8;
+  pointer-events: none;
+}
+
+.gdrive-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gdrive-refresh-btn {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gdrive-refresh-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #94A3B8;
+}
+
+/* Tabs: My Drive vs Direct Link */
+.gdrive-nav-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0.5rem 1.4rem 0;
+  border-bottom: 1px solid #E2E8F0;
+  background: #FFFFFF;
+}
+
+.gdrive-tab-item {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748B;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.gdrive-tab-item:hover {
+  color: #1E293B;
+}
+
+.gdrive-tab-item.active {
+  color: #2563EB;
+  border-bottom-color: #2563EB;
+}
+
+/* Content Body */
+.gdrive-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.4rem;
+  background: #FAFAFA;
+}
+
+/* Direct link paste fallback container */
+.gdrive-manual-link-card {
+  max-width: 580px;
+  margin: 1.5rem auto;
+  padding: 1.5rem;
+  background: #FFFFFF;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+/* Section Subheader */
+.gdrive-section-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748B;
+  margin: 0 0 0.75rem 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Grid of Cards (Google Drive Google Picker Style) */
+.gdrive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 12px;
+}
+
+.gdrive-card {
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+}
+
+.gdrive-card:hover {
+  border-color: #93C5FD;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px -2px rgba(37, 99, 235, 0.1);
+}
+
+.gdrive-card.selected {
+  background: #EFF6FF;
+  border-color: #2563EB;
+  box-shadow: 0 0 0 2px #2563EB;
+}
+
+.gdrive-card-folder {
+  border-color: #E2E8F0;
+  background: #FFFFFF;
+}
+
+.gdrive-card-folder:hover {
+  border-color: #FCD34D;
+  background: #FFFBEB;
+  box-shadow: 0 6px 12px -2px rgba(245, 158, 11, 0.12);
+}
+
+.gdrive-card-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #2563EB;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+  animation: gdrivePop 0.15s ease;
+}
+
+@keyframes gdrivePop {
+  0% { transform: scale(0.5); }
+  100% { transform: scale(1); }
+}
+
+.gdrive-card-icon-wrap {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #F8FAFC;
+}
+
+.gdrive-card.selected .gdrive-card-icon-wrap {
+  background: #DBEAFE;
+}
+
+.gdrive-card-name {
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1E293B;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.gdrive-card-meta {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 0.68rem;
+  color: #94A3B8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty / Loading States */
+.gdrive-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  color: #64748B;
+  text-align: center;
+}
+
+.gdrive-state-container p {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.gdrive-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #E2E8F0;
+  border-top-color: #2563EB;
+  border-radius: 50%;
+  animation: gdriveSpin 0.7s linear infinite;
+}
+
+@keyframes gdriveSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Footer & Bottom Right Button */
+.gdrive-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.4rem;
+  border-top: 1px solid #E2E8F0;
+  background: #FFFFFF;
+}
+
+.gdrive-footer-selected-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #1E293B;
+}
+
+.gdrive-selection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.gdrive-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gdrive-cancel-btn {
+  padding: 8px 16px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gdrive-cancel-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.gdrive-submit-btn {
+  padding: 8px 22px;
+  background: #2563EB;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+}
+
+.gdrive-submit-btn:hover:not(:disabled) {
+  background: #1D4ED8;
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
+}
+
+.gdrive-submit-btn:disabled {
+  background: #94A3B8;
+  cursor: not-allowed;
+  opacity: 0.7;
+  box-shadow: none;
+  transform: none;
+}

@@ -4428,7 +4428,8 @@ app.post('/api/integrations/google-drive/test', authenticateToken, async (req, r
 
 // List / Search files and folders in Google Drive
 app.get('/api/integrations/google-drive/files', authenticateToken, async (req, res) => {
-  const { folder_id, q, type } = req.query;
+  const { folder_id, folderId, q, type, pageSize } = req.query;
+  const rawFolder = folderId || folder_id;
   try {
     const orgRes = await pool.query('SELECT google_drive_config FROM organizations WHERE id = $1', [req.user.organizationId]);
     const cfg = orgRes.rows[0]?.google_drive_config || {};
@@ -4446,7 +4447,7 @@ app.get('/api/integrations/google-drive/files', authenticateToken, async (req, r
     }
 
     const conditions = ['trashed = false'];
-    const targetParent = folder_id ? extractDriveIdFromInput(String(folder_id)) : '';
+    const targetParent = rawFolder ? extractDriveIdFromInput(String(rawFolder)) : '';
     if (targetParent) {
       conditions.push(`'${targetParent}' in parents`);
     }
@@ -4458,7 +4459,8 @@ app.get('/api/integrations/google-drive/files', authenticateToken, async (req, r
       conditions.push(`name contains '${safeQ}'`);
     }
 
-    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,iconLink,modifiedTime)&orderBy=folder,modifiedTime desc&pageSize=40`;
+    const limit = Math.min(parseInt(pageSize, 10) || 60, 100);
+    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,size,modifiedTime,owners(displayName,emailAddress))&orderBy=folder desc,name asc&pageSize=${limit}`;
     const driveRes = await fetch(driveUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });

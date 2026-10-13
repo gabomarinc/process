@@ -24,6 +24,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import './AgentCopilot.css';
+import GoogleDrivePickerModal from './GoogleDrivePickerModal';
 
 const DEFAULT_CHIPS = [
   { label: '📊 Resumen del Workspace', prompt: 'Dame un resumen del estado actual de la organización, plantillas y ejecuciones activas.' },
@@ -271,23 +272,8 @@ export default function AgentCopilot({
   };
 
   // Google Drive File Picker & Reader
-  const handleOpenDrivePicker = async () => {
-    const nextState = !showDrivePicker;
-    setShowDrivePicker(nextState);
-    if (nextState) {
-      setIsLoadingDriveFiles(true);
-      try {
-        const res = await fetch('/api/integrations/google-drive/files');
-        if (res.ok) {
-          const data = await res.json();
-          setDriveFilesList((data.files || []).filter(f => !f.isFolder));
-        }
-      } catch (err) {
-        console.warn('Error fetching Drive files for Copilot:', err);
-      } finally {
-        setIsLoadingDriveFiles(false);
-      }
-    }
+  const handleOpenDrivePicker = () => {
+    setShowDrivePicker(prev => !prev);
   };
 
   const handleAttachDriveFile = async (fileIdOrUrl, customName = '') => {
@@ -959,92 +945,6 @@ export default function AgentCopilot({
 
           {/* Footer Input */}
           <div className="agent-copilot-footer">
-            {/* Google Drive Quick Picker Drawer */}
-            {showDrivePicker && (
-              <div style={{
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                padding: '10px',
-                marginBottom: '8px',
-                fontSize: '0.78rem'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <FolderOpen size={14} color="#2563EB" /> Adjuntar desde Google Drive
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowDrivePicker(false)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: 0 }}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', gap: '6px', marginBottom: driveFilesList.length > 0 ? '8px' : '0' }}>
-                  <input
-                    type="text"
-                    placeholder="Pega enlace de Google Docs / Sheets / Drive o ID..."
-                    value={driveUrlInput}
-                    onChange={(e) => setDriveUrlInput(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '6px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #CBD5E1',
-                      fontSize: '0.75rem'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={!driveUrlInput.trim() || isProcessingFiles}
-                    onClick={() => handleAttachDriveFile(driveUrlInput)}
-                    style={{
-                      background: '#2563EB',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 10px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Leer
-                  </button>
-                </div>
-
-                {isLoadingDriveFiles ? (
-                  <div style={{ color: '#64748B', fontSize: '0.72rem', padding: '4px 0' }}>Cargando archivos de tu carpeta Google Drive...</div>
-                ) : driveFilesList.length > 0 ? (
-                  <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {driveFilesList.slice(0, 12).map(df => (
-                      <div
-                        key={df.id}
-                        onClick={() => handleAttachDriveFile(df.id, df.name)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '5px 8px',
-                          background: '#FFFFFF',
-                          border: '1px solid #E2E8F0',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <span style={{ fontWeight: 600, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }}>
-                          📄 {df.name}
-                        </span>
-                        <span style={{ color: '#2563EB', fontSize: '0.7rem', fontWeight: 700 }}>Adjuntar</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-
             {/* Attachment Preview Strip */}
             {attachedFiles.length > 0 && (
               <div className="agent-attachment-strip">
@@ -1172,6 +1072,18 @@ export default function AgentCopilot({
           </div>
         </div>
       )}
+
+      {/* Visual Google Drive Picker Modal */}
+      <GoogleDrivePickerModal
+        isOpen={showDrivePicker}
+        onClose={() => setShowDrivePicker(false)}
+        title="Google Drive — Kônsul Copilot"
+        confirmButtonText="Adjuntar al Copilot"
+        allowFolders={false}
+        onSelect={(item) => {
+          handleAttachDriveFile(item.id || item.url, item.name);
+        }}
+      />
     </>
   );
 }

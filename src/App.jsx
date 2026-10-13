@@ -17,6 +17,7 @@ import ClientChecklistModal from "./components/ui/ClientChecklistModal";
 import AdminDashboard from "./components/ui/AdminDashboard";
 import { getClientTrafficLightStatus, getBlockingChecklistItemsForInstance } from "./utils/clientSemaforo";
 import AgentCopilot from "./components/ui/AgentCopilot";
+import GoogleDrivePickerModal from "./components/ui/GoogleDrivePickerModal";
 import "./App.css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { useAlert } from './contexts/AlertContext';
@@ -358,6 +359,7 @@ function App() {
   const [isTestingGoogleDrive, setIsTestingGoogleDrive] = useState(false);
   const [googleDriveTestStatus, setGoogleDriveTestStatus] = useState(null);
   const [isSyncingGoogleDriveRules, setIsSyncingGoogleDriveRules] = useState(false);
+  const [drivePickerTarget, setDrivePickerTarget] = useState(null); // 'root_folder' | 'rule_folder' | null
   
   // ClickUp Integration Dynamic Selectors
   const [clickupTeams, setClickupTeams] = useState([]);
@@ -7478,14 +7480,25 @@ const handleDeleteMember = async (id) => {
                   <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
                     Enlace o ID de tu Carpeta Madre en Google Drive
                   </label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="https://drive.google.com/drive/folders/14NCd5M..."
-                    value={googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId || ''}
-                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderUrl: e.target.value, rootFolderId: e.target.value }))}
-                    style={{ margin: 0, height: '42px' }}
-                  />
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="https://drive.google.com/drive/folders/14NCd5M..."
+                      value={googleDriveConfig.rootFolderUrl || googleDriveConfig.rootFolderId || ''}
+                      onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, rootFolderUrl: e.target.value, rootFolderId: e.target.value }))}
+                      style={{ margin: 0, height: '42px', flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setDrivePickerTarget('root_folder')}
+                      style={{ height: '42px', padding: '0 12px', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}
+                      title="Navegar visualmente por tus carpetas de Google Drive"
+                    >
+                      <FolderOpen size={14} color="#2563EB" /> Explorar
+                    </button>
+                  </div>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: '6px', display: 'block' }}>
@@ -7762,15 +7775,26 @@ const handleDeleteMember = async (id) => {
                   </div>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Link o ID de Carpeta a Vigilar</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="https://drive.google.com/drive/folders/..."
-                      value={newGoogleDriveRule.driveFolderId}
-                      onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, driveFolderId: e.target.value }))}
-                      required
-                      style={{ margin: 0, height: '38px', fontSize: '0.82rem' }}
-                    />
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        value={newGoogleDriveRule.driveFolderId}
+                        onChange={(e) => setNewGoogleDriveRule(prev => ({ ...prev, driveFolderId: e.target.value }))}
+                        required
+                        style={{ margin: 0, height: '38px', fontSize: '0.82rem', flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setDrivePickerTarget('rule_folder')}
+                        style={{ height: '38px', padding: '0 10px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                        title="Seleccionar carpeta de Google Drive visualmente"
+                      >
+                        <FolderOpen size={13} color="#2563EB" /> Explorar
+                      </button>
+                    </div>
                   </div>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ fontWeight: 600, fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>Plantilla de Proceso a Lanzar</label>
@@ -7869,6 +7893,34 @@ const handleDeleteMember = async (id) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Visual Google Drive Picker for Settings / Automation Rules */}
+      <GoogleDrivePickerModal
+        isOpen={!!drivePickerTarget}
+        onClose={() => setDrivePickerTarget(null)}
+        title={drivePickerTarget === 'root_folder' ? 'Seleccionar Carpeta Madre en Google Drive' : 'Seleccionar Carpeta a Vigilar en Google Drive'}
+        confirmButtonText="Añadir lo seleccionado"
+        allowFolders={true}
+        initialFolderId={drivePickerTarget === 'root_folder' ? (googleDriveConfig.rootFolderId || null) : null}
+        initialFolderName={drivePickerTarget === 'root_folder' ? (googleDriveConfig.rootFolderName || 'Mi Unidad') : 'Mi Unidad'}
+        onSelect={(item) => {
+          if (drivePickerTarget === 'root_folder') {
+            setGoogleDriveConfig(prev => ({
+              ...prev,
+              rootFolderUrl: item.webViewLink || (item.url ? item.url : `https://drive.google.com/drive/folders/${item.id}`),
+              rootFolderId: item.id,
+              rootFolderName: item.name || prev.rootFolderName
+            }));
+          } else if (drivePickerTarget === 'rule_folder') {
+            setNewGoogleDriveRule(prev => ({
+              ...prev,
+              driveFolderId: item.webViewLink || (item.url ? item.url : `https://drive.google.com/drive/folders/${item.id}`),
+              driveFolderName: item.name || ''
+            }));
+          }
+          setDrivePickerTarget(null);
+        }}
+      />
 
       {/* Toast Notification Container */}
       <div style={{

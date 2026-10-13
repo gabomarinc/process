@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
+import GoogleDrivePickerModal from './GoogleDrivePickerModal';
 
 const getFileType = (name, fallbackType) => {
   if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
@@ -73,6 +74,14 @@ export const ActiveExecutionModal = ({
   const [driveLinkInput, setDriveLinkInput] = useState('');
   const [driveFilesForStep, setDriveFilesForStep] = useState([]);
   const [isLoadingDriveFilesForStep, setIsLoadingDriveFilesForStep] = useState(false);
+  // Fullscreen Google Picker Modal state
+  const [drivePickerState, setDrivePickerState] = useState({
+    isOpen: false,
+    mode: 'step_file', // 'step_file' | 'subfolder'
+    step: null,
+    checklistItemId: null,
+    title: 'Seleccionar archivo de Google Drive'
+  });
 
   const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null, uploadedUrl = null) => {
     handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName, uploadedUrl);
@@ -633,7 +642,13 @@ export const ActiveExecutionModal = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleToggleStepDriveLinker(storeKey);
+                    setDrivePickerState({
+                      isOpen: true,
+                      mode: 'step_file',
+                      step,
+                      checklistItemId: chkId,
+                      title: `Google Drive — ${chk.label || step.title}`
+                    });
                   }}
                   style={{
                     display: 'inline-flex',
@@ -648,7 +663,7 @@ export const ActiveExecutionModal = ({
                     color: '#2563EB',
                     border: '1px solid #BFDBFE'
                   }}
-                  title="Vincular un archivo existente desde Google Drive"
+                  title="Abrir navegador visual de Google Drive para seleccionar archivo"
                 >
                   <FolderOpen size={11} /> Drive
                 </button>
@@ -881,6 +896,22 @@ export const ActiveExecutionModal = ({
                   style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
                 >
                   {isSavingSubfolder ? 'Guardando...' : 'Vincular Link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrivePickerState({
+                      isOpen: true,
+                      mode: 'subfolder',
+                      step: null,
+                      checklistItemId: null,
+                      title: `Elegir carpeta para "${activeInstance.instanceName}"`
+                    });
+                  }}
+                  style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #93C5FD', borderRadius: '8px', padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Abrir navegador visual estilo Google Drive"
+                >
+                  <FolderOpen size={13} /> Explorar en Drive
                 </button>
               </div>
 
@@ -2124,6 +2155,30 @@ export const ActiveExecutionModal = ({
           </div>
         </div>
       )}
+
+      {/* Visual Google Drive Picker Modal */}
+      <GoogleDrivePickerModal
+        isOpen={drivePickerState.isOpen}
+        onClose={() => setDrivePickerState(prev => ({ ...prev, isOpen: false }))}
+        title={drivePickerState.title}
+        confirmButtonText="Añadir lo seleccionado"
+        allowFolders={drivePickerState.mode === 'subfolder'}
+        initialFolderId={activeInstance?.driveFolderId || null}
+        initialFolderName={activeInstance?.instanceName || 'Mi Unidad'}
+        onSelect={(item) => {
+          if (drivePickerState.mode === 'subfolder') {
+            setSubfolderLinkInput(item.url || item.webViewLink || `https://drive.google.com/drive/folders/${item.id}`);
+            handleSaveExecutionSubfolder(item.url || item.webViewLink || `https://drive.google.com/drive/folders/${item.id}`);
+          } else if (drivePickerState.step) {
+            handleLinkDriveFileToStep(
+              drivePickerState.step,
+              item.url || item.webViewLink || `https://drive.google.com/file/d/${item.id}/view`,
+              item.name,
+              drivePickerState.checklistItemId
+            );
+          }
+        }}
+      />
     </div>
   );
 };
