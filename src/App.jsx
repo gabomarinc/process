@@ -6625,6 +6625,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         clients={clients}
         onOpenClientChecklist={(cl) => setChecklistModalClient(cl)}
         handleToggleStepChecklist={handleToggleStepChecklist}
+        googleDriveConfig={googleDriveConfig}
       />
 
       <ProjectDetailsModal

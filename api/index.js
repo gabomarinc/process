@@ -4835,10 +4835,21 @@ app.get('/api/integrations/google-drive/files', authenticateToken, async (req, r
     }
 
     const conditions = ['trashed = false'];
-    const targetParent = rawFolder ? extractDriveIdFromInput(String(rawFolder)) : '';
+    let targetParent = '';
+    if (rawFolder && String(rawFolder).trim() === 'root') {
+      targetParent = 'root';
+    } else if (rawFolder && String(rawFolder).trim()) {
+      targetParent = extractDriveIdFromInput(String(rawFolder));
+    } else if (cfg.rootFolderId) {
+      targetParent = extractDriveIdFromInput(String(cfg.rootFolderId));
+    }
+
     if (targetParent) {
       conditions.push(`'${targetParent}' in parents`);
+    } else {
+      conditions.push(`'root' in parents`);
     }
+
     if (type === 'folders') {
       conditions.push(`mimeType = 'application/vnd.google-apps.folder'`);
     }
@@ -4848,7 +4859,7 @@ app.get('/api/integrations/google-drive/files', authenticateToken, async (req, r
     }
 
     const limit = Math.min(parseInt(pageSize, 10) || 60, 100);
-    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,size,modifiedTime,owners(displayName,emailAddress))&orderBy=folder desc,name asc&pageSize=${limit}`;
+    const driveUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(conditions.join(' and '))}&fields=files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,size,modifiedTime,owners(displayName,emailAddress))&orderBy=folder desc,name asc&pageSize=${limit}&supportsAllDrives=true&includeItemsFromAllDrives=true`;
     const driveRes = await fetch(driveUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -4862,6 +4873,9 @@ app.get('/api/integrations/google-drive/files', authenticateToken, async (req, r
     res.json({
       success: true,
       oauthActive: true,
+      rootFolderId: cfg.rootFolderId || '',
+      rootFolderName: cfg.rootFolderName || 'Carpeta Madre',
+      currentFolderId: targetParent || '',
       files: data.files || []
     });
   } catch (err) {

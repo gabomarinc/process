@@ -61,6 +61,8 @@ export default function GoogleDrivePickerModal({
   onSelect,
   initialFolderId = null,
   initialFolderName = 'Mi Unidad',
+  rootFolderId = null,
+  rootFolderName = 'Carpeta Madre',
   allowFolders = false, // If true, folder itself can be selected
   title = 'Seleccionar desde Google Drive',
   confirmButtonText = 'Añadir seleccionado'
@@ -70,6 +72,8 @@ export default function GoogleDrivePickerModal({
   const [folderHistory, setFolderHistory] = useState([
     { id: initialFolderId || '', name: initialFolderName || 'Mi Unidad' }
   ]);
+  const [apiRootFolderId, setApiRootFolderId] = useState(null);
+  const [apiRootFolderName, setApiRootFolderName] = useState(null);
   const [files, setFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -78,17 +82,41 @@ export default function GoogleDrivePickerModal({
   const [manualLinkInput, setManualLinkInput] = useState('');
   const [manualLinkName, setManualLinkName] = useState('');
 
+  const effectiveRootId = rootFolderId || apiRootFolderId || null;
+  const effectiveRootName = rootFolderName || apiRootFolderName || 'Carpeta Madre';
+
   // Synchronize when opening
   useEffect(() => {
     if (isOpen) {
-      setCurrentFolderId(initialFolderId);
-      setFolderHistory([{ id: initialFolderId || '', name: initialFolderName || 'Mi Unidad' }]);
       setSelectedItem(null);
       setSearchQuery('');
       setManualLinkInput('');
-      fetchFiles(initialFolderId);
+
+      const hasInit = !!initialFolderId;
+      const hasRoot = !!rootFolderId;
+
+      if (hasInit && hasRoot && initialFolderId !== rootFolderId) {
+        setCurrentFolderId(initialFolderId);
+        setFolderHistory([
+          { id: rootFolderId, name: rootFolderName || 'Carpeta Madre' },
+          { id: initialFolderId, name: initialFolderName || 'Carpeta Actual' }
+        ]);
+        fetchFiles(initialFolderId);
+      } else if (hasInit) {
+        setCurrentFolderId(initialFolderId);
+        setFolderHistory([{ id: initialFolderId, name: initialFolderName || 'Mi Unidad' }]);
+        fetchFiles(initialFolderId);
+      } else if (hasRoot) {
+        setCurrentFolderId(rootFolderId);
+        setFolderHistory([{ id: rootFolderId, name: rootFolderName || 'Carpeta Madre' }]);
+        fetchFiles(rootFolderId);
+      } else {
+        setCurrentFolderId('');
+        setFolderHistory([{ id: '', name: 'Mi Unidad' }]);
+        fetchFiles('');
+      }
     }
-  }, [isOpen, initialFolderId, initialFolderName]);
+  }, [isOpen, initialFolderId, initialFolderName, rootFolderId, rootFolderName]);
 
   const fetchFiles = async (folderId = currentFolderId, query = searchQuery) => {
     setIsLoading(true);
@@ -108,6 +136,21 @@ export default function GoogleDrivePickerModal({
       if (data.oauthActive === false && (!data.files || data.files.length === 0)) {
         setActiveTab('link');
       }
+
+      if (data.rootFolderId && !rootFolderId) {
+        setApiRootFolderId(data.rootFolderId);
+        if (data.rootFolderName) setApiRootFolderName(data.rootFolderName);
+        setFolderHistory(prev => {
+          if (prev.length === 1 && prev[0].id && prev[0].id !== data.rootFolderId) {
+            return [
+              { id: data.rootFolderId, name: data.rootFolderName || 'Carpeta Madre' },
+              prev[0]
+            ];
+          }
+          return prev;
+        });
+      }
+
       // Normalize items
       const normalized = (data.files || []).map(f => ({
         ...f,
@@ -252,6 +295,22 @@ export default function GoogleDrivePickerModal({
                   style={{ marginRight: '4px' }}
                 >
                   <ArrowLeft size={14} /> Atrás
+                </button>
+              )}
+              {effectiveRootId && currentFolderId !== effectiveRootId && (
+                <button
+                  type="button"
+                  className="gdrive-crumb-btn"
+                  onClick={() => {
+                    setFolderHistory([{ id: effectiveRootId, name: effectiveRootName }]);
+                    setCurrentFolderId(effectiveRootId);
+                    setSelectedItem(null);
+                    fetchFiles(effectiveRootId, searchQuery);
+                  }}
+                  title="Ir a Carpeta Raíz"
+                  style={{ marginRight: '6px', background: '#F1F5F9', color: '#1E40AF', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Folder size={13} color="#2563EB" fill="#DBEAFE" /> Raíz ({effectiveRootName})
                 </button>
               )}
               {folderHistory.map((crumb, idx) => (
@@ -423,7 +482,32 @@ export default function GoogleDrivePickerModal({
                             <Folder size={32} color="#F59E0B" fill="#FEF3C7" />
                           </div>
                           <div className="gdrive-card-name">{folder.name}</div>
-                          <div className="gdrive-card-meta">Carpeta</div>
+                          <div className="gdrive-card-meta" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <span>Carpeta</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenFolder(folder);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#2563EB',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                padding: '1px 4px',
+                                borderRadius: '4px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '2px'
+                              }}
+                              title="Abrir esta carpeta"
+                            >
+                              Abrir <ChevronRight size={11} />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

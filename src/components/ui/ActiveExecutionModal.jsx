@@ -48,7 +48,8 @@ export const ActiveExecutionModal = ({
   addToast,
   clients = [],
   onOpenClientChecklist,
-  handleToggleStepChecklist
+  handleToggleStepChecklist,
+  googleDriveConfig = null
 }) => {
   const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [isFocusMode, setIsFocusMode] = useState(true);
@@ -63,6 +64,7 @@ export const ActiveExecutionModal = ({
 
   // Google Drive states for Execution & Steps
   const [localDriveFolderUrl, setLocalDriveFolderUrl] = useState(null);
+  const [localDriveFolderId, setLocalDriveFolderId] = useState(null);
   const [isEnsuringDriveFolder, setIsEnsuringDriveFolder] = useState(false);
   const [showSubfolderDrawer, setShowSubfolderDrawer] = useState(false);
   const [subfolderLinkInput, setSubfolderLinkInput] = useState('');
@@ -156,6 +158,7 @@ export const ActiveExecutionModal = ({
       if (res.ok && (data.driveFolderUrl || data.folderUrl)) {
         const url = data.driveFolderUrl || data.folderUrl;
         setLocalDriveFolderUrl(url);
+        if (data.driveFolderId) setLocalDriveFolderId(data.driveFolderId);
         window.open(url, '_blank', 'noopener,noreferrer');
         if (addToast) addToast('Carpeta de Google Drive vinculada y abierta', 'success');
       } else {
@@ -166,6 +169,85 @@ export const ActiveExecutionModal = ({
     } finally {
       setIsEnsuringDriveFolder(false);
     }
+  };
+
+  const handleOpenStepDrivePicker = async (step, chkId, chkLabel) => {
+    let targetFolderId = activeInstance?.driveFolderId || localDriveFolderId;
+    let targetFolderName = activeInstance?.instanceName || 'Carpeta de Ejecución';
+
+    if (!targetFolderId && activeInstance?.clientId) {
+      const cl = (clients || []).find(c => c.id === activeInstance.clientId);
+      if (cl?.drive_folder_id) {
+        targetFolderId = cl.drive_folder_id;
+        targetFolderName = cl.name || targetFolderName;
+      }
+    }
+
+    // If still missing, try auto-ensuring it from backend so the client's folder exists in Drive
+    if (!targetFolderId && activeInstance?.id) {
+      try {
+        const res = await fetch('/api/integrations/google-drive/ensure-instance-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instanceId: activeInstance.id })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.driveFolderId) {
+            targetFolderId = data.driveFolderId;
+            targetFolderName = data.folderName || targetFolderName;
+            setLocalDriveFolderId(data.driveFolderId);
+            if (data.driveFolderUrl) setLocalDriveFolderUrl(data.driveFolderUrl);
+          }
+        }
+      } catch (err) {
+        console.warn('Error auto-ensuring instance folder for picker:', err);
+      }
+    }
+
+    // Fallback to root folder if still no folderId
+    if (!targetFolderId && googleDriveConfig?.rootFolderId) {
+      targetFolderId = googleDriveConfig.rootFolderId;
+      targetFolderName = googleDriveConfig.rootFolderName || 'Carpeta Madre';
+    }
+
+    setDrivePickerState({
+      isOpen: true,
+      mode: 'step_file',
+      step,
+      checklistItemId: chkId,
+      title: `Google Drive — ${chkLabel || step.title}`,
+      targetFolderId,
+      targetFolderName
+    });
+  };
+
+  const handleOpenSubfolderPicker = async () => {
+    let targetFolderId = activeInstance?.driveFolderId || localDriveFolderId;
+    let targetFolderName = activeInstance?.instanceName || 'Carpeta de Ejecución';
+
+    if (!targetFolderId && activeInstance?.clientId) {
+      const cl = (clients || []).find(c => c.id === activeInstance.clientId);
+      if (cl?.drive_folder_id) {
+        targetFolderId = cl.drive_folder_id;
+        targetFolderName = cl.name || targetFolderName;
+      }
+    }
+
+    if (!targetFolderId && googleDriveConfig?.rootFolderId) {
+      targetFolderId = googleDriveConfig.rootFolderId;
+      targetFolderName = googleDriveConfig.rootFolderName || 'Carpeta Madre';
+    }
+
+    setDrivePickerState({
+      isOpen: true,
+      mode: 'subfolder',
+      step: null,
+      checklistItemId: null,
+      title: `Elegir carpeta para "${activeInstance.instanceName}"`,
+      targetFolderId,
+      targetFolderName
+    });
   };
 
   const handleUploadStepFileWithDrive = async (step, file, checklistItemId = null) => {
@@ -654,13 +736,7 @@ export const ActiveExecutionModal = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setDrivePickerState({
-                      isOpen: true,
-                      mode: 'step_file',
-                      step,
-                      checklistItemId: chkId,
-                      title: `Google Drive — ${chk.label || step.title}`
-                    });
+                    handleOpenStepDrivePicker(step, chkId, chk.label);
                   }}
                   style={{
                     display: 'inline-flex',
@@ -911,15 +987,7 @@ export const ActiveExecutionModal = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setDrivePickerState({
-                      isOpen: true,
-                      mode: 'subfolder',
-                      step: null,
-                      checklistItemId: null,
-                      title: `Elegir carpeta para "${activeInstance.instanceName}"`
-                    });
-                  }}
+                  onClick={handleOpenSubfolderPicker}
                   style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #93C5FD', borderRadius: '8px', padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
                   title="Abrir navegador visual estilo Google Drive"
                 >
@@ -2236,8 +2304,10 @@ export const ActiveExecutionModal = ({
         title={drivePickerState.title}
         confirmButtonText="Añadir lo seleccionado"
         allowFolders={drivePickerState.mode === 'subfolder'}
-        initialFolderId={activeInstance?.driveFolderId || null}
-        initialFolderName={activeInstance?.instanceName || 'Mi Unidad'}
+        initialFolderId={drivePickerState.targetFolderId || activeInstance?.driveFolderId || localDriveFolderId || null}
+        initialFolderName={drivePickerState.targetFolderName || activeInstance?.instanceName || 'Carpeta de Ejecución'}
+        rootFolderId={googleDriveConfig?.rootFolderId || null}
+        rootFolderName={googleDriveConfig?.rootFolderName || 'Carpeta Madre'}
         onSelect={(item) => {
           if (drivePickerState.mode === 'subfolder') {
             setSubfolderLinkInput(item.url || item.webViewLink || `https://drive.google.com/drive/folders/${item.id}`);
