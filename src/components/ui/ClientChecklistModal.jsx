@@ -84,6 +84,7 @@ export default function ClientChecklistModal({
   const [editingItem, setEditingItem] = useState(null); // Item being edited in modal/drawer
   const [showAddModal, setShowAddModal] = useState(false);
   const [uploadingItemId, setUploadingItemId] = useState(null);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
 
   // New Item Creator State
   const [newItemName, setNewItemName] = useState('');
@@ -350,6 +351,46 @@ export default function ClientChecklistModal({
       id: `item_tpl_${Date.now()}_${idx}`
     }));
     setItems(prev => [...prev, ...newItems]);
+  };
+
+  // Sincronizar carpeta y subcarpetas en Google Drive
+  const handleSyncClientDriveFolder = async () => {
+    if (!client?.id) return;
+    setIsSyncingDrive(true);
+    try {
+      const res = await fetch('/api/integrations/google-drive/ensure-client-folder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify({ clientId: client.id })
+      });
+      const data = await res.json();
+      if (res.ok && data.driveFolderUrl) {
+        setClientDriveUrl(data.driveFolderUrl);
+        if (onSaveChecklist) {
+          onSaveChecklist(
+            client.id,
+            { items },
+            clientEmail,
+            {
+              phone: clientPhone,
+              stage: clientStage,
+              notes: clientNotes,
+              driveFolderUrl: data.driveFolderUrl
+            }
+          );
+        }
+        alert('✅ Carpeta y subcarpetas sincronizadas exitosamente en Google Drive.');
+      } else {
+        alert(data.error || 'No se pudo sincronizar con Google Drive.');
+      }
+    } catch (err) {
+      alert('Error al conectar con Google Drive: ' + err.message);
+    } finally {
+      setIsSyncingDrive(false);
+    }
   };
 
   // Save changes to backend
@@ -1007,6 +1048,48 @@ export default function ClientChecklistModal({
                           value={clientDriveUrl}
                           onChange={e => setClientDriveUrl(e.target.value)}
                         />
+                      </div>
+                      <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={handleSyncClientDriveFolder}
+                          disabled={isSyncingDrive}
+                          style={{
+                            background: '#F0FDF4',
+                            border: '1px solid #BBF7D0',
+                            color: '#15803D',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Folder size={13} color="#16A34A" />
+                          <span>{isSyncingDrive ? 'Sincronizando carpetas...' : (clientDriveUrl ? 'Sincronizar Subcarpetas en Drive' : 'Crear Carpeta y Subcarpetas en Drive')}</span>
+                        </button>
+                        {clientDriveUrl && (
+                          <a
+                            href={clientDriveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: '#2563EB',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            <span>Abrir en Google Drive</span>
+                            <ExternalLink size={11} />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>

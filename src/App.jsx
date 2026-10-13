@@ -7816,6 +7816,55 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
                     />
                   </div>
                 )}
+
+                <div style={{ paddingTop: '8px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontWeight: 700, fontSize: '0.78rem', color: '#334155' }}>
+                    Subcarpetas automáticas a crear dentro de cada cliente / ejecución:
+                  </label>
+                  <div style={{ fontSize: '0.74rem', color: '#64748B' }}>
+                    Indica las subcarpetas que se crearán automáticamente (separadas por comas). Ej: <code>Reportes, Entregables, Documentos Legales, Creativos</code>
+                  </div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Reportes, Entregables, Documentos Legales, Creativos"
+                    value={googleDriveConfig.defaultClientSubfolders || ''}
+                    onChange={(e) => setGoogleDriveConfig(prev => ({ ...prev, defaultClientSubfolders: e.target.value }))}
+                    style={{ margin: 0, height: '36px', fontSize: '0.8rem', background: '#fff' }}
+                  />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {[
+                      { label: '+ Reportes', tag: 'Reportes' },
+                      { label: '+ Entregables', tag: 'Entregables' },
+                      { label: '+ Documentos Legales', tag: 'Documentos Legales' },
+                      { label: '+ Creativos / Guiones', tag: 'Creativos' }
+                    ].map(p => (
+                      <button
+                        key={p.tag}
+                        type="button"
+                        onClick={() => {
+                          const current = (googleDriveConfig.defaultClientSubfolders || '').split(',').map(s => s.trim()).filter(Boolean);
+                          if (!current.includes(p.tag)) {
+                            const next = [...current, p.tag].join(', ');
+                            setGoogleDriveConfig(prev => ({ ...prev, defaultClientSubfolders: next }));
+                          }
+                        }}
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          background: '#F1F5F9',
+                          border: '1px solid #CBD5E1',
+                          color: '#475569',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {googleDriveTestStatus && (

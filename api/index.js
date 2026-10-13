@@ -975,6 +975,20 @@ const ensureClientDriveFolder = async (orgId, clientData) => {
           [targetFolder.id, targetFolder.webViewLink, clientData.id, orgId]
         ).catch(() => {});
       }
+
+      // Auto-create configured subfolders inside the client folder
+      const rawSubfolders = config.defaultClientSubfolders || [];
+      const subfolderList = Array.isArray(rawSubfolders)
+        ? rawSubfolders
+        : String(rawSubfolders).split(',').map(s => s.trim()).filter(Boolean);
+
+      for (const subName of subfolderList) {
+        if (subName) {
+          const cleanSub = sanitizeDriveFolderName(subName);
+          await findOrCreateDriveFolder(accessToken, cleanSub, targetFolder.id).catch(() => {});
+        }
+      }
+
       return {
         folderId: targetFolder.id,
         folderUrl: targetFolder.webViewLink,
@@ -4804,6 +4818,32 @@ app.post('/api/integrations/google-drive/ensure-instance-folder', authenticateTo
   } catch (err) {
     console.error('Error ensuring instance Drive folder:', err);
     res.status(500).json({ error: 'Error al crear/vincular carpeta en Google Drive' });
+  }
+});
+
+// Ensure or sync a Client's Google Drive folder & subfolders
+app.post('/api/integrations/google-drive/ensure-client-folder', authenticateToken, async (req, res) => {
+  const { clientId } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'clientId es requerido' });
+  try {
+    const clientRes = await pool.query('SELECT * FROM clients WHERE id = $1 AND organization_id = $2', [clientId, req.user.organizationId]);
+    if (clientRes.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const client = clientRes.rows[0];
+
+    const folderInfo = await ensureClientDriveFolder(req.user.organizationId, client);
+    if (!folderInfo) {
+      return res.status(400).json({ error: 'Google Drive no está conectado en este Workspace. Actívalo en Integraciones > Google Drive.' });
+    }
+
+    res.json({
+      success: true,
+      driveFolderId: folderInfo.folderId,
+      driveFolderUrl: folderInfo.folderUrl,
+      folderName: folderInfo.folderName
+    });
+  } catch (err) {
+    console.error('Error ensuring client Drive folder:', err);
+    res.status(500).json({ error: 'Error al sincronizar carpeta de cliente en Google Drive' });
   }
 });
 
