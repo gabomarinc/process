@@ -16,6 +16,7 @@ import { DestinationCard } from "./components/ui/DestinationCard";
 import ClientChecklistModal from "./components/ui/ClientChecklistModal";
 import AdminDashboard from "./components/ui/AdminDashboard";
 import { getClientTrafficLightStatus, getBlockingChecklistItemsForInstance } from "./utils/clientSemaforo";
+import { calculateAutoStatus, getEffectiveInstanceStatus } from "./utils/kanbanStatus";
 import AgentCopilot from "./components/ui/AgentCopilot";
 import GoogleDrivePickerModal from "./components/ui/GoogleDrivePickerModal";
 import "./App.css";
@@ -735,8 +736,23 @@ function App() {
           localStorage.setItem('user', JSON.stringify(data.user));
         }
 
+        const loadedCols = data.organization?.kanban_columns || kanbanColumns;
+        const rawInstances = data.instances || [];
+        const normalizedInstances = rawInstances.map(inst => {
+          const nextStatus = calculateAutoStatus(inst.status, inst.steps, loadedCols);
+          if (nextStatus && nextStatus !== inst.status) {
+            fetch(`/api/instances/${inst.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: nextStatus })
+            }).catch(() => {});
+            return { ...inst, status: nextStatus };
+          }
+          return inst;
+        });
+
         setTemplates(data.templates || []);
-        setInstances(data.instances || []);
+        setInstances(normalizedInstances);
         setNotificationLogs(data.notifications || []);
         setTeamMembers(data.team || []);
         setClients(data.clients || []);
@@ -989,20 +1005,25 @@ function App() {
       };
     });
 
+    const nextStatus = calculateAutoStatus(inst.status, updatedSteps, kanbanColumns);
+    const statusChanged = nextStatus && nextStatus !== inst.status;
+
     // Update locally
     setInstances(prev => prev.map(i => {
       if (i.id === instanceId) {
-        return { ...i, steps: updatedSteps };
+        return { ...i, steps: updatedSteps, status: nextStatus || i.status };
       }
       return i;
     }));
 
     // Update in Neon PostgreSQL database
     try {
+      const putBody = { steps: updatedSteps };
+      if (statusChanged) putBody.status = nextStatus;
       await fetch(`/api/instances/${instanceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ steps: updatedSteps })
+        body: JSON.stringify(putBody)
       });
     } catch (err) {
       console.error("Error al guardar el progreso en Neon:", err);
@@ -1129,13 +1150,18 @@ function App() {
       return;
     }
 
-    setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
+    const nextStatus = calculateAutoStatus(inst.status, updatedSteps, kanbanColumns);
+    const statusChanged = nextStatus && nextStatus !== inst.status;
+
+    setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps, status: nextStatus || i.status } : i));
 
     try {
+      const putBody = { steps: updatedSteps };
+      if (statusChanged) putBody.status = nextStatus;
       await fetch(`/api/instances/${instanceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ steps: updatedSteps })
+        body: JSON.stringify(putBody)
       });
     } catch (err) {
       console.error("Error saving step checklist toggle:", err);

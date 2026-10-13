@@ -11,6 +11,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import './KanbanBoard.css';
+import { getEffectiveInstanceStatus } from '../../utils/kanbanStatus';
 
 export const KanbanBoard = ({ 
   instances = [], 
@@ -230,7 +231,7 @@ export const KanbanBoard = ({
         {kanbanColumns.map((colName, colIdx) => {
           // Get cards for this column
           const cards = filteredInstances.filter(inst => {
-            const status = inst.status || 'Por hacer';
+            const status = getEffectiveInstanceStatus(inst, kanbanColumns);
             return status.toLowerCase() === colName.toLowerCase();
           });
 
