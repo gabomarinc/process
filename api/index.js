@@ -652,6 +652,477 @@ const notifyTeamOnExecutionLaunch = async (orgId, instanceData, reqOrigin = 'htt
   }
 };
 
+// Automatic notification engine: sends emails and in-app alerts to step encargados (leads) when steps are overdue OR 1 day before due date
+const checkAndDispatchStepDeadlineAlerts = async (orgId = null) => {
+  try {
+    const orgFilter = orgId ? 'WHERE organization_id = $1' : '';
+    const params = orgId ? [orgId] : [];
+    
+    // Select instances with steps that are not completely finished
+    const instancesRes = await pool.query(
+      `SELECT id, organization_id, instance_name, title, category, steps, client_id
+       FROM instances ${orgFilter}`,
+      params
+    );
+
+    if (instancesRes.rows.length === 0) return { processed: 0, sent: 0 };
+
+    // Fetch team members, users, and organizations to resolve encargados
+    const [teamRes, usersRes, orgsRes] = await Promise.all([
+      pool.query(`SELECT id, name, email, organization_id FROM team_members`),
+      pool.query(`SELECT id, name, email, role, organization_id FROM users`),
+      pool.query(`SELECT id, name FROM organizations`)
+    ]);
+
+    const allTeam = teamRes.rows || [];
+    const allUsers = usersRes.rows || [];
+    const allOrgs = orgsRes.rows || [];
+
+    const now = new Date();
+    let sentCount = 0;
+
+    for (const inst of instancesRes.rows) {
+      const steps = Array.isArray(inst.steps) ? inst.steps : (typeof inst.steps === 'string' ? JSON.parse(inst.steps) : []);
+      if (!steps || steps.length === 0) continue;
+
+      const org = allOrgs.find(o => o.id === inst.organization_id);
+      const senderName = org?.name ? `${org.name} (Kônsul Process)` : 'Kônsul Process';
+
+      for (let idx = 0; idx < steps.length; idx++) {
+        const step = steps[idx];
+        if (!step || step.isCompleted || !step.dueDate) continue;
+
+        const due = new Date(step.dueDate);
+        if (isNaN(due.getTime())) continue;
+
+        const dueTime = due.getTime();
+        const diffMs = dueTime - now.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const dueKey = due.toISOString().slice(0, 10);
+        const formattedDate = due.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        let alertType = null;
+        let logId = null;
+        let isOverdue = false;
+
+        const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const dueMid = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+        const daysDiff = Math.round((dueMid - todayMid) / (1000 * 60 * 60 * 24));
+
+        if (diffHours < 0 || daysDiff < 0) {
+          // VENCIDO / ATRASADO
+          alertType = 'overdue';
+          logId = `overdue-${inst.id}-${step.id}-${dueKey}`;
+          isOverdue = true;
+        } else if ((diffHours > 0 && diffHours <= 26) || daysDiff === 1) {
+          // 1 DÍA ANTES DE SU VENCIMIENTO
+          alertType = 'warning_1day';
+          logId = `warning-1day-${inst.id}-${step.id}-${dueKey}`;
+          isOverdue = false;
+        }
+
+        if (!alertType || !logId) continue;
+
+        const instanceTitle = inst.instance_name || inst.title || 'Proceso';
+        const stepTitle = step.title || `Paso ${idx + 1}`;
+        const orgTeam = allTeam.filter(m => m.organization_id === inst.organization_id);
+        const orgUsers = allUsers.filter(u => u.organization_id === inst.organization_id);
+
+        // Check if this alert was already sent (deduplication)
+        const existingLog = await pool.query(
+          'SELECT id FROM notification_logs WHERE id = $1 LIMIT 1',
+          [logId]
+        );
+
+        if (existingLog.rows.length === 0) {
+          // Find encargados of this step
+          const leadId = getStepLeadId(step);
+          const assigneeIds = getStepAssigneeIds(step);
+
+          // Build list of target members for this step
+          const targetIds = new Set();
+          if (leadId) targetIds.add(String(leadId).toLowerCase());
+          assigneeIds.forEach(id => targetIds.add(String(id).toLowerCase()));
+
+          const recipients = [];
+          const seenEmails = new Set();
+
+          targetIds.forEach(rawId => {
+            const matchTeam = orgTeam.find(m =>
+              String(m.id).toLowerCase() === rawId ||
+              (m.email && m.email.trim().toLowerCase() === rawId)
+            );
+            const matchUser = orgUsers.find(u =>
+              String(u.id).toLowerCase() === rawId ||
+              `admin_${u.id}`.toLowerCase() === rawId ||
+              (u.email && u.email.trim().toLowerCase() === rawId)
+            );
+
+            const email = matchTeam?.email || matchUser?.email;
+            const name = matchTeam?.name || matchUser?.name || 'Encargado del Paso';
+            const userId = matchUser?.id || (matchTeam?.email ? orgUsers.find(u => u.email?.trim().toLowerCase() === matchTeam.email.trim().toLowerCase())?.id : null);
+
+            if (email && !seenEmails.has(email.toLowerCase())) {
+              seenEmails.add(email.toLowerCase());
+              recipients.push({ email: email.trim(), name, userId, rawId });
+            }
+          });
+
+          // Fallback to org admins if no specific encargado found
+          if (recipients.length === 0) {
+            const admins = orgUsers.filter(u => u.role === 'admin');
+            admins.forEach(adm => {
+              if (adm.email && !seenEmails.has(adm.email.toLowerCase())) {
+                seenEmails.add(adm.email.toLowerCase());
+                recipients.push({ email: adm.email.trim(), name: adm.name, userId: adm.id, rawId: `admin_${adm.id}` });
+              }
+            });
+          }
+
+          const primaryLeadName = recipients[0]?.name || 'Encargado';
+
+          const subject = isOverdue
+            ? `⚠️ Alerta de Retraso: El paso "${stepTitle}" está vencido en "${instanceTitle}"`
+            : `⏰ Recordatorio: El paso "${stepTitle}" vence mañana en "${instanceTitle}"`;
+
+          const logMessage = isOverdue
+            ? `⚠️ RETRASO: El paso "${stepTitle}" de "${instanceTitle}" venció el ${formattedDate}. Notificado a encargado: ${primaryLeadName}.`
+            : `⏰ PRÓXIMO A VENCER: El paso "${stepTitle}" de "${instanceTitle}" vence mañana (${formattedDate}). Notificado a encargado: ${primaryLeadName}.`;
+
+          // 1. Insert into notification_logs table (on conflict do nothing)
+          await pool.query(
+            `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO NOTHING`,
+            [logId, inst.organization_id, inst.id, step.id, instanceTitle, stepTitle, logMessage]
+          );
+
+          // 2. Insert into notifications table (in-app) for each recipient
+          for (const recipient of recipients) {
+            let targetUserId = recipient.userId;
+            if (!targetUserId && recipient.email) {
+              const uRes = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1', [recipient.email]);
+              if (uRes.rows.length > 0) targetUserId = uRes.rows[0].id;
+            }
+
+            if (targetUserId) {
+              await pool.query(
+                `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [targetUserId, isOverdue ? 'alert' : 'warning', logMessage, String(inst.id), String(step.id)]
+              );
+            }
+
+            // 3. Send email to recipient
+            const origin = process.env.BASE_URL || 'https://process-opal.vercel.app';
+            const headerBg = isOverdue ? '#DC2626' : '#D97706';
+            const bannerTitle = isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '⏰ Recordatorio de Vencimiento Próximo';
+            const statusText = isOverdue 
+              ? `se encuentra <strong style="color: #DC2626;">VENCIDO</strong> desde el <strong>${formattedDate}</strong>`
+              : `tiene fecha límite para <strong style="color: #D97706;">MAÑANA</strong> (<strong>${formattedDate}</strong>)`;
+
+            const htmlContent = `
+              <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 14px; background-color: #ffffff; box-shadow: 0 4px 16px rgba(0,0,0,0.04);">
+                <div style="text-align: center; margin-bottom: 2rem;">
+                  <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 42px; object-fit: contain;" />
+                </div>
+                <div style="background-color: ${isOverdue ? '#FEF2F2' : '#FFFBEB'}; border: 1px solid ${isOverdue ? '#FCA5A5' : '#FDE68A'}; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+                  <h2 style="color: ${headerBg}; margin: 0; font-size: 1.2rem; font-weight: 700;">
+                    ${bannerTitle}
+                  </h2>
+                </div>
+                <p style="color: #334155; line-height: 1.6; font-size: 1rem; margin-bottom: 1rem;">
+                  Hola <strong>${recipient.name}</strong> (👑 Encargado del Paso),
+                </p>
+                <p style="color: #475569; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                  Te informamos que el paso "<strong>${stepTitle}</strong>" del proceso "<strong>${instanceTitle}</strong>" ${statusText}. Por favor revisa y adelanta tus tareas para mantener el flujo a tiempo.
+                </p>
+                <div style="background-color: #f8fafc; padding: 1.25rem; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 2rem;">
+                  <h4 style="margin: 0 0 0.75rem 0; color: #0f172a; font-size: 0.95rem; font-weight: 700;">📋 Detalles de la Tarea:</h4>
+                  <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Proceso / Caso:</strong> ${instanceTitle}</p>
+                  <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Paso:</strong> ${stepTitle}</p>
+                  <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Fecha Límite:</strong> <span style="color: ${headerBg}; font-weight: 700;">${formattedDate}</span></p>
+                  ${step.description ? `<p style="margin: 0.5rem 0 0.25rem 0; color: #475569; font-size: 0.88rem; line-height: 1.5;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
+                </div>
+                <div style="text-align: center; margin-bottom: 2rem;">
+                  <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.85rem 2.2rem; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; display: inline-block; box-shadow: 0 2px 6px rgba(39, 190, 167, 0.3);">
+                    ${isOverdue ? 'Atender y Completar Paso' : 'Acceder al Paso en la Plataforma'}
+                  </a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 2rem 0;" />
+                <p style="color: #94a3b8; font-size: 0.78rem; text-align: center; margin: 0;">
+                  Kônsul Process &copy; 2026. Notificación automática del sistema de gestión de procesos.
+                </p>
+              </div>
+            `;
+
+            await sendEmail({
+              to: recipient.email,
+              subject,
+              html: htmlContent,
+              senderName
+            });
+            sentCount++;
+          }
+        }
+
+        // Check for postponed mandatory files in step.checklist
+        if (Array.isArray(step.checklist)) {
+          for (let cIdx = 0; cIdx < step.checklist.length; cIdx++) {
+            const chk = step.checklist[cIdx];
+            if (!chk || !chk.requireAttachment || !chk.postponed || !chk.postponedUntil) continue;
+            const hasFile = !!(chk.uploadedFileName || chk.uploadedFileUrl);
+            if (hasFile) continue;
+
+            const postDue = new Date(chk.postponedUntil + 'T12:00:00');
+            if (isNaN(postDue.getTime())) continue;
+
+            const postDiffMs = postDue.getTime() - now.getTime();
+            const postDiffHours = postDiffMs / (1000 * 60 * 60);
+            const postDueKey = chk.postponedUntil;
+            const postFormattedDate = postDue.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+            const postDueMid = new Date(postDue.getFullYear(), postDue.getMonth(), postDue.getDate()).getTime();
+            const postDaysDiff = Math.round((postDueMid - todayMid) / (1000 * 60 * 60 * 24));
+
+            let postAlertType = null;
+            let postLogId = null;
+            let isPostOverdue = false;
+
+            if (postDiffHours < 0 || postDaysDiff < 0) {
+              postAlertType = 'postponed_overdue';
+              postLogId = `postponed-overdue-${inst.id}-${step.id}-${chk.id || cIdx}-${postDueKey}`;
+              isPostOverdue = true;
+            } else if ((postDiffHours > 0 && postDiffHours <= 26) || postDaysDiff === 1) {
+              postAlertType = 'postponed_1day';
+              postLogId = `postponed-1day-${inst.id}-${step.id}-${chk.id || cIdx}-${postDueKey}`;
+              isPostOverdue = false;
+            }
+
+            if (!postAlertType || !postLogId) continue;
+
+            const existingPostLog = await pool.query(
+              'SELECT id FROM notification_logs WHERE id = $1 LIMIT 1',
+              [postLogId]
+            );
+            if (existingPostLog.rows.length > 0) continue;
+
+            const chkTitle = chk.text || 'Archivo Requerido';
+            const postLogMessage = isPostOverdue
+              ? `⚠️ [ARCHIVO POSPUESTO VENCIDO] Venció el plazo para subir el archivo obligatorio "${chkTitle}" en el paso "${step.title}" de "${instanceTitle}" (Compromiso: ${postFormattedDate}). Motivo: "${chk.postponedReason || 'Sin motivo'}".`
+              : `⏰ [RECORDATORIO 1 DÍA] Mañana vence el plazo para subir el archivo obligatorio pospuesto "${chkTitle}" en el paso "${step.title}" de "${instanceTitle}" (Fecha: ${postFormattedDate}).`;
+
+            await pool.query(
+              `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (id) DO NOTHING`,
+              [postLogId, inst.organization_id, String(inst.id), String(step.id), instanceTitle, step.title, postLogMessage]
+            );
+
+            for (const recipient of recipients) {
+              let targetUserId = recipient.userId;
+              if (!targetUserId && recipient.email) {
+                const uRes = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1', [recipient.email]);
+                if (uRes.rows.length > 0) targetUserId = uRes.rows[0].id;
+              }
+
+              if (targetUserId) {
+                await pool.query(
+                  `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+                   VALUES ($1, $2, $3, $4, $5)`,
+                  [targetUserId, isPostOverdue ? 'alert' : 'warning', postLogMessage, String(inst.id), String(step.id)]
+                );
+              }
+
+              const origin = process.env.BASE_URL || 'https://process-opal.vercel.app';
+              const postHeaderBg = isPostOverdue ? '#DC2626' : '#D97706';
+              const postBannerTitle = isPostOverdue ? '⚠️ Plazo de Archivo Pospuesto Vencido' : '⏰ Recordatorio de Archivo Pospuesto (1 Día)';
+              const postSubject = isPostOverdue
+                ? `⚠️ Alerta: Plazo vencido para entregar archivo obligatorio "${chkTitle}" en "${instanceTitle}"`
+                : `⏰ Recordatorio: Mañana vence la entrega del archivo pospuesto "${chkTitle}" en "${instanceTitle}"`;
+
+              const postHtml = `
+                <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 14px; background-color: #ffffff; box-shadow: 0 4px 16px rgba(0,0,0,0.04);">
+                  <div style="text-align: center; margin-bottom: 2rem;">
+                    <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 42px; object-fit: contain;" />
+                  </div>
+                  <div style="background-color: ${isPostOverdue ? '#FEF2F2' : '#FFFBEB'}; border: 1px solid ${isPostOverdue ? '#FCA5A5' : '#FDE68A'}; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+                    <h2 style="color: ${postHeaderBg}; margin: 0; font-size: 1.2rem; font-weight: 700;">
+                      ${postBannerTitle}
+                    </h2>
+                  </div>
+                  <p style="color: #334155; line-height: 1.6; font-size: 1rem; margin-bottom: 1rem;">
+                    Hola <strong>${recipient.name}</strong> (👑 Responsable del Paso),
+                  </p>
+                  <p style="color: #475569; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                    ${isPostOverdue 
+                      ? `El plazo de entrega comprometido para el archivo obligatorio "<strong>${chkTitle}</strong>" en el paso "<strong>${step.title}</strong>" <strong>HA VENCIDO</strong> (${postFormattedDate}).`
+                      : `Te recordamos que mañana (${postFormattedDate}) vence el plazo pactado para adjuntar el archivo obligatorio "<strong>${chkTitle}</strong>" en el paso "<strong>${step.title}</strong>".`}
+                  </p>
+                  <div style="background-color: #f8fafc; padding: 1.25rem; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 2rem;">
+                    <h4 style="margin: 0 0 0.75rem 0; color: #0f172a; font-size: 0.95rem; font-weight: 700;">📋 Datos del Entregable:</h4>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Proceso / Caso:</strong> ${instanceTitle}</p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Paso:</strong> ${step.title}</p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Archivo Requerido:</strong> ${chkTitle}</p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Nueva Fecha Límite:</strong> <span style="color: ${postHeaderBg}; font-weight: 700;">${postFormattedDate}</span></p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Motivo Registrado:</strong> <em>"${chk.postponedReason || 'Sin motivo especificado'}"</em></p>
+                  </div>
+                  <div style="text-align: center; margin-bottom: 2rem;">
+                    <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.85rem 2.2rem; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; display: inline-block; box-shadow: 0 2px 6px rgba(39, 190, 167, 0.3);">
+                      Subir Archivo Pendiente
+                    </a>
+                  </div>
+                  <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 2rem 0;" />
+                  <p style="color: #94a3b8; font-size: 0.78rem; text-align: center; margin: 0;">
+                    Kônsul Process &copy; 2026. Notificación automática del sistema de gestión de procesos.
+                  </p>
+                </div>
+              `;
+
+              await sendEmail({
+                to: recipient.email,
+                subject: postSubject,
+                html: postHtml,
+                senderName
+              });
+              sentCount++;
+            }
+          }
+        }
+
+        // Check for assigned checklist items that are incomplete and step is overdue / due in 1 day
+        if (Array.isArray(step.checklist) && (alertType === 'warning_1day' || isOverdue)) {
+          for (let cIdx = 0; cIdx < step.checklist.length; cIdx++) {
+            const chk = step.checklist[cIdx];
+            if (!chk || typeof chk !== 'object') continue;
+            if (chk.isCompleted || !chk.assignedTo) continue;
+
+            const chkLogId = `${isOverdue ? 'chk-overdue' : 'chk-warning-1day'}-${inst.id}-${step.id}-${chk.id || cIdx}-${dueKey}`;
+            const existingChkLog = await pool.query(
+              'SELECT id FROM notification_logs WHERE id = $1 LIMIT 1',
+              [chkLogId]
+            );
+            if (existingChkLog.rows.length > 0) continue;
+
+            const rawAssigneeId = String(chk.assignedTo).trim().toLowerCase();
+            const matchTeam = orgTeam.find(m =>
+              String(m.id).toLowerCase() === rawAssigneeId ||
+              (m.email && m.email.trim().toLowerCase() === rawAssigneeId)
+            );
+            const matchUser = orgUsers.find(u =>
+              String(u.id).toLowerCase() === rawAssigneeId ||
+              `admin_${u.id}`.toLowerCase() === rawAssigneeId ||
+              (u.email && u.email.trim().toLowerCase() === rawAssigneeId)
+            );
+
+            let assigneeEmail = matchTeam?.email || matchUser?.email;
+            let assigneeName = matchTeam?.name || matchUser?.name || 'Responsable de la tarea';
+            let targetUserId = matchUser?.id || (matchTeam?.email ? orgUsers.find(u => u.email?.trim().toLowerCase() === matchTeam.email.trim().toLowerCase())?.id : null);
+
+            if (!assigneeEmail && chk.assignedTo) {
+              const uRes = await pool.query('SELECT id, email, name FROM users WHERE id = $1 LIMIT 1', [chk.assignedTo]);
+              if (uRes.rows.length > 0) {
+                assigneeEmail = uRes.rows[0].email;
+                assigneeName = uRes.rows[0].name || assigneeName;
+                targetUserId = uRes.rows[0].id;
+              }
+            }
+
+            const chkTitle = chk.text || 'Ítem de checklist';
+            const chkLogMessage = isOverdue
+              ? `⚠️ [CHECKLIST VENCIDO] Tu tarea asignada "${chkTitle}" en el paso "${stepTitle}" de "${instanceTitle}" está vencida (${formattedDate}) y aún no ha sido marcada como completada.`
+              : `⏰ [CHECKLIST POR VENCER] Tu tarea asignada "${chkTitle}" en el paso "${stepTitle}" de "${instanceTitle}" aún no está marcada y el paso vence mañana (${formattedDate}).`;
+
+            await pool.query(
+              `INSERT INTO notification_logs (id, organization_id, instance_id, step_id, instance_name, step_title, message)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (id) DO NOTHING`,
+              [chkLogId, inst.organization_id, String(inst.id), String(step.id), instanceTitle, stepTitle, chkLogMessage]
+            );
+
+            if (targetUserId) {
+              await pool.query(
+                `INSERT INTO notifications (user_id, type, message, instance_id, step_id)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [targetUserId, isOverdue ? 'alert' : 'warning', chkLogMessage, String(inst.id), String(step.id)]
+              );
+            }
+
+            if (assigneeEmail) {
+              const origin = process.env.BASE_URL || 'https://process-opal.vercel.app';
+              const chkHeaderBg = isOverdue ? '#DC2626' : '#D97706';
+              const chkBannerTitle = isOverdue ? '⚠️ Tarea de Checklist Vencida' : '⏰ Recordatorio de Checklist Asignado (1 Día)';
+              const chkSubject = isOverdue
+                ? `⚠️ Alerta: Tu ítem de checklist "${chkTitle}" en "${stepTitle}" está vencido`
+                : `⏰ Recordatorio: Mañana vence el plazo para tu ítem "${chkTitle}" en "${stepTitle}"`;
+
+              const chkHtml = `
+                <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 14px; background-color: #ffffff; box-shadow: 0 4px 16px rgba(0,0,0,0.04);">
+                  <div style="text-align: center; margin-bottom: 2rem;">
+                    <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 42px; object-fit: contain;" />
+                  </div>
+                  <div style="background-color: ${isOverdue ? '#FEF2F2' : '#FFFBEB'}; border: 1px solid ${isOverdue ? '#FCA5A5' : '#FDE68A'}; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+                    <h2 style="color: ${chkHeaderBg}; margin: 0; font-size: 1.2rem; font-weight: 700;">
+                      ${chkBannerTitle}
+                    </h2>
+                  </div>
+                  <p style="color: #334155; line-height: 1.6; font-size: 1rem; margin-bottom: 1rem;">
+                    Hola <strong>${assigneeName}</strong>,
+                  </p>
+                  <p style="color: #475569; line-height: 1.6; font-size: 0.95rem; margin-bottom: 1.5rem;">
+                    ${isOverdue 
+                      ? `Tienes asignada la tarea de checklist "<strong>${chkTitle}</strong>" en el paso "<strong>${stepTitle}</strong>" del proceso "<strong>${instanceTitle}</strong>", y la fecha límite del paso <strong>HA VENCIDO</strong> (${formattedDate}) sin que se haya marcado su cumplimiento.`
+                      : `Te recordamos que tienes asignada la tarea de checklist "<strong>${chkTitle}</strong>" en el paso "<strong>${stepTitle}</strong>" del proceso "<strong>${instanceTitle}</strong>", y el plazo para completar este paso vence <strong>MAÑANA</strong> (${formattedDate}). Por favor atiende tu entregable antes de que se agote el tiempo.`}
+                  </p>
+                  <div style="background-color: #f8fafc; padding: 1.25rem; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 2rem;">
+                    <h4 style="margin: 0 0 0.75rem 0; color: #0f172a; font-size: 0.95rem; font-weight: 700;">📋 Detalles de tu Asignación:</h4>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Proceso / Caso:</strong> ${instanceTitle}</p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Paso:</strong> ${stepTitle}</p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Ítem Asignado:</strong> <span style="font-weight: 700; color: #0F172A;">${chkTitle}</span></p>
+                    <p style="margin: 0.35rem 0; color: #475569; font-size: 0.9rem;"><strong>Fecha Límite del Paso:</strong> <span style="color: ${chkHeaderBg}; font-weight: 700;">${formattedDate}</span></p>
+                  </div>
+                  <div style="text-align: center; margin-bottom: 2rem;">
+                    <a href="${origin}" style="background-color: #27bea7; color: white; padding: 0.85rem 2.2rem; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; display: inline-block; box-shadow: 0 2px 6px rgba(39, 190, 167, 0.3);">
+                      Ver y Marcar Ítem
+                    </a>
+                  </div>
+                  <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 2rem 0;" />
+                  <p style="color: #94a3b8; font-size: 0.78rem; text-align: center; margin: 0;">
+                    Kônsul Process &copy; 2026. Notificación automática del sistema de gestión de procesos.
+                  </p>
+                </div>
+              `;
+
+              await sendEmail({
+                to: assigneeEmail,
+                subject: chkSubject,
+                html: chkHtml,
+                senderName
+              });
+              sentCount++;
+            }
+          }
+        }
+      }
+    }
+
+    return { processed: instancesRes.rows.length, sent: sentCount };
+  } catch (err) {
+    console.error('Error in checkAndDispatchStepDeadlineAlerts:', err);
+    return { error: err.message };
+  }
+};
+
+// Periodic background check for step deadlines (runs every 10 minutes)
+setInterval(() => {
+  checkAndDispatchStepDeadlineAlerts().catch(err => console.error('Error en check periódico de vencimientos:', err));
+}, 10 * 60 * 1000);
+
+// Also run once shortly after server boots
+setTimeout(() => {
+  checkAndDispatchStepDeadlineAlerts().catch(err => console.error('Error en check inicial de vencimientos:', err));
+}, 8000);
+
 // ==========================================
 // GOOGLE DRIVE MULTI-TENANT HELPERS
 // ==========================================
@@ -1543,11 +2014,12 @@ const authenticateApiKey = async (req, res, next) => {
     // Update last used timestamp
     pool.query('UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1', [apiToken.id]).catch(console.error);
 
+    const kindeUserEmail = (req.headers['x-user-email'] || req.query.user_email || '').trim();
     req.user = {
-      id: null,
+      id: req.headers['x-user-id'] || null,
       organizationId: apiToken.organization_id,
       role: 'admin',
-      email: 'api-caller@konsul.digital'
+      email: kindeUserEmail || 'api-caller@konsul.digital'
     };
 
     next();
@@ -3005,6 +3477,27 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
   }
 });
 
+// 7b. Trigger manual or automated deadline checks for instances in this organization
+app.post('/api/notifications/check-deadlines', authenticateToken, async (req, res) => {
+  try {
+    const result = await checkAndDispatchStepDeadlineAlerts(req.user.organizationId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Error in /api/notifications/check-deadlines:', err);
+    res.status(500).json({ error: 'Error al verificar vencimientos de pasos' });
+  }
+});
+
+app.get('/api/notifications/check-deadlines', authenticateToken, async (req, res) => {
+  try {
+    const result = await checkAndDispatchStepDeadlineAlerts(req.user.organizationId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Error in /api/notifications/check-deadlines:', err);
+    res.status(500).json({ error: 'Error al verificar vencimientos de pasos' });
+  }
+});
+
 // 8. Add a notification log
 app.post('/api/notifications', authenticateToken, async (req, res) => {
   const { id, instanceId, stepId, instanceName, stepTitle, message, type = 'message' } = req.body;
@@ -3111,7 +3604,9 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
                 (m.email && m.email.trim().toLowerCase() === String(stepLeadId).toLowerCase())
               )
             ) || null;
-            const isOverdue = !idStr.startsWith('active-');
+            const isPostponedFile = type === 'postponed_file' || idStr.startsWith('postpone-');
+            const isWarning1Day = !isPostponedFile && (idStr.includes('warning-1day') || idStr.includes('reminder-1day') || type === 'warning');
+            const isOverdue = !isWarning1Day && !isPostponedFile && !idStr.startsWith('active-');
             const origin = req.headers.origin || req.headers.referer || 'https://process-opal.vercel.app';
 
             for (const memberRow of matchedStepMembers) {
@@ -3119,17 +3614,31 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
               if (!memberEmail) continue;
 
               const isLead = leadRow && leadRow.email === memberEmail;
-              const subject = isOverdue 
-                ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
-                : `📋 ${isLead ? '[Encargado Principal] ' : ''}Paso activo: "${stepTitle}" en "${instanceName}"`;
+              const subject = isPostponedFile
+                ? `⏳ [Archivo Pospuesto] Compromiso de entrega para el paso "${stepTitle}" en "${instanceName}"`
+                : isWarning1Day
+                ? `⏰ Recordatorio: El paso "${stepTitle}" vence mañana en "${instanceName}"`
+                : isOverdue 
+                  ? `⚠️ Alerta de retraso: Tarea vencida en "${instanceName}"` 
+                  : `📋 ${isLead ? '[Encargado Principal] ' : ''}Paso activo: "${stepTitle}" en "${instanceName}"`;
+
+              const headerTitle = isPostponedFile
+                ? '⏳ Compromiso de Entrega de Archivo Pospuesto'
+                : isWarning1Day
+                ? '⏰ Recordatorio de Vencimiento Próximo (1 Día)'
+                : isOverdue 
+                  ? '⚠️ Alerta de Retraso de Tarea' 
+                  : '📋 Paso Asignado y Activo';
+
+              const headerColor = isPostponedFile ? '#D97706' : (isWarning1Day ? '#D97706' : isOverdue ? '#D32F2F' : '#111827');
 
               const htmlContent = `
                 <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem; border: 1px solid #eef0f2; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
                   <div style="text-align: center; margin-bottom: 2rem;">
                     <img src="https://konsul.digital/images/Konsul-logo-general.png" alt="Kônsul Logo" style="height: 45px; object-fit: contain;" />
                   </div>
-                  <h2 style="color: ${isOverdue ? '#D32F2F' : '#111827'}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
-                    ${isOverdue ? '⚠️ Alerta de Retraso de Tarea' : '📋 Paso Asignado y Activo'}
+                  <h2 style="color: ${headerColor}; margin-bottom: 1rem; font-size: 1.4rem; font-weight: 700;">
+                    ${headerTitle}
                   </h2>
                   <p style="color: #4b5563; line-height: 1.6; font-size: 1rem; margin-bottom: 1rem;">
                     Hola <strong>${memberName}</strong> (${isLead ? '👑 Encargado Principal del Paso' : '👥 Colaborador Asignado'}),
@@ -3141,6 +3650,9 @@ app.post('/api/notifications', authenticateToken, async (req, res) => {
                     <h4 style="margin: 0 0 0.5rem 0; color: #111827; font-size: 1rem;">Detalles del Paso:</h4>
                     <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Caso/Ejecución:</strong> ${instanceName}</p>
                     <p style="margin: 0.25rem 0; color: #4b5563;"><strong>Paso:</strong> ${stepTitle}</p>
+                    ${req.body.checklistText ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Archivo / Entregable:</strong> ${req.body.checklistText}</p>` : ''}
+                    ${req.body.postponedUntil ? `<p style="margin: 0.25rem 0; color: #D97706; font-weight: 700;"><strong>Nueva Fecha Límite Pospuesta:</strong> ${new Date(req.body.postponedUntil + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}</p>` : ''}
+                    ${req.body.postponedReason ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Motivo Declarado:</strong> <em>"${req.body.postponedReason}"</em></p>` : ''}
                     ${leadRow ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>👑 Encargado Principal:</strong> ${leadRow.name}</p>` : ''}
                     ${matchedStepMembers.length > 1 ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>👥 Equipo asignado:</strong> ${matchedStepMembers.map(m => m.name).join(', ')}</p>` : ''}
                     ${step.description ? `<p style="margin: 0.25rem 0; color: #4b5563;"><strong>Instrucciones:</strong> ${step.description}</p>` : ''}
@@ -5803,6 +6315,7 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
     const template = templateRes.rows[0];
     req.user.organizationId = template.organization_id;
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
+    let instanceCreated = false;
 
     // Resolve custom start date from variables
     const customStartDate = variables?.['Fecha de Inicio'] || variables?.['fecha_inicio'];
@@ -5906,7 +6419,19 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
       || (variables?.['ID de Factura / Documento'] ? `Factura_${variables['ID de Factura / Documento']}.pdf` : null)
       || (attachedDocUrl ? 'Documento_Factura.pdf' : null);
 
-    const stepsWithDates = (template.steps || []).map((step, idx) => {
+    let rawSteps = template.steps || [];
+    if (typeof rawSteps === 'string') {
+      try {
+        rawSteps = JSON.parse(rawSteps);
+      } catch (e) {
+        rawSteps = [];
+      }
+    }
+    if (!Array.isArray(rawSteps)) {
+      rawSteps = [];
+    }
+
+    const stepsWithDates = rawSteps.map((step, idx) => {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + (step.relativeOffsetDays || 1));
       
@@ -5946,35 +6471,57 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
         JSON.stringify(stepsWithDates)
       ]
     );
+    instanceCreated = true;
 
-    const driveInfo = await ensureExecutionDriveFolder(
-      req.user.organizationId, 
-      { id: instId, title: template.title, instanceName }, 
-      targetClientName || instanceName
-    ).catch(() => null);
+    // Acciones auxiliares secundarias (Drive, Notificaciones al equipo, Automatización de Process)
+    // Se ejecutan de manera tolerante a fallos para que la ejecución del proceso nunca falle.
+    try {
+      const driveInfo = await ensureExecutionDriveFolder(
+        req.user.organizationId, 
+        { id: instId, title: template.title, instanceName }, 
+        targetClientName || instanceName
+      ).catch(err => {
+        console.warn('[templates/execute] Drive folder creation skipped or failed:', err?.message || err);
+        return null;
+      });
 
-    if (driveInfo?.folderId && resolvedClientId) {
-      await pool.query(
-        `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
-         WHERE id = $3 AND organization_id = $4`,
-        [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
-      ).catch(() => {});
+      if (driveInfo?.folderId && resolvedClientId) {
+        await pool.query(
+          `UPDATE clients SET drive_folder_id = $1, drive_folder_url = $2
+           WHERE id = $3 AND organization_id = $4`,
+          [driveInfo.folderId, driveInfo.folderUrl, resolvedClientId, req.user.organizationId]
+        ).catch(() => {});
+      }
+    } catch (driveErr) {
+      console.warn('[templates/execute] Non-blocking drive setup error:', driveErr?.message || driveErr);
     }
 
-    const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-    await notifyTeamOnExecutionLaunch(req.user.organizationId, {
-      id: instId,
-      title: template.title,
-      instanceName,
-      steps: stepsWithDates
-    }, reqOrigin);
+    try {
+      const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+      await notifyTeamOnExecutionLaunch(req.user.organizationId, {
+        id: instId,
+        title: template.title,
+        instanceName,
+        steps: stepsWithDates
+      }, reqOrigin).catch(notifyErr => {
+        console.warn('[templates/execute] Non-blocking team notification error:', notifyErr?.message || notifyErr);
+      });
+    } catch (notifyErr) {
+      console.warn('[templates/execute] Non-blocking notify team error:', notifyErr?.message || notifyErr);
+    }
 
-    triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
-      'Título de Tarea': instanceName,
-      'Cliente Asociado': targetClientName || instanceName,
-      'Descripción': `Plantilla ${template.title} ejecutada vía API`,
-      'Miembro Asignado': targetEmail || 'Admin'
-    });
+    try {
+      triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+        'Título de Tarea': instanceName,
+        'Cliente Asociado': targetClientName || instanceName,
+        'Descripción': `Plantilla ${template.title} ejecutada vía API`,
+        'Miembro Asignado': targetEmail || 'Admin'
+      }).catch(autoErr => {
+        console.warn('[templates/execute] Non-blocking triggerProcessAutomation error:', autoErr?.message || autoErr);
+      });
+    } catch (autoErr) {
+      console.warn('[templates/execute] Non-blocking automation trigger error:', autoErr?.message || autoErr);
+    }
 
     res.status(201).json({
       success: true,
@@ -5982,12 +6529,21 @@ app.post('/api/v1/templates/execute', authenticateApiKey, async (req, res) => {
       execution_id: instId
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error en /api/v1/templates/execute:', err);
+    if (instanceCreated) {
+      console.warn(`[templates/execute] La instancia ${instId} se creó en DB pero ocurrió una advertencia posterior:`, err.message);
+      return res.status(201).json({
+        success: true,
+        message: "Instancia de proceso iniciada con éxito (algunas tareas secundarias continúan en segundo plano).",
+        execution_id: instId
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: {
         code: "SERVER_ERROR",
-        message: "Error al iniciar la ejecución del proceso"
+        message: "Error al iniciar la ejecución del proceso: " + (err.message || 'Error del servidor')
       }
     });
   }
@@ -6156,6 +6712,7 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     const template = templateRes.rows[0];
     req.user.organizationId = template.organization_id;
     const instId = 'inst_' + crypto.randomBytes(12).toString('hex');
+    let instanceCreated = false;
     const startedAt = new Date().toISOString();
 
     // Resolve or auto-register client
@@ -6225,25 +6782,38 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
         priority || 'Media'
       ]
     );
+    instanceCreated = true;
 
-    // Notify team members (Encargados & Asignados) via Email
-    const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-    await notifyTeamOnExecutionLaunch(req.user.organizationId, {
-      id: instId,
-      title: template.title,
-      instanceName,
-      priority: priority || 'Media',
-      steps: stepsWithDates
-    }, reqOrigin);
+    // Notify team members (Encargados & Asignados) via Email (Non-blocking)
+    try {
+      const reqOrigin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+      await notifyTeamOnExecutionLaunch(req.user.organizationId, {
+        id: instId,
+        title: template.title,
+        instanceName,
+        priority: priority || 'Media',
+        steps: stepsWithDates
+      }, reqOrigin).catch(notifyErr => {
+        console.warn('[executions] Non-blocking team notification error:', notifyErr?.message || notifyErr);
+      });
+    } catch (notifyErr) {
+      console.warn('[executions] Non-blocking notify team error:', notifyErr?.message || notifyErr);
+    }
 
-    // Notify Suite Automations engine
-    triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
-      'Título de Tarea': instanceName,
-      'Descripción': `Plantilla "${template.title}" ejecutada vía API v1`,
-      'Plantilla': template.title,
-      'Cliente': resolvedClientName,
-      'ID de Ejecución': instId
-    });
+    // Notify Suite Automations engine (Non-blocking)
+    try {
+      triggerProcessAutomation('Nueva Tarea / Tarjeta', req.user, {
+        'Título de Tarea': instanceName,
+        'Descripción': `Plantilla "${template.title}" ejecutada vía API v1`,
+        'Plantilla': template.title,
+        'Cliente': resolvedClientName,
+        'ID de Ejecución': instId
+      }).catch(autoErr => {
+        console.warn('[executions] Non-blocking triggerProcessAutomation error:', autoErr?.message || autoErr);
+      });
+    } catch (autoErr) {
+      console.warn('[executions] Non-blocking automation trigger error:', autoErr?.message || autoErr);
+    }
 
     res.status(201).json({
       success: true,
@@ -6265,11 +6835,33 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
     });
   } catch (err) {
     console.error('API v1 Create Execution error:', err);
+    if (instanceCreated) {
+      console.warn(`[executions] La instancia ${instId} se creó en DB pero ocurrió una advertencia posterior:`, err.message);
+      return res.status(201).json({
+        success: true,
+        data: {
+          id: instId,
+          title: template.title,
+          instanceName,
+          clientId: resolvedClientId,
+          startedAt,
+          status: 'Por hacer',
+          priority: priority || 'Media',
+          totalSteps: stepsWithDates?.length || 0,
+          steps: stepsWithDates || []
+        },
+        meta: {
+          app: "konsulprocess",
+          version: "1"
+        }
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: {
         code: "SERVER_ERROR",
-        message: "Error al iniciar la ejecución programáticamente"
+        message: "Error al iniciar la ejecución programáticamente: " + (err.message || 'Error del servidor')
       }
     });
   }

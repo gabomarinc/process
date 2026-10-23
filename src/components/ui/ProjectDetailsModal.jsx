@@ -35,9 +35,12 @@ import {
   BarChart2,
   Flag,
   Target,
-  Timer
+  Timer,
+  Lock
 } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
+import { getStepAccess } from '../../utils/stepPermissions';
+import PostponeFileModal from './PostponeFileModal';
 
 const getFileType = (name, fallbackType) => {
   if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
@@ -89,7 +92,9 @@ export const ProjectDetailsModal = ({
   addToast,
   clients = [],
   onOpenClientChecklist,
-  handleToggleStepChecklist
+  handleToggleStepChecklist,
+  handlePostponeChecklistFile,
+  handleAssignChecklistMember
 }) => {
   const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
   const [activeModalTab, setActiveModalTab] = useState('detalles'); // 'detalles', 'actividad', 'tareas', 'archivos', 'conversacion', 'calendario'
@@ -100,6 +105,7 @@ export const ProjectDetailsModal = ({
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [showTopAttachments, setShowTopAttachments] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
+  const [postponeModalData, setPostponeModalData] = useState(null);
 
   // Email sub-modal state
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -337,6 +343,16 @@ export const ProjectDetailsModal = ({
   };
 
   const handleStepCompleteClick = (stepId, isChecked) => {
+    const stepIdx = (activeInstance?.steps || []).findIndex(s => s.id === stepId);
+    if (stepIdx !== -1) {
+      const stepAccess = getStepAccess(activeInstance, stepIdx, currentUser, teamMembers);
+      if (isChecked && !stepAccess.canWork && stepAccess.isPosterior) {
+        if (addToast) {
+          addToast(`Paso bloqueado: Solo su encargado (${stepAccess.leadName}) puede adelantarlo`, 'warning');
+        }
+        return;
+      }
+    }
     handleStepComplete(activeInstance.id, stepId, isChecked, null);
   };
 
@@ -2475,9 +2491,12 @@ export const ProjectDetailsModal = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {steps.map(step => {
+                {steps.map((step, idx) => {
                   const isExpanded = expandedStepId === step.id;
                   const isOverdue = step.dueDate && new Date(step.dueDate) < today && !step.isCompleted;
+                  const stepAccess = getStepAccess(activeInstance, idx, currentUser, teamMembers);
+                  const isPosteriorLocked = !stepAccess.canWork && stepAccess.isPosterior;
+                  const isLeadAdvance = stepAccess.isPosterior && stepAccess.isEncargado;
 
                   return (
                     <div
@@ -2488,7 +2507,8 @@ export const ProjectDetailsModal = ({
                         borderRadius: '16px',
                         overflow: 'hidden',
                         transition: 'all 0.2s',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                        opacity: isPosteriorLocked ? 0.75 : 1
                       }}
                     >
                       <div
@@ -2502,37 +2522,74 @@ export const ProjectDetailsModal = ({
                         }}
                       >
                         {/* Checkbox */}
-                        <div
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleStepCompleteClick(step.id, !step.isCompleted);
-                          }}
-                          style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '8px',
-                            border: `2px solid ${step.isCompleted ? '#27BEA5' : isOverdue ? '#EF4444' : '#CBD5E1'}`,
-                            background: step.isCompleted ? '#27BEA5' : 'transparent',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            cursor: 'pointer',
-                            flexShrink: 0
-                          }}
-                        >
-                          {step.isCompleted && <Check size={14} strokeWidth={3} />}
-                        </div>
+                        {isPosteriorLocked ? (
+                          <div
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (addToast) addToast(`Paso bloqueado: Solo su encargado (${stepAccess.leadName}) puede adelantarlo`, 'warning');
+                            }}
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '8px',
+                              border: '2px dashed #CBD5E1',
+                              background: '#F8FAFC',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#94A3B8',
+                              cursor: 'not-allowed',
+                              flexShrink: 0
+                            }}
+                            title={`Bloqueado: Asignado a ${stepAccess.leadName}`}
+                          >
+                            <Lock size={12} color="#94A3B8" />
+                          </div>
+                        ) : (
+                          <div
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleStepCompleteClick(step.id, !step.isCompleted);
+                            }}
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '8px',
+                              border: `2px solid ${step.isCompleted ? '#27BEA5' : isOverdue ? '#EF4444' : '#CBD5E1'}`,
+                              background: step.isCompleted ? '#27BEA5' : 'transparent',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'white',
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            {step.isCompleted && <Check size={14} strokeWidth={3} />}
+                          </div>
+                        )}
 
                         {/* Title & Metadata */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{
-                            fontSize: '0.95rem',
-                            fontWeight: 700,
-                            color: step.isCompleted ? '#94A3B8' : '#0F172A',
-                            textDecoration: step.isCompleted ? 'line-through' : 'none'
-                          }}>
-                            {step.title}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{
+                              fontSize: '0.95rem',
+                              fontWeight: 700,
+                              color: step.isCompleted ? '#94A3B8' : isPosteriorLocked ? '#64748B' : '#0F172A',
+                              textDecoration: step.isCompleted ? 'line-through' : 'none'
+                            }}>
+                              {step.title}
+                            </div>
+                            {isPosteriorLocked && (
+                              <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 7px', borderRadius: '4px', background: '#F1F5F9', color: '#64748B', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Lock size={10} /> Bloqueado ({stepAccess.leadName})
+                              </span>
+                            )}
+                            {isLeadAdvance && (
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '4px', background: '#CCFBF1', color: '#0D9488', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                ⚡ Adelanto Habilitado
+                              </span>
+                            )}
                           </div>
                           <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.75rem', color: '#64748B', flexWrap: 'wrap' }}>
                             {step.dueDate && (
@@ -2570,6 +2627,12 @@ export const ProjectDetailsModal = ({
                       {/* Expanded Step Details */}
                       {isExpanded && (
                         <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #F1F5F9', background: '#F8FAFC' }}>
+                          {isPosteriorLocked && (
+                            <div style={{ padding: '8px 12px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '8px', color: '#B45309', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.75rem' }}>
+                              <Lock size={13} color="#B45309" />
+                              <span>Paso posterior bloqueado: Solo su encargado asignado (<strong>{stepAccess.leadName}</strong>) puede adelantarlo antes de completar los pasos previos.</span>
+                            </div>
+                          )}
                           <div style={{ fontSize: '0.85rem', color: '#64748B', lineHeight: '1.5' }}>
                             {step.description || 'Sin descripción adicional para este paso.'}
                           </div>
@@ -2605,6 +2668,8 @@ export const ProjectDetailsModal = ({
                                   const fileUrl = (typeof chk === 'object' && chk.uploadedFileUrl) || fileData?.url || null;
                                   const hasFile = !!(fileName || fileUrl);
 
+                                  const chkAssignee = typeof chk === 'object' && chk.assignedTo ? teamMembers.find(m => String(m.id) === String(chk.assignedTo)) : null;
+
                                   return (
                                     <div
                                       key={chkId}
@@ -2625,7 +2690,7 @@ export const ProjectDetailsModal = ({
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '8px',
-                                            cursor: 'pointer',
+                                            cursor: isPosteriorLocked ? 'not-allowed' : 'pointer',
                                             fontSize: '0.82rem',
                                             color: isDone ? '#94A3B8' : '#1E293B',
                                             textDecoration: isDone ? 'line-through' : 'none',
@@ -2635,25 +2700,135 @@ export const ProjectDetailsModal = ({
                                           <input
                                             type="checkbox"
                                             checked={isDone}
-                                            onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId)}
-                                            style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#27BEA5' }}
+                                            disabled={isPosteriorLocked}
+                                            onChange={() => {
+                                              if (isPosteriorLocked) {
+                                                if (addToast) addToast(`Solo el encargado (${stepAccess.leadName}) puede completar verificaciones en este paso`, 'warning');
+                                                return;
+                                              }
+                                              handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId);
+                                            }}
+                                            style={{ width: '15px', height: '15px', cursor: isPosteriorLocked ? 'not-allowed' : 'pointer', accentColor: '#27BEA5' }}
                                           />
                                           <span>{chkText}</span>
                                         </label>
-                                        {allowAtt && (
-                                          <span style={{
-                                            fontSize: '0.66rem',
-                                            fontWeight: 700,
-                                            padding: '2px 7px',
-                                            borderRadius: '99px',
-                                            background: reqAtt ? (hasFile ? '#DCFCE7' : '#FEF3C7') : '#EFF6FF',
-                                            color: reqAtt ? (hasFile ? '#15803D' : '#B45309') : '#2563EB',
-                                            border: `1px solid ${reqAtt ? (hasFile ? '#86EFAC' : '#FDE68A') : '#BFDBFE'}`
-                                          }}>
-                                            {reqAtt ? (hasFile ? '✓ Adjunto listo' : '🔒 Adjunto obligatorio') : '📎 Adjunto opcional'}
-                                          </span>
-                                        )}
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                          {/* Selector de Asignado al ítem */}
+                                          <div
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '3px',
+                                              background: chkAssignee ? '#EEF2FF' : '#F8FAFC',
+                                              border: chkAssignee ? '1px solid #C7D2FE' : '1px solid #E2E8F0',
+                                              borderRadius: '6px',
+                                              padding: '2px 6px',
+                                              fontSize: '0.7rem'
+                                            }}
+                                            title={chkAssignee ? `Asignado a: ${chkAssignee.name} (${chkAssignee.role || 'Miembro'})` : 'Asignar miembro del equipo a este ítem'}
+                                          >
+                                            <User size={11} color={chkAssignee ? '#4F46E5' : '#94A3B8'} style={{ flexShrink: 0 }} />
+                                            <select
+                                              value={chk.assignedTo ? String(chk.assignedTo) : ''}
+                                              disabled={isPosteriorLocked}
+                                              onChange={(e) => {
+                                                e.stopPropagation();
+                                                handleAssignChecklistMember && handleAssignChecklistMember(activeInstance.id, step.id, chkId, e.target.value);
+                                              }}
+                                              style={{
+                                                border: 'none',
+                                                background: 'transparent',
+                                                fontSize: '0.69rem',
+                                                fontWeight: chkAssignee ? 700 : 500,
+                                                color: chkAssignee ? '#3730A3' : '#64748B',
+                                                cursor: isPosteriorLocked ? 'not-allowed' : 'pointer',
+                                                outline: 'none',
+                                                maxWidth: '120px',
+                                                padding: 0
+                                              }}
+                                            >
+                                              <option value="">👤 Asignar...</option>
+                                              {teamMembers.map(m => (
+                                                <option key={m.id} value={String(m.id)}>
+                                                  {m.name || m.email}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+
+                                          {allowAtt && (
+                                            <span style={{
+                                              fontSize: '0.66rem',
+                                              fontWeight: 700,
+                                              padding: '2px 7px',
+                                              borderRadius: '99px',
+                                              background: reqAtt ? (hasFile ? '#DCFCE7' : (chk.postponed ? '#FEF3C7' : '#FFFBEB')) : '#EFF6FF',
+                                              color: reqAtt ? (hasFile ? '#15803D' : (chk.postponed ? '#92400E' : '#B45309')) : '#2563EB',
+                                              border: `1px solid ${reqAtt ? (hasFile ? '#86EFAC' : (chk.postponed ? '#FCD34D' : '#FDE68A')) : '#BFDBFE'}`
+                                            }}>
+                                              {reqAtt
+                                                ? (hasFile
+                                                    ? '✓ Adjunto listo'
+                                                    : chk.postponed
+                                                    ? `⏳ Pospuesto para ${new Date(chk.postponedUntil + 'T12:00:00').toLocaleDateString()}`
+                                                    : '🔒 Adjunto obligatorio')
+                                                : '📎 Adjunto opcional'}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
+
+                                      {/* Postponed File Details Bar */}
+                                      {chk.postponed && chk.postponedUntil && !hasFile && (
+                                        <div style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          background: '#FFFBEB',
+                                          border: '1px solid #FDE68A',
+                                          borderRadius: '6px',
+                                          padding: '4px 8px',
+                                          marginLeft: '23px',
+                                          fontSize: '0.74rem'
+                                        }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                            <Clock size={13} color="#D97706" style={{ flexShrink: 0 }} />
+                                            <span style={{ color: '#92400E', fontWeight: 600 }}>
+                                              Entrega pospuesta para el {new Date(chk.postponedUntil + 'T12:00:00').toLocaleDateString()}:
+                                            </span>
+                                            <span style={{ color: '#B45309', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '230px' }} title={chk.postponedReason}>
+                                              "{chk.postponedReason}"
+                                            </span>
+                                          </div>
+                                          {!isPosteriorLocked && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPostponeModalData({
+                                                  step,
+                                                  chk,
+                                                  chkId,
+                                                  leadName: stepAccess.leadName
+                                                });
+                                              }}
+                                              style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: '#B45309',
+                                                fontSize: '0.68rem',
+                                                fontWeight: 700,
+                                                textDecoration: 'underline',
+                                                cursor: 'pointer',
+                                                padding: '0 4px'
+                                              }}
+                                            >
+                                              Editar
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
 
                                       {allowAtt && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingLeft: '23px' }}>
@@ -2684,31 +2859,64 @@ export const ProjectDetailsModal = ({
                                             </div>
                                           )}
 
-                                          <label style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            background: hasFile ? '#F8FAFC' : '#27BEA5',
-                                            color: hasFile ? '#475569' : '#FFFFFF',
-                                            border: hasFile ? '1px solid #CBD5E1' : 'none',
-                                            padding: '4px 9px',
-                                            borderRadius: '7px',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer'
-                                          }}>
-                                            <Upload size={11} /> {hasFile ? 'Cambiar archivo' : 'Subir archivo'}
-                                            <input
-                                              type="file"
-                                              style={{ display: 'none' }}
-                                              accept={getAcceptString(step.acceptedFormats)}
-                                              onChange={async e => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                await handleUploadStepChecklistWithDrive(step, chkId, file, chkText);
+                                          {!isPosteriorLocked && reqAtt && !hasFile && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPostponeModalData({
+                                                  step,
+                                                  chk,
+                                                  chkId,
+                                                  leadName: stepAccess.leadName
+                                                });
                                               }}
-                                            />
-                                          </label>
+                                              style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                background: chk.postponed ? '#FEF3C7' : '#FFFBEB',
+                                                color: '#B45309',
+                                                border: '1px solid #FCD34D',
+                                                padding: '4px 9px',
+                                                borderRadius: '7px',
+                                                fontSize: '0.72rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer'
+                                              }}
+                                              title={chk.postponed ? 'Modificar fecha o motivo de entrega pospuesta' : 'Posponer entrega de archivo con motivo'}
+                                            >
+                                              <Clock size={11} /> {chk.postponed ? 'Pospuesto' : 'Posponer'}
+                                            </button>
+                                          )}
+
+                                          {!isPosteriorLocked && (
+                                            <label style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              background: hasFile ? '#F8FAFC' : '#27BEA5',
+                                              color: hasFile ? '#475569' : '#FFFFFF',
+                                              border: hasFile ? '1px solid #CBD5E1' : 'none',
+                                              padding: '4px 9px',
+                                              borderRadius: '7px',
+                                              fontSize: '0.72rem',
+                                              fontWeight: 700,
+                                              cursor: 'pointer'
+                                            }}>
+                                              <Upload size={11} /> {hasFile ? 'Cambiar archivo' : 'Subir archivo'}
+                                              <input
+                                                type="file"
+                                                style={{ display: 'none' }}
+                                                accept={getAcceptString(step.acceptedFormats)}
+                                                onChange={async e => {
+                                                  const file = e.target.files?.[0];
+                                                  if (!file) return;
+                                                  await handleUploadStepChecklistWithDrive(step, chkId, file, chkText);
+                                                }}
+                                              />
+                                            </label>
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -3088,6 +3296,28 @@ export const ProjectDetailsModal = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Postpone Mandatory File Modal */}
+      {postponeModalData && (
+        <PostponeFileModal
+          isOpen={!!postponeModalData}
+          onClose={() => setPostponeModalData(null)}
+          instance={activeInstance}
+          step={postponeModalData.step}
+          checklist={postponeModalData.chk}
+          leadName={postponeModalData.leadName}
+          onConfirm={async ({ postponedUntil, reason }) => {
+            if (handlePostponeChecklistFile) {
+              await handlePostponeChecklistFile(
+                activeInstance.id,
+                postponeModalData.step.id,
+                postponeModalData.chkId,
+                { postponedUntil, reason }
+              );
+            }
+          }}
+        />
       )}
     </div>
   );

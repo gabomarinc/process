@@ -17,6 +17,7 @@ import ClientChecklistModal from "./components/ui/ClientChecklistModal";
 import AdminDashboard from "./components/ui/AdminDashboard";
 import { getClientTrafficLightStatus, getBlockingChecklistItemsForInstance } from "./utils/clientSemaforo";
 import { calculateAutoStatus, getEffectiveInstanceStatus } from "./utils/kanbanStatus";
+import { getStepAccess } from "./utils/stepPermissions";
 import AgentCopilot from "./components/ui/AgentCopilot";
 import GoogleDrivePickerModal from "./components/ui/GoogleDrivePickerModal";
 import "./App.css";
@@ -876,18 +877,44 @@ function App() {
   const activeInstance = instances.find(inst => inst.id === selectedInstanceId);
   const activeTemplate = templates.find(t => t.id === selectedTemplateId);
 
-  // Trigger alert notifications for overdue steps and save to Neon DB
+  // Trigger alert notifications for overdue steps and 1 day before due date, and sync with Neon DB
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
+    const checkDeadlines = async () => {
+      if (document.visibilityState !== 'visible' || !token) return;
       const now = new Date();
+      const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+      // Trigger backend server-side check and email dispatch to encargados
+      try {
+        await fetch('/api/notifications/check-deadlines', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+      } catch (e) {
+        // Fallback to local checks
+      }
+
+      // Check instances for browser notifications & immediate local UI sync
       instances.forEach(async (inst) => {
-        inst.steps.forEach(async (step) => {
-          if (!step.isCompleted) {
+        (inst.steps || []).forEach(async (step) => {
+          if (!step.isCompleted && step.dueDate) {
             const dueDate = new Date(step.dueDate);
-            if (now > dueDate) {
-              const logId = `${inst.id}-${step.id}`;
-              // Avoid duplicate logs
+            if (isNaN(dueDate.getTime())) return;
+
+            const diffHours = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+            const dueMid = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()).getTime();
+            const daysDiff = Math.round((dueMid - todayMid) / (1000 * 60 * 60 * 24));
+            const dateStr = dueDate.toISOString().slice(0, 10);
+            const dueFormatted = dueDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+
+            const isOverdue = diffHours < 0 || daysDiff < 0;
+            const is1DayBefore = !isOverdue && ((diffHours > 0 && diffHours <= 26) || daysDiff === 1);
+
+            if (isOverdue) {
+              const logId = `overdue-${inst.id}-${step.id}-${dateStr}`;
               if (notificationLogs.some(log => log.id === logId)) return;
 
               const newLog = {
@@ -896,18 +923,16 @@ function App() {
                 stepId: step.id,
                 instanceName: inst.instanceName,
                 stepTitle: step.title,
-                message: `RETRASO: El paso "${step.title}" venció el ${dueDate.toLocaleDateString()}. Notificaciones enviadas al equipo de ${inst.category}.`,
+                message: `⚠️ RETRASO: El paso "${step.title}" de "${inst.instanceName}" venció el ${dueFormatted}.`,
                 type: 'alert'
               };
 
-              // Local state update
               setNotificationLogs(prev => [
                 { ...newLog, time: new Date().toISOString() },
                 ...prev
               ]);
               triggerBrowserNotification(newLog.message);
 
-              // Write to Neon DB
               try {
                 await fetch('/api/notifications', {
                   method: 'POST',
@@ -918,14 +943,46 @@ function App() {
               } catch (err) {
                 console.error("Error al guardar notificación de retraso en Neon:", err);
               }
+            } else if (is1DayBefore) {
+              const logId = `warning-1day-${inst.id}-${step.id}-${dateStr}`;
+              if (notificationLogs.some(log => log.id === logId)) return;
+
+              const newLog = {
+                id: logId,
+                instanceId: inst.id,
+                stepId: step.id,
+                instanceName: inst.instanceName,
+                stepTitle: step.title,
+                message: `⏰ PRÓXIMO A VENCER: El paso "${step.title}" de "${inst.instanceName}" vence mañana (${dueFormatted}).`,
+                type: 'warning'
+              };
+
+              setNotificationLogs(prev => [
+                { ...newLog, time: new Date().toISOString() },
+                ...prev
+              ]);
+              triggerBrowserNotification(newLog.message);
+
+              try {
+                await fetch('/api/notifications', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                  body: JSON.stringify(newLog)
+                });
+                window.dispatchEvent(new Event('notifications-updated'));
+              } catch (err) {
+                console.error("Error al guardar recordatorio de 1 día en Neon:", err);
+              }
             }
           }
         });
       });
-    }, 60000); // Check for delays every 60 seconds (1 minute)
+    };
 
+    const interval = setInterval(checkDeadlines, 60000);
+    checkDeadlines();
     return () => clearInterval(interval);
-  }, [instances, notificationLogs]);
+  }, [instances, notificationLogs, token]);
 
   const triggerConfetti = () => {
     const list = Array.from({ length: 40 }).map((_, i) => ({
@@ -971,22 +1028,39 @@ function App() {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
 
+    const stepIdx = (inst.steps || []).findIndex(s => s.id === stepId);
+    const targetStep = inst.steps?.[stepIdx];
+
+    // Access control: only the encargado can work on a posterior step
+    if (isCompleted && targetStep && stepIdx !== -1) {
+      const stepAccess = getStepAccess(inst, stepIdx, user, teamMembers);
+      if (!stepAccess.canWork && stepAccess.isPosterior) {
+        showAlert(
+          `Acceso Restringido: El paso "${targetStep.title}" es posterior al paso actual en curso.\n\nÚnicamente su encargado designado (${stepAccess.leadName}) puede adelantarlo antes de que se completen los pasos previos.`,
+          'warning',
+          'Paso Posterior Bloqueado'
+        );
+        addToast(`Solo el encargado (${stepAccess.leadName}) puede adelantar este paso`, 'warning');
+        return;
+      }
+    }
+
     if (isCompleted) {
       // 1. Check if the step itself has a checklist and ensure all items and mandatory attachments are completed
-      const targetStep = (inst.steps || []).find(s => s.id === stepId);
       if (targetStep && Array.isArray(targetStep.checklist) && targetStep.checklist.length > 0) {
         const missingRequiredFiles = targetStep.checklist.filter((c, cIdx) => {
           const chkId = c.id || cIdx;
           const hasFile = !!(c.uploadedFileName || c.uploadedFileUrl || fileStore?.[`${stepId}_${chkId}`]);
-          return c.requireAttachment && !hasFile;
+          const isPostponed = !!(c.postponed && c.postponedUntil);
+          return c.requireAttachment && !hasFile && !isPostponed;
         });
         if (missingRequiredFiles.length > 0) {
           showAlert(
-            `Adjuntos Obligatorios Pendientes: No puedes completar este paso porque falta adjuntar archivo en ${missingRequiredFiles.length} elemento(s) obligatorio(s) del checklist:\n\n• ${missingRequiredFiles.map(p => p.text || p).join('\n• ')}\n\nSube o vincula el archivo correspondiente en el checklist para continuar.`,
+            `Adjuntos Obligatorios Pendientes: No puedes completar este paso porque falta adjuntar archivo en ${missingRequiredFiles.length} elemento(s) obligatorio(s) del checklist:\n\n• ${missingRequiredFiles.map(p => p.text || p).join('\n• ')}\n\nSube el archivo correspondiente o utiliza la opción "Posponer entrega" con fecha límite y motivo para continuar.`,
             'warning',
             'Faltan Archivos Obligatorios en el Checklist'
           );
-          addToast(`Faltan ${missingRequiredFiles.length} adjunto(s) obligatorio(s) en el checklist`, 'warning');
+          addToast(`Faltan ${missingRequiredFiles.length} adjunto(s) obligatorio(s) (puedes subirlos o posponer su entrega)`, 'warning');
           return;
         }
 
@@ -1138,6 +1212,15 @@ function App() {
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
 
+    const stepIdx = (inst.steps || []).findIndex(s => s.id === stepId);
+    if (stepIdx !== -1) {
+      const stepAccess = getStepAccess(inst, stepIdx, user, teamMembers);
+      if (!stepAccess.canWork && stepAccess.isPosterior) {
+        addToast(`Solo el encargado (${stepAccess.leadName}) puede adelantar el checklist de este paso`, 'warning');
+        return;
+      }
+    }
+
     let blockedByRequiredAttachment = false;
 
     const updatedSteps = inst.steps.map(s => {
@@ -1153,14 +1236,18 @@ function App() {
             isCompleted: attachmentData.isCompleted !== undefined ? attachmentData.isCompleted : true,
             uploadedFileName: attachmentData.uploadedFileName !== undefined ? attachmentData.uploadedFileName : c.uploadedFileName,
             uploadedFileUrl: attachmentData.uploadedFileUrl !== undefined ? attachmentData.uploadedFileUrl : c.uploadedFileUrl,
-            fileType: attachmentData.fileType !== undefined ? attachmentData.fileType : c.fileType
+            fileType: attachmentData.fileType !== undefined ? attachmentData.fileType : c.fileType,
+            postponed: false,
+            postponedUntil: null,
+            postponedReason: null
           };
         }
 
         const nextCompleted = !c.isCompleted;
         const chkKey = `${stepId}_${c.id || idx}`;
         const hasFile = !!(c.uploadedFileName || c.uploadedFileUrl || fileStore?.[chkKey]);
-        if (nextCompleted && c.requireAttachment && !hasFile) {
+        const isPostponed = !!(c.postponed && c.postponedUntil);
+        if (nextCompleted && c.requireAttachment && !hasFile && !isPostponed) {
           blockedByRequiredAttachment = true;
           return c;
         }
@@ -1170,7 +1257,7 @@ function App() {
     });
 
     if (blockedByRequiredAttachment) {
-      addToast('Debes adjuntar el archivo obligatorio en este elemento del checklist para completarlo', 'warning');
+      addToast('Debes adjuntar el archivo obligatorio o posponer su entrega con fecha y motivo para completarlo', 'warning');
       return;
     }
 
@@ -1189,6 +1276,142 @@ function App() {
       });
     } catch (err) {
       console.error("Error saving step checklist toggle:", err);
+    }
+  };
+
+  const handlePostponeChecklistFile = async (instanceId, stepId, checklistId, { postponedUntil, reason }) => {
+    const inst = instances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    let targetStepTitle = '';
+    let targetChecklistText = '';
+
+    const updatedSteps = (inst.steps || []).map((s) => {
+      if (s.id !== stepId) return s;
+      targetStepTitle = s.title;
+
+      const updatedChecklist = (s.checklist || []).map((c, cIdx) => {
+        const currentId = c.id || cIdx;
+        if (currentId !== checklistId) return c;
+        targetChecklistText = c.text || 'Archivo Requerido';
+        return {
+          ...c,
+          postponed: true,
+          postponedUntil,
+          postponedReason: reason,
+          postponedBy: user?.name || 'Usuario',
+          postponedAt: new Date().toISOString()
+        };
+      });
+
+      return { ...s, checklist: updatedChecklist };
+    });
+
+    setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
+
+    try {
+      await fetch(`/api/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: updatedSteps })
+      });
+
+      const formattedDate = new Date(postponedUntil + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+      const notifMsg = `⏳ [ENTREGA POSPUESTA] ${user?.name || 'Un usuario'} pospuso la entrega del archivo obligatorio "${targetChecklistText}" del paso "${targetStepTitle}" para el ${formattedDate}. Motivo: "${reason}".`;
+
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          id: `postpone-${stepId}-${checklistId}-${Date.now()}`,
+          instanceId,
+          stepId,
+          instanceName: inst.instanceName,
+          stepTitle: targetStepTitle,
+          message: notifMsg,
+          type: 'postponed_file',
+          postponedUntil,
+          postponedReason: reason,
+          checklistText: targetChecklistText
+        })
+      });
+
+      window.dispatchEvent(new Event('notifications-updated'));
+      addToast(`Entrega de archivo pospuesta para el ${formattedDate}. Avance habilitado.`, 'success');
+    } catch (err) {
+      console.error("Error saving postponed file state:", err);
+      addToast('Error al registrar la posposición del archivo', 'error');
+    }
+  };
+
+  const handleAssignChecklistMember = async (instanceId, stepId, checklistItemId, newAssigneeId) => {
+    const inst = instances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    let targetStepTitle = '';
+    let targetChecklistText = '';
+
+    const updatedSteps = (inst.steps || []).map((s) => {
+      if (s.id !== stepId) return s;
+      targetStepTitle = s.title;
+
+      const updatedChecklist = (s.checklist || []).map((c, cIdx) => {
+        const currentId = c.id || cIdx;
+        if (currentId !== checklistItemId) return c;
+        targetChecklistText = c.text || 'Elemento del Checklist';
+        return {
+          ...c,
+          assignedTo: newAssigneeId || null
+        };
+      });
+
+      return { ...s, checklist: updatedChecklist };
+    });
+
+    setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, steps: updatedSteps } : i));
+
+    try {
+      await fetch(`/api/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: updatedSteps })
+      });
+
+      const assignedMember = teamMembers.find(m => String(m.id) === String(newAssigneeId));
+      if (assignedMember) {
+        addToast(`Ítem asignado a ${assignedMember.name}`, 'success');
+
+        const assignMsg = `👤 Te asignaron el ítem "${targetChecklistText}" en el paso "${targetStepTitle}" del proceso "${inst.instanceName}".`;
+        try {
+          await fetch('/api/notifications', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              id: `chk-assign-${stepId}-${checklistItemId}-${Date.now()}`,
+              instanceId,
+              stepId,
+              instanceName: inst.instanceName,
+              stepTitle: targetStepTitle,
+              message: assignMsg,
+              type: 'message'
+            })
+          });
+          window.dispatchEvent(new Event('notifications-updated'));
+        } catch (e) {
+          // non-blocking
+        }
+      } else {
+        addToast('Ítem desasignado', 'info');
+      }
+    } catch (err) {
+      console.error("Error al asignar responsable del checklist:", err);
+      addToast('Error al guardar la asignación del checklist', 'error');
     }
   };
 
@@ -6713,6 +6936,8 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         clients={clients}
         onOpenClientChecklist={(cl) => setChecklistModalClient(cl)}
         handleToggleStepChecklist={handleToggleStepChecklist}
+        handlePostponeChecklistFile={handlePostponeChecklistFile}
+        handleAssignChecklistMember={handleAssignChecklistMember}
         googleDriveConfig={googleDriveConfig}
       />
 
@@ -6732,6 +6957,8 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
         handleAssignStepMember={handleAssignStepMember}
         handleUpdateStepComments={handleUpdateStepComments}
         handleToggleStepChecklist={handleToggleStepChecklist}
+        handlePostponeChecklistFile={handlePostponeChecklistFile}
+        handleAssignChecklistMember={handleAssignChecklistMember}
         currentUser={user}
         fileStore={fileStore}
         setFileStore={setFileStore}

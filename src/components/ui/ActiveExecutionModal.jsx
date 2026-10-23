@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ChevronUp, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen } from 'lucide-react';
+import { X, Check, Clock, AlertCircle, Upload, FileCheck, ChevronLeft, ChevronRight, Eye, Mail, Lightbulb, FileText, AlertTriangle, Settings, MessageSquare, Paperclip, ChevronDown, ChevronUp, ExternalLink, HelpCircle, ArrowRight, Layers, ShieldAlert, ListChecks, FolderOpen, Lock, User } from 'lucide-react';
 import { getBlockingChecklistItemsForInstance } from '../../utils/clientSemaforo';
+import { getStepAccess } from '../../utils/stepPermissions';
 import GoogleDrivePickerModal from './GoogleDrivePickerModal';
+import PostponeFileModal from './PostponeFileModal';
 
 const getFileType = (name, fallbackType) => {
   if (fallbackType && fallbackType !== 'application/octet-stream') return fallbackType;
@@ -49,6 +51,8 @@ export const ActiveExecutionModal = ({
   clients = [],
   onOpenClientChecklist,
   handleToggleStepChecklist,
+  handlePostponeChecklistFile,
+  handleAssignChecklistMember,
   googleDriveConfig = null
 }) => {
   const blockingItems = getBlockingChecklistItemsForInstance(activeInstance, clients);
@@ -61,6 +65,7 @@ export const ActiveExecutionModal = ({
   const [previewFile, setPreviewFile] = useState(null);
   const [showMotivationStepId, setShowMotivationStepId] = useState(null);
   const [showAttachmentsDropdown, setShowAttachmentsDropdown] = useState(false);
+  const [postponeModalData, setPostponeModalData] = useState(null);
 
   // Google Drive states for Execution & Steps
   const [localDriveFolderUrl, setLocalDriveFolderUrl] = useState(null);
@@ -87,6 +92,14 @@ export const ActiveExecutionModal = ({
   const [collapsedChecklists, setCollapsedChecklists] = useState({});
 
   const onCompleteStepLocal = (stepId, isCompleted, uploadedName = null, uploadedUrl = null) => {
+    const targetIdx = (activeInstance?.steps || []).findIndex(s => s.id === stepId);
+    if (targetIdx !== -1) {
+      const access = getStepAccess(activeInstance, targetIdx, currentUser, teamMembers);
+      if (isCompleted && !access.canWork && access.isPosterior) {
+        if (addToast) addToast(`Solo el encargado (${access.leadName}) puede adelantar este paso`, 'warning');
+        return;
+      }
+    }
     handleStepComplete(activeInstance.id, stepId, isCompleted, uploadedName, uploadedUrl);
     const targetStep = activeInstance.steps.find(s => s.id === stepId);
     if (isCompleted && targetStep?.motivation) {
@@ -390,28 +403,23 @@ export const ActiveExecutionModal = ({
 
   useEffect(() => {
     if (activeInstance && isOpen) {
-      const stepsActive = [];
-      activeInstance.steps.forEach((step, idx) => {
-        if (idx === 0) {
-          stepsActive.push(true);
-        } else {
-          const prevStep = activeInstance.steps[idx - 1];
-          const isPrevCompleted = prevStep.isCompleted;
-          const isSameDeadline = prevStep.relativeOffsetDays === step.relativeOffsetDays ||
-            new Date(prevStep.dueDate).toDateString() === new Date(step.dueDate).toDateString();
-          const active = isPrevCompleted || (stepsActive[idx - 1] && isSameDeadline);
-          stepsActive.push(active);
-        }
+      // Prioritize the user's assigned pending step if any
+      let activeIdx = activeInstance.steps.findIndex((s, idx) => {
+        if (s.isCompleted) return false;
+        const access = getStepAccess(activeInstance, idx, currentUser, teamMembers);
+        return access.isEncargado;
       });
 
-      let activeIdx = activeInstance.steps.findIndex((s, idx) => !s.isCompleted && stepsActive[idx]);
+      // Fallback: first uncompleted step in execution
       if (activeIdx === -1) {
-        const allDone = activeInstance.steps.every(s => s.isCompleted);
-        activeIdx = allDone ? activeInstance.steps.length - 1 : 0;
+        activeIdx = activeInstance.steps.findIndex(s => !s.isCompleted);
+      }
+      if (activeIdx === -1) {
+        activeIdx = Math.max(0, activeInstance.steps.length - 1);
       }
       setFocusedIndex(activeIdx);
     }
-  }, [activeInstance, isOpen]);
+  }, [activeInstance, isOpen, currentUser, teamMembers]);
 
   // Load subject/body when a step is selected for emailing
   useEffect(() => {
@@ -527,41 +535,42 @@ export const ActiveExecutionModal = ({
 
   const stepsActive = [];
   activeInstance.steps.forEach((step, idx) => {
-    if (idx === 0) {
-      stepsActive.push(true);
-    } else {
-      const prevStep = activeInstance.steps[idx - 1];
-      const isPrevCompleted = prevStep.isCompleted;
-      const isSameDeadline = prevStep.relativeOffsetDays === step.relativeOffsetDays ||
-        new Date(prevStep.dueDate).toDateString() === new Date(step.dueDate).toDateString();
-      const active = isPrevCompleted || (stepsActive[idx - 1] && isSameDeadline);
-      stepsActive.push(active);
-    }
+    const access = getStepAccess(activeInstance, idx, currentUser, teamMembers);
+    stepsActive.push(access.canWork);
   });
 
   const highlighted = [];
   if (focusedIndex !== null && totalSteps > 0) {
     if (focusedIndex > 0 && activeInstance.steps[focusedIndex - 1]) {
+      const prevStep = activeInstance.steps[focusedIndex - 1];
+      const prevAccess = getStepAccess(activeInstance, focusedIndex - 1, currentUser, teamMembers);
       highlighted.push({
-        step: activeInstance.steps[focusedIndex - 1],
+        step: prevStep,
         index: focusedIndex - 1,
-        status: activeInstance.steps[focusedIndex - 1].isCompleted ? 'completed' : 'upcoming'
+        status: prevStep.isCompleted ? 'completed' : prevAccess.canWork ? 'active' : 'upcoming',
+        access: prevAccess
       });
     }
     
     if (activeInstance.steps[focusedIndex]) {
+      const curStep = activeInstance.steps[focusedIndex];
+      const curAccess = getStepAccess(activeInstance, focusedIndex, currentUser, teamMembers);
       highlighted.push({
-        step: activeInstance.steps[focusedIndex],
+        step: curStep,
         index: focusedIndex,
-        status: activeInstance.steps[focusedIndex].isCompleted ? 'completed' : 'active'
+        status: curStep.isCompleted ? 'completed' : curAccess.canWork ? 'active' : 'upcoming',
+        access: curAccess
       });
     }
 
     if (focusedIndex + 1 < totalSteps && activeInstance.steps[focusedIndex + 1]) {
+      const nextStep = activeInstance.steps[focusedIndex + 1];
+      const nextAccess = getStepAccess(activeInstance, focusedIndex + 1, currentUser, teamMembers);
       highlighted.push({
-        step: activeInstance.steps[focusedIndex + 1],
+        step: nextStep,
         index: focusedIndex + 1,
-        status: activeInstance.steps[focusedIndex + 1].isCompleted ? 'completed' : 'upcoming'
+        status: nextStep.isCompleted ? 'completed' : nextAccess.canWork ? 'active' : 'upcoming',
+        access: nextAccess
       });
     }
   }
@@ -630,6 +639,11 @@ export const ActiveExecutionModal = ({
     const isReq = !!chk.requireAttachment;
     const allowsAtt = !!(chk.allowAttachment || chk.requireAttachment || hasFile);
 
+    const stepIdx = (activeInstance?.steps || []).findIndex(s => s.id === step.id);
+    const stepAccess = getStepAccess(activeInstance, stepIdx, currentUser, teamMembers);
+    const isStepLocked = !stepAccess.canWork && stepAccess.isPosterior;
+    const chkAssignee = teamMembers.find(m => String(m.id) === String(chk.assignedTo));
+
     return (
       <div
         key={chkId}
@@ -641,7 +655,8 @@ export const ActiveExecutionModal = ({
           padding: '7px 10px',
           borderRadius: '8px',
           background: chk.isCompleted ? '#F8FAFC' : (isReq && !hasFile ? '#FFFBEB' : '#FFFFFF'),
-          border: isReq && !hasFile ? '1px solid #FDE68A' : '1px solid #E2E8F0'
+          border: isReq && !hasFile ? '1px solid #FDE68A' : '1px solid #E2E8F0',
+          opacity: isStepLocked ? 0.75 : 1
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
@@ -650,7 +665,7 @@ export const ActiveExecutionModal = ({
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              cursor: 'pointer',
+              cursor: isStepLocked ? 'not-allowed' : 'pointer',
               flex: 1,
               minWidth: '170px',
               margin: 0,
@@ -663,24 +678,75 @@ export const ActiveExecutionModal = ({
             <input
               type="checkbox"
               checked={!!chk.isCompleted}
-              onChange={() => handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId)}
-              style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#0D9488' }}
+              disabled={isStepLocked}
+              onChange={() => {
+                if (isStepLocked) {
+                  if (addToast) addToast(`Solo el encargado (${stepAccess.leadName}) puede completar verificaciones en este paso`, 'warning');
+                  return;
+                }
+                handleToggleStepChecklist && handleToggleStepChecklist(activeInstance.id, step.id, chkId);
+              }}
+              style={{ width: '15px', height: '15px', cursor: isStepLocked ? 'not-allowed' : 'pointer', accentColor: '#0D9488' }}
             />
             <span>{chk.text || chk}</span>
           </label>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+            {/* Checklist Item Assignee Selector */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                background: chkAssignee ? '#EEF2FF' : '#F8FAFC',
+                border: chkAssignee ? '1px solid #C7D2FE' : '1px solid #E2E8F0',
+                borderRadius: '6px',
+                padding: '2px 6px',
+                fontSize: '0.7rem'
+              }}
+              title={chkAssignee ? `Asignado a: ${chkAssignee.name} (${chkAssignee.role || 'Miembro'})` : 'Asignar miembro del equipo a este ítem'}
+            >
+              <User size={11} color={chkAssignee ? '#4F46E5' : '#94A3B8'} style={{ flexShrink: 0 }} />
+              <select
+                value={chk.assignedTo ? String(chk.assignedTo) : ''}
+                disabled={isStepLocked}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleAssignChecklistMember && handleAssignChecklistMember(activeInstance.id, step.id, chkId, e.target.value);
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  fontSize: '0.69rem',
+                  fontWeight: chkAssignee ? 700 : 500,
+                  color: chkAssignee ? '#3730A3' : '#64748B',
+                  cursor: isStepLocked ? 'not-allowed' : 'pointer',
+                  outline: 'none',
+                  maxWidth: '120px',
+                  padding: 0
+                }}
+              >
+                <option value="">👤 Asignar...</option>
+                {teamMembers.map(m => (
+                  <option key={m.id} value={String(m.id)}>{m.name}</option>
+                ))}
+              </select>
+            </div>
             {isReq && (
               <span style={{
                 fontSize: '0.66rem',
                 fontWeight: 700,
                 padding: '1px 7px',
                 borderRadius: '999px',
-                background: hasFile ? '#DCFCE7' : '#FEF3C7',
-                color: hasFile ? '#166534' : '#B45309',
-                border: hasFile ? '1px solid #BBF7D0' : '1px solid #FDE68A'
+                background: hasFile ? '#DCFCE7' : (chk.postponed ? '#FEF3C7' : '#FFFBEB'),
+                color: hasFile ? '#166534' : (chk.postponed ? '#92400E' : '#B45309'),
+                border: hasFile ? '1px solid #BBF7D0' : (chk.postponed ? '1px solid #FCD34D' : '1px solid #FDE68A')
               }}>
-                {hasFile ? '✓ Adjunto obligatorio listo' : '🔒 Adjunto obligatorio'}
+                {hasFile
+                  ? '✓ Adjunto obligatorio listo'
+                  : chk.postponed
+                  ? `⏳ Pospuesto para ${new Date(chk.postponedUntil + 'T12:00:00').toLocaleDateString()}`
+                  : '🔒 Adjunto obligatorio'}
               </span>
             )}
             {!isReq && chk.allowAttachment && !hasFile && (
@@ -697,9 +763,40 @@ export const ActiveExecutionModal = ({
               </span>
             )}
 
-            {/* File Upload / Link actions directly on the checklist item */}
-            {(allowsAtt || !chk.isCompleted) && (
+            {/* File Upload / Link / Postpone actions directly on the checklist item */}
+            {(allowsAtt || !chk.isCompleted) && !isStepLocked && (
               <>
+                {isReq && !hasFile && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPostponeModalData({
+                        step,
+                        chk,
+                        chkId,
+                        leadName: stepAccess.leadName
+                      });
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      background: chk.postponed ? '#FEF3C7' : '#FFFBEB',
+                      color: '#B45309',
+                      border: '1px solid #FCD34D'
+                    }}
+                    title={chk.postponed ? 'Modificar fecha límite o motivo de la entrega pospuesta' : 'Posponer subir este archivo obligatorio a una fecha específica dando un motivo'}
+                  >
+                    <Clock size={11} /> {chk.postponed ? 'Pospuesto' : 'Posponer'}
+                  </button>
+                )}
+
                 <label
                   style={{
                     display: 'inline-flex',
@@ -759,6 +856,57 @@ export const ActiveExecutionModal = ({
             )}
           </div>
         </div>
+
+        {/* Postponed File Details Bar */}
+        {chk.postponed && chk.postponedUntil && !hasFile && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#FFFBEB',
+            border: '1px solid #FDE68A',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            marginLeft: '22px',
+            fontSize: '0.74rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+              <Clock size={13} color="#D97706" style={{ flexShrink: 0 }} />
+              <span style={{ color: '#92400E', fontWeight: 600 }}>
+                Entrega pospuesta para el {new Date(chk.postponedUntil + 'T12:00:00').toLocaleDateString()}:
+              </span>
+              <span style={{ color: '#B45309', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '230px' }} title={chk.postponedReason}>
+                "{chk.postponedReason}"
+              </span>
+            </div>
+            {!isStepLocked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPostponeModalData({
+                    step,
+                    chk,
+                    chkId,
+                    leadName: stepAccess.leadName
+                  });
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#B45309',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  padding: '0 4px'
+                }}
+              >
+                Editar
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Attached File Pill with Preview & External Link */}
         {hasFile && (
@@ -1278,6 +1426,7 @@ export const ActiveExecutionModal = ({
                   const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
                   const isCenter = focusedIndex === item.index;
                   const alignmentClass = isCenter ? "trio-active" : "trio-side";
+                  const stepAccess = item.access || getStepAccess(activeInstance, item.index, currentUser, teamMembers);
 
                   return (
                     <div 
@@ -1285,12 +1434,25 @@ export const ActiveExecutionModal = ({
                       className={`trio-card ${alignmentClass} ${item.status}`}
                       style={{ 
                         cursor: 'pointer',
+                        ...(stepAccess.isLocked ? { borderStyle: 'dashed', opacity: isCenter ? 0.95 : 0.6 } : {}),
                         ...(isFocusMode && !isCenter ? { opacity: 0.2, filter: 'blur(2px)', pointerEvents: 'none' } : {})
                       }}
                       onClick={() => setFocusedIndex(item.index)}
                     >
                       <div className="trio-card-header">
-                        <span className="trio-badge-number">Paso {item.index + 1}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="trio-badge-number">Paso {item.index + 1}</span>
+                          {stepAccess.isPosterior && stepAccess.isEncargado && !step.isCompleted && (
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#DCFCE7', color: '#15803D', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              ⚡ Adelanto
+                            </span>
+                          )}
+                          {stepAccess.isLocked && (
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#F1F5F9', color: '#64748B', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title={`A cargo de: ${stepAccess.leadName}`}>
+                              <Lock size={10} /> Bloqueado
+                            </span>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                           <button
                             type="button"
@@ -1321,13 +1483,56 @@ export const ActiveExecutionModal = ({
                       </div>
 
                       {!isCenter && (
-                        <h4 className="trio-card-title">{step.title}</h4>
+                        <div>
+                          <h4 className="trio-card-title">{step.title}</h4>
+                          {stepAccess.isLocked && (
+                            <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                              <Lock size={11} /> A cargo de {stepAccess.leadName}
+                            </span>
+                          )}
+                          {stepAccess.isPosterior && stepAccess.isEncargado && !step.isCompleted && (
+                            <span style={{ fontSize: '0.72rem', color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', fontWeight: 600 }}>
+                              ⚡ Eres el encargado (Adelanto disponible)
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {isCenter && stepAccess.isLocked && (
+                        <div style={{ width: '100%', marginTop: '1.25rem', background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '16px', padding: '1.75rem 1.25rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.85rem' }} onClick={e => e.stopPropagation()}>
+                          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
+                            <Lock size={24} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: '0 0 0.35rem 0', color: '#1E293B', fontSize: '1.15rem', fontWeight: 700 }}>
+                              Paso Posterior Bloqueado
+                            </h4>
+                            <p style={{ margin: 0, color: '#64748B', fontSize: '0.85rem', maxWidth: '420px', lineHeight: 1.5 }}>
+                              Este paso está a cargo de <strong>{stepAccess.leadName}</strong>. 
+                              El proceso aún no llega a este paso y sólo su encargado directo puede adelantarlo o gestionar sus entregables.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => setFocusedIndex(activeInstance.currentStepIndex || 0)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '0.45rem 1.1rem', borderRadius: '8px' }}
+                          >
+                            Volver al Paso Actual (Paso {(activeInstance.currentStepIndex || 0) + 1})
+                          </button>
+                        </div>
                       )}
                       
-                      {isCenter && (
+                      {isCenter && !stepAccess.isLocked && (
                         <div style={{ display: 'flex', gap: '1.5rem', width: '100%', flexWrap: 'wrap', alignItems: 'flex-start', marginTop: '1.25rem', textAlign: 'left' }} onClick={e => e.stopPropagation()}>
                           {/* Col 1: Detalles del Paso */}
                           <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
+                            {stepAccess.isPosterior && stepAccess.isEncargado && (
+                              <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46', padding: '8px 12px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>⚡</span>
+                                <span><strong>Adelanto de Paso Habilitado:</strong> Eres el encargado de este paso y puedes trabajar o completarlo por anticipado.</span>
+                              </div>
+                            )}
                             <div>
                               <h4 className="trio-card-title" style={{ margin: '0 0 0.5rem 0', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: '1.3' }}>{step.title}</h4>
                               <span className="trio-card-date" style={{ display: 'inline-block', fontSize: '0.85rem', color: 'var(--color-primary-hover)', fontWeight: 600 }}>Límite: {new Date(step.dueDate).toLocaleDateString()}</span>
@@ -1750,8 +1955,9 @@ export const ActiveExecutionModal = ({
               {showAllSteps && (
                 <div className="steps-container" style={{ marginTop: '1.25rem' }}>
                   {activeInstance.steps.map((step, idx) => {
-                    const isActive = !step.isCompleted && stepsActive[idx];
-                    const isLocked = !step.isCompleted && !stepsActive[idx];
+                    const stepAccess = getStepAccess(activeInstance, idx, currentUser, teamMembers);
+                    const isActive = !step.isCompleted && stepAccess.canWork;
+                    const isLocked = !step.isCompleted && stepAccess.isLocked;
                     const isOverdue = !step.isCompleted && new Date() > new Date(step.dueDate);
 
                     return (
@@ -1771,8 +1977,20 @@ export const ActiveExecutionModal = ({
                         <div className="step-card">
                           <div className="step-card-header">
                             <div>
-                              <h4>{step.title}</h4>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <h4 style={{ margin: 0 }}>{step.title}</h4>
+                                {stepAccess.isPosterior && stepAccess.isEncargado && !step.isCompleted && (
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#DCFCE7', color: '#15803D', padding: '2px 8px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    ⚡ Adelanto Habilitado
+                                  </span>
+                                )}
+                                {isLocked && (
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#F1F5F9', color: '#64748B', padding: '2px 8px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <Lock size={11} /> Bloqueado ({stepAccess.leadName})
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 600, display: 'block', marginTop: '4px' }}>
                                 {step.durationLabel} (Límite: {new Date(step.dueDate).toLocaleDateString()})
                               </span>
                             </div>
@@ -1910,7 +2128,12 @@ export const ActiveExecutionModal = ({
                             </div>
                           </div>
 
-                          {!isLocked && (
+                          {isLocked ? (
+                            <div style={{ marginTop: '0.75rem', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Lock size={15} style={{ flexShrink: 0 }} />
+                              <span>Paso posterior a cargo de <strong>{stepAccess.leadName}</strong>. Bloqueado hasta completar el paso actual.</span>
+                            </div>
+                          ) : (
                              <div className="step-action-area" style={{ marginTop: '0.5rem' }}>
                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                                  {step.isCompleted ? (
@@ -2322,6 +2545,28 @@ export const ActiveExecutionModal = ({
           }
         }}
       />
+
+      {/* Postpone Mandatory File Modal */}
+      {postponeModalData && (
+        <PostponeFileModal
+          isOpen={!!postponeModalData}
+          onClose={() => setPostponeModalData(null)}
+          instance={activeInstance}
+          step={postponeModalData.step}
+          checklist={postponeModalData.chk}
+          leadName={postponeModalData.leadName}
+          onConfirm={async ({ postponedUntil, reason }) => {
+            if (handlePostponeChecklistFile) {
+              await handlePostponeChecklistFile(
+                activeInstance.id,
+                postponeModalData.step.id,
+                postponeModalData.chkId,
+                { postponedUntil, reason }
+              );
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
