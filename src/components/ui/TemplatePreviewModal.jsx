@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2, Paperclip } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X, Sparkles, CheckSquare, ListChecks, Loader2, Paperclip, User } from 'lucide-react';
 import './TemplatePreviewModal.css';
 
 export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, teamMembers = [] }) => {
@@ -22,7 +22,8 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
             text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
             isCompleted: false,
             allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
-            requireAttachment: !!c?.requireAttachment
+            requireAttachment: !!c?.requireAttachment,
+            assignedTo: c?.assignedTo ? String(c.assignedTo) : ''
           })) : []
         }));
       }
@@ -79,7 +80,8 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
         text: text.trim(),
         isCompleted: false,
         allowAttachment: false,
-        requireAttachment: false
+        requireAttachment: false,
+        assignedTo: ''
       }
     ];
     delete newSteps[stepIndex].checklistQuestion;
@@ -126,7 +128,8 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
             text: typeof t === 'string' ? t : (t.text || String(t)),
             isCompleted: false,
             allowAttachment: !!(t?.allowAttachment || t?.requireAttachment),
-            requireAttachment: !!t?.requireAttachment
+            requireAttachment: !!t?.requireAttachment,
+            assignedTo: ''
           }));
           newSteps[stepIndex].checklist = [...existing, ...newItems];
           delete newSteps[stepIndex].checklistQuestion;
@@ -441,11 +444,49 @@ export const TemplatePreviewModal = ({ isOpen, onClose, initialData, onSave, tea
                             {(step.checklist || []).map((item, itemIdx) => {
                               const hasAtt = !!(item.allowAttachment || item.requireAttachment);
                               const isReq = !!item.requireAttachment;
+                              const assignedMember = (teamMembers || []).find(m => String(m.id) === String(item.assignedTo));
                               return (
                                 <div key={item.id || itemIdx} className="tpm-checklist-item-row" style={{ flexWrap: 'wrap', gap: '6px' }}>
                                   <CheckSquare size={13} color="#27BEA5" style={{ flexShrink: 0 }} />
                                   <span className="tpm-checklist-item-text" style={{ flex: 1, minWidth: '160px' }}>{item.text}</span>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    {/* Assignee Selector */}
+                                    <div
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        background: assignedMember ? '#EEF2FF' : '#F8FAFC',
+                                        border: assignedMember ? '1px solid #C7D2FE' : '1px solid #CBD5E1',
+                                        borderRadius: '6px',
+                                        padding: '2px 6px',
+                                        fontSize: '0.7rem'
+                                      }}
+                                      title={assignedMember ? `Asignado a: ${assignedMember.name} (${assignedMember.role || 'Miembro'})` : 'Asignar miembro del equipo a este ítem'}
+                                    >
+                                      <User size={11} color={assignedMember ? '#4F46E5' : '#94A3B8'} style={{ flexShrink: 0 }} />
+                                      <select
+                                        value={item.assignedTo ? String(item.assignedTo) : ''}
+                                        onChange={(e) => handleUpdateChecklistItem(index, itemIdx, { assignedTo: e.target.value || null })}
+                                        style={{
+                                          border: 'none',
+                                          background: 'transparent',
+                                          fontSize: '0.69rem',
+                                          fontWeight: assignedMember ? 700 : 500,
+                                          color: assignedMember ? '#3730A3' : '#64748B',
+                                          cursor: 'pointer',
+                                          outline: 'none',
+                                          maxWidth: '120px',
+                                          padding: 0
+                                        }}
+                                      >
+                                        <option value="">👤 Asignar...</option>
+                                        {(teamMembers || []).map(m => (
+                                          <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateChecklistItem(index, itemIdx, {

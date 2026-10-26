@@ -2469,6 +2469,7 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
             isCompleted: false,
             allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
             requireAttachment: !!c?.requireAttachment,
+            assignedTo: c?.assignedTo ? String(c.assignedTo) : null,
             uploadedFileName: null,
             uploadedFileUrl: null
           }))
@@ -3316,7 +3317,8 @@ REQUISITOS OBLIGATORIOS DE RESPUESTA:
           text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
           isCompleted: false,
           allowAttachment: !!(c?.allowAttachment || c?.requireAttachment),
-          requireAttachment: !!c?.requireAttachment
+          requireAttachment: !!c?.requireAttachment,
+          assignedTo: c?.assignedTo ? String(c.assignedTo) : ''
         })) : []
       }));
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Rocket, Trash2, Edit2, Plus, Users, ListChecks, Settings, Lightbulb, CheckCircle, Sparkles, CheckSquare, Paperclip } from 'lucide-react';
+import { X, Rocket, Trash2, Edit2, Plus, Users, User, ListChecks, Settings, Lightbulb, CheckCircle, Sparkles, CheckSquare, Paperclip } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import './TemplateDetailsModal.css';
 
@@ -492,6 +492,7 @@ export const TemplateDetailsModal = ({
                                   const itemObj = typeof item === 'string' ? { id: `chk_${itemIdx}`, text: item, isCompleted: false } : item;
                                   const hasAtt = !!(itemObj.allowAttachment || itemObj.requireAttachment);
                                   const isReq = !!itemObj.requireAttachment;
+                                  const assignedMember = (teamMembers || []).find(m => String(m.id) === String(itemObj.assignedTo));
                                   const updateItem = (updates) => {
                                     const updated = (editingStepData.checklist || []).map((c, i) => {
                                       if (i !== itemIdx) return typeof c === 'string' ? { id: `chk_${i}`, text: c, isCompleted: false } : c;
@@ -504,7 +505,44 @@ export const TemplateDetailsModal = ({
                                     <div key={itemObj.id || itemIdx} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', background: '#FFFFFF', padding: '6px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
                                       <CheckSquare size={13} color="#27BEA5" style={{ flexShrink: 0 }} />
                                       <span style={{ flex: 1, minWidth: '150px', fontSize: '0.8rem', color: '#1E293B' }}>{itemObj.text}</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                        {/* Assignee Selector */}
+                                        <div
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
+                                            background: assignedMember ? '#EEF2FF' : '#F8FAFC',
+                                            border: assignedMember ? '1px solid #C7D2FE' : '1px solid #CBD5E1',
+                                            borderRadius: '6px',
+                                            padding: '2px 6px',
+                                            fontSize: '0.7rem'
+                                          }}
+                                          title={assignedMember ? `Asignado a: ${assignedMember.name} (${assignedMember.role || 'Miembro'})` : 'Asignar miembro del equipo a este ítem'}
+                                        >
+                                          <User size={11} color={assignedMember ? '#4F46E5' : '#94A3B8'} style={{ flexShrink: 0 }} />
+                                          <select
+                                            value={itemObj.assignedTo ? String(itemObj.assignedTo) : ''}
+                                            onChange={(e) => updateItem({ assignedTo: e.target.value || null })}
+                                            style={{
+                                              border: 'none',
+                                              background: 'transparent',
+                                              fontSize: '0.69rem',
+                                              fontWeight: assignedMember ? 700 : 500,
+                                              color: assignedMember ? '#3730A3' : '#64748B',
+                                              cursor: 'pointer',
+                                              outline: 'none',
+                                              maxWidth: '125px',
+                                              padding: 0
+                                            }}
+                                          >
+                                            <option value="">👤 Asignar...</option>
+                                            {(teamMembers || []).map(m => (
+                                              <option key={m.id} value={m.id}>{m.name}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+
                                         <button
                                           type="button"
                                           onClick={() => updateItem({
@@ -578,7 +616,7 @@ export const TemplateDetailsModal = ({
                                           const currentList = editingStepData.checklist || [];
                                           setEditingStepData({
                                             ...editingStepData,
-                                            checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false }]
+                                            checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false, assignedTo: null }]
                                           });
                                           setDetailChecklistInput('');
                                         }
@@ -593,7 +631,7 @@ export const TemplateDetailsModal = ({
                                         const currentList = editingStepData.checklist || [];
                                         setEditingStepData({
                                           ...editingStepData,
-                                          checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false }]
+                                          checklist: [...currentList, { id: `chk_${Date.now()}`, text: detailChecklistInput.trim(), isCompleted: false, allowAttachment: false, requireAttachment: false, assignedTo: null }]
                                         });
                                         setDetailChecklistInput('');
                                       }
@@ -745,26 +783,73 @@ export const TemplateDetailsModal = ({
                                     {step.checklist.map((item, cIdx) => {
                                       const hasAtt = !!(item?.allowAttachment || item?.requireAttachment);
                                       const isReq = !!item?.requireAttachment;
+                                      const chkAssignee = item?.assignedTo && teamMembers ? teamMembers.find(m => String(m.id) === String(item.assignedTo)) : null;
                                       return (
-                                        <div key={item.id || cIdx} style={{ fontSize: '0.78rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                        <div key={item.id || cIdx} style={{ fontSize: '0.78rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#27BEA5', flexShrink: 0 }} />
                                             <span>{item.text || item}</span>
                                           </div>
-                                          {hasAtt && (
-                                            <span style={{
-                                              fontSize: '0.68rem',
-                                              fontWeight: 700,
-                                              padding: '1px 7px',
-                                              borderRadius: '999px',
-                                              background: isReq ? '#FEF3C7' : '#F0FDFA',
-                                              color: isReq ? '#B45309' : '#0F766E',
-                                              border: isReq ? '1px solid #FDE68A' : '1px solid #CCFBF1',
-                                              whiteSpace: 'nowrap'
-                                            }}>
-                                              {isReq ? '🔒 Adjunto obligatorio' : '📎 Adjunto opcional'}
-                                            </span>
-                                          )}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div
+                                              style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '3px',
+                                                background: chkAssignee ? '#EEF2FF' : '#FFFFFF',
+                                                border: chkAssignee ? '1px solid #C7D2FE' : '1px solid #CBD5E1',
+                                                borderRadius: '6px',
+                                                padding: '1px 5px',
+                                                fontSize: '0.68rem'
+                                              }}
+                                              title={chkAssignee ? `Asignado a: ${chkAssignee.name}` : 'Asignar miembro del equipo'}
+                                              onClick={e => e.stopPropagation()}
+                                            >
+                                              <User size={10} color={chkAssignee ? '#4F46E5' : '#94A3B8'} style={{ flexShrink: 0 }} />
+                                              <select
+                                                value={item?.assignedTo ? String(item.assignedTo) : ''}
+                                                onChange={(e) => {
+                                                  e.stopPropagation();
+                                                  const updatedChecklist = (step.checklist || []).map((c, i) => {
+                                                    if (i !== cIdx) return c;
+                                                    const base = typeof c === 'string' ? { id: `chk_${i}`, text: c, isCompleted: false } : c;
+                                                    return { ...base, assignedTo: e.target.value || null };
+                                                  });
+                                                  handleUpdateStep(activeTemplate.id, idx, { checklist: updatedChecklist });
+                                                }}
+                                                style={{
+                                                  border: 'none',
+                                                  background: 'transparent',
+                                                  fontSize: '0.68rem',
+                                                  fontWeight: chkAssignee ? 700 : 500,
+                                                  color: chkAssignee ? '#3730A3' : '#64748B',
+                                                  cursor: 'pointer',
+                                                  outline: 'none',
+                                                  maxWidth: '120px',
+                                                  padding: 0
+                                                }}
+                                              >
+                                                <option value="">👤 Asignar...</option>
+                                                {(teamMembers || []).map(m => (
+                                                  <option key={m.id} value={m.id}>{m.name}</option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            {hasAtt && (
+                                              <span style={{
+                                                fontSize: '0.68rem',
+                                                fontWeight: 700,
+                                                padding: '1px 7px',
+                                                borderRadius: '999px',
+                                                background: isReq ? '#FEF3C7' : '#F0FDFA',
+                                                color: isReq ? '#B45309' : '#0F766E',
+                                                border: isReq ? '1px solid #FDE68A' : '1px solid #CCFBF1',
+                                                whiteSpace: 'nowrap'
+                                              }}>
+                                                {isReq ? '🔒 Adjunto obligatorio' : '📎 Adjunto opcional'}
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
                                       );
                                     })}

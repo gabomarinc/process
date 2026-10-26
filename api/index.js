@@ -390,6 +390,13 @@ const getStepAssigneeIds = (step) => {
   } else if (typeof step.assignedTo === 'string' && step.assignedTo && step.assignedTo !== 'Unassigned') {
     set.add(String(step.assignedTo));
   }
+  if (Array.isArray(step.checklist)) {
+    step.checklist.forEach(chk => {
+      if (chk && typeof chk === 'object' && chk.assignedTo && chk.assignedTo !== 'Unassigned') {
+        set.add(String(chk.assignedTo));
+      }
+    });
+  }
   return Array.from(set);
 };
 
@@ -6742,7 +6749,10 @@ app.post('/api/v1/executions', authenticateApiKey, async (req, res) => {
       const checklist = rawChecklist.map((c, cIdx) => ({
         id: c.id || `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
         text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-        isCompleted: false
+        isCompleted: false,
+        allowAttachment: typeof c === 'object' ? !!(c.allowAttachment || c.requireAttachment) : false,
+        requireAttachment: typeof c === 'object' ? !!c.requireAttachment : false,
+        assignedTo: typeof c === 'object' && c.assignedTo ? String(c.assignedTo) : null
       }));
 
       return {
@@ -7343,7 +7353,10 @@ app.post('/api/v1/leadshub', authenticateApiKey, async (req, res) => {
         const checklist = rawChecklist.map((c, cIdx) => ({
           id: c.id || `chk_${idx + 1}_${cIdx + 1}_${Date.now()}`,
           text: typeof c === 'string' ? c : (c.text || c.title || String(c)),
-          isCompleted: false
+          isCompleted: false,
+          allowAttachment: typeof c === 'object' ? !!(c.allowAttachment || c.requireAttachment) : false,
+          requireAttachment: typeof c === 'object' ? !!c.requireAttachment : false,
+          assignedTo: typeof c === 'object' && c.assignedTo ? String(c.assignedTo) : null
         }));
 
         return {
@@ -7882,7 +7895,8 @@ async function executeAgentTool(toolName, args, user) {
               text: textVal,
               isCompleted: false,
               allowAttachment: allowAtt,
-              requireAttachment: reqAtt
+              requireAttachment: reqAtt,
+              assignedTo: isObj && c.assignedTo ? String(c.assignedTo) : null
             };
           });
         }
